@@ -4,6 +4,10 @@ use crate::editor::EditorState;
 use crate::ui::{hex_editor, image_preview, structure_tree};
 use eframe::egui;
 use std::path::PathBuf;
+use std::time::Instant;
+
+/// Debounce delay for preview updates (milliseconds)
+const PREVIEW_DEBOUNCE_MS: u64 = 150;
 
 /// Main application state for bend-rs
 ///
@@ -44,6 +48,9 @@ pub struct BendApp {
 
     /// Pending close action (true = confirmed close)
     pending_close: bool,
+
+    /// Timestamp of last edit (for debouncing preview updates)
+    last_edit_time: Option<Instant>,
 }
 
 impl BendApp {
@@ -57,7 +64,14 @@ impl BendApp {
             decode_error: None,
             show_close_dialog: false,
             pending_close: false,
+            last_edit_time: None,
         }
+    }
+
+    /// Mark the preview as needing update (with debounce timestamp)
+    pub fn mark_preview_dirty(&mut self) {
+        self.preview_dirty = true;
+        self.last_edit_time = Some(Instant::now());
     }
 
     /// Check if there are unsaved changes
@@ -135,9 +149,22 @@ impl BendApp {
     }
 
     /// Update the image preview texture from the working buffer
+    /// Uses debouncing to prevent excessive re-renders during rapid editing
     pub fn update_preview(&mut self, ctx: &egui::Context) {
         if !self.preview_dirty {
             return;
+        }
+
+        // Debounce: wait for edits to settle before re-rendering
+        if let Some(edit_time) = self.last_edit_time {
+            let elapsed = edit_time.elapsed();
+            let debounce_duration = std::time::Duration::from_millis(PREVIEW_DEBOUNCE_MS);
+            if elapsed < debounce_duration {
+                // Schedule a repaint after the remaining debounce time
+                let remaining = debounce_duration - elapsed;
+                ctx.request_repaint_after(remaining);
+                return;
+            }
         }
 
         let Some(editor) = &self.editor else {

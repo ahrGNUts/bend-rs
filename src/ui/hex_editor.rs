@@ -178,7 +178,9 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
         }
     }
 
-    // Handle keyboard input
+    // Handle keyboard input - track if we need to mark dirty after
+    let mut needs_preview_update = false;
+
     ui.input(|i| {
         let Some(editor) = &mut app.editor else {
             return;
@@ -216,12 +218,12 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
 
         if ctrl && !shift && i.key_pressed(egui::Key::Z) {
             if editor.undo() {
-                app.preview_dirty = true;
+                needs_preview_update = true;
             }
         }
         if ctrl && shift && i.key_pressed(egui::Key::Z) {
             if editor.redo() {
-                app.preview_dirty = true;
+                needs_preview_update = true;
             }
         }
 
@@ -231,10 +233,15 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                 for c in text.chars() {
                     if let Some(nibble) = c.to_digit(16) {
                         editor.edit_nibble(nibble as u8);
-                        app.preview_dirty = true;
+                        needs_preview_update = true;
                     }
                 }
             }
         }
     });
+
+    // Mark preview dirty with debounce timestamp (after editor borrow ends)
+    if needs_preview_update {
+        app.mark_preview_dirty();
+    }
 }
