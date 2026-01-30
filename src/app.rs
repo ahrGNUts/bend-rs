@@ -2,7 +2,7 @@
 
 use crate::editor::{EditorState, SearchState};
 use crate::formats::{parse_file, FileSection, RiskLevel};
-use crate::ui::{hex_editor, image_preview, savepoints, search_dialog, structure_tree};
+use crate::ui::{bookmarks, hex_editor, image_preview, savepoints, search_dialog, structure_tree};
 use eframe::egui;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -65,6 +65,9 @@ pub struct BendApp {
 
     /// Search and replace state
     pub search_state: SearchState,
+
+    /// State for the bookmarks panel
+    bookmarks_state: bookmarks::BookmarksPanelState,
 }
 
 impl BendApp {
@@ -83,6 +86,7 @@ impl BendApp {
             cached_sections: None,
             comparison_mode: false,
             search_state: SearchState::default(),
+            bookmarks_state: bookmarks::BookmarksPanelState::default(),
         }
     }
 
@@ -423,6 +427,17 @@ impl eframe::App for BendApp {
                             savepoints::show(ui, self, &mut state);
                             self.savepoints_state = state;
                         });
+
+                    ui.add_space(10.0);
+
+                    // Bookmarks section
+                    egui::CollapsingHeader::new("Bookmarks")
+                        .default_open(true)
+                        .show(ui, |ui| {
+                            let mut state = std::mem::take(&mut self.bookmarks_state);
+                            bookmarks::show(ui, self, &mut state);
+                            self.bookmarks_state = state;
+                        });
                 });
         }
 
@@ -483,6 +498,7 @@ mod tests {
             cached_sections: Some(sections),
             comparison_mode: false,
             search_state: SearchState::default(),
+            bookmarks_state: bookmarks::BookmarksPanelState::default(),
         }
     }
 
@@ -593,6 +609,7 @@ mod tests {
             cached_sections: None,
             comparison_mode: false,
             search_state: SearchState::default(),
+            bookmarks_state: bookmarks::BookmarksPanelState::default(),
         };
 
         // Should return None when no sections cached

@@ -142,13 +142,13 @@ Prerequisites: 2.2-2.3 (hex view must support background colors)
 - [x] 13.10 Show no matches found feedback
 
 ## 14. Bookmarks and Annotations (P2)
-- [ ] 14.1 Design bookmark data structure (offset, name, annotation)
-- [ ] 14.2 Implement Add Bookmark action at cursor
-- [ ] 14.3 Create bookmarks list UI panel
-- [ ] 14.4 Click bookmark to navigate to offset
-- [ ] 14.5 Highlight bookmarked positions in hex view
-- [ ] 14.6 Allow editing bookmark name and annotation
-- [ ] 14.7 Allow deleting bookmarks
+- [x] 14.1 Design bookmark data structure (offset, name, annotation)
+- [x] 14.2 Implement Add Bookmark action at cursor
+- [x] 14.3 Create bookmarks list UI panel
+- [x] 14.4 Click bookmark to navigate to offset
+- [x] 14.5 Highlight bookmarked positions in hex view
+- [x] 14.6 Allow editing bookmark name and annotation
+- [x] 14.7 Allow deleting bookmarks
 
 ## 15. Header Protection Toggle (P2)
 Prerequisites: Sections 7-8 (format parsing to identify header regions)

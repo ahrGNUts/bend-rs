@@ -17,6 +17,7 @@
 //! 3. Save points can efficiently diff against a known base
 //! 4. Export writes working buffer to a new location
 
+use super::bookmarks::BookmarkManager;
 use super::history::{EditOperation, History};
 use super::savepoints::{SavePoint, SavePointManager};
 
@@ -43,6 +44,9 @@ pub struct EditorState {
     /// Save point manager for named snapshots
     save_points: SavePointManager,
 
+    /// Bookmark manager for annotated locations
+    bookmarks: BookmarkManager,
+
     /// Current cursor position in the buffer
     cursor: usize,
 
@@ -68,6 +72,7 @@ impl EditorState {
             original: bytes,
             history: History::new(),
             save_points,
+            bookmarks: BookmarkManager::new(),
             cursor: 0,
             nibble: NibblePosition::High,
             selection: None,
@@ -424,6 +429,33 @@ impl EditorState {
     /// Get the number of save points
     pub fn save_point_count(&self) -> usize {
         self.save_points.len()
+    }
+
+    // ========== Bookmarks ==========
+
+    /// Add a bookmark at the given offset
+    pub fn add_bookmark(&mut self, offset: usize, name: String) -> u64 {
+        self.bookmarks.add(offset, name)
+    }
+
+    /// Remove a bookmark by ID
+    pub fn remove_bookmark(&mut self, id: u64) -> bool {
+        self.bookmarks.remove(id)
+    }
+
+    /// Get all bookmarks
+    pub fn bookmarks(&self) -> &super::bookmarks::BookmarkManager {
+        &self.bookmarks
+    }
+
+    /// Get mutable access to bookmarks
+    pub fn bookmarks_mut(&mut self) -> &mut super::bookmarks::BookmarkManager {
+        &mut self.bookmarks
+    }
+
+    /// Check if there's a bookmark at the given offset
+    pub fn has_bookmark_at(&self, offset: usize) -> bool {
+        self.bookmarks.has_bookmark(offset)
     }
 }
 

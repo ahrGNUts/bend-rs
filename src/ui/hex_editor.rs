@@ -51,6 +51,11 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
         current_match_offset.map_or(false, |m| offset >= m && offset < m + pattern_len)
     };
 
+    // Check if an offset has a bookmark
+    let has_bookmark = |offset: usize| -> bool {
+        app.editor.as_ref().map_or(false, |e| e.has_bookmark_at(offset))
+    };
+
     egui::ScrollArea::vertical()
         .auto_shrink([false; 2])
         .show_viewport(ui, |ui, viewport| {
@@ -136,7 +141,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                             let text = format!("{:02X}", byte);
                             let mut rich_text = RichText::new(text).monospace();
 
-                            // Apply background color priority: selection > current_match > search_match > section
+                            // Apply background color priority: selection > current_match > search_match > bookmark > section
                             if is_selected {
                                 rich_text = rich_text.background_color(egui::Color32::from_rgb(40, 80, 40));
                             } else if is_current_match(byte_offset) {
@@ -145,6 +150,9 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                             } else if is_search_match(byte_offset) {
                                 // Other matches: yellow highlight
                                 rich_text = rich_text.background_color(egui::Color32::from_rgb(180, 180, 60));
+                            } else if has_bookmark(byte_offset) {
+                                // Bookmark: cyan highlight
+                                rich_text = rich_text.background_color(egui::Color32::from_rgb(60, 160, 180));
                             } else if let Some(bg) = section_bg {
                                 rich_text = rich_text.background_color(bg);
                             }
