@@ -88,7 +88,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
     // Check if cursor is at a protected position
     let cursor_protected = app.is_offset_protected(cursor_pos);
 
-    egui::ScrollArea::vertical()
+    egui::ScrollArea::both()
         .auto_shrink([false; 2])
         .show_viewport(ui, |ui, viewport| {
             // Calculate which rows are visible

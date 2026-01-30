@@ -91,17 +91,21 @@ fn show_texture_scaled(
         let texture_size = tex.size_vec2();
         let scaled_size = texture_size * scale;
 
-        // Allocate space and center the image
+        // Clamp to max_size to prevent overflow
+        let clamped_size = egui::vec2(scaled_size.x.min(max_size.x), scaled_size.y.min(max_size.y));
+
+        // Allocate exact space - this reserves the area
         let (rect, _response) = ui.allocate_exact_size(max_size, egui::Sense::hover());
 
-        // Center the image within the allocated space
+        // Center the clamped image within allocated space
         let image_pos = egui::pos2(
-            rect.center().x - scaled_size.x / 2.0,
-            rect.center().y - scaled_size.y / 2.0,
+            rect.center().x - clamped_size.x / 2.0,
+            rect.center().y - clamped_size.y / 2.0,
         );
-        let image_rect = egui::Rect::from_min_size(image_pos, scaled_size);
+        let image_rect = egui::Rect::from_min_size(image_pos, clamped_size);
 
-        ui.painter().image(
+        // Use a painter clipped to the allocated rect to prevent overflow
+        ui.painter().with_clip_rect(rect).image(
             tex.id(),
             image_rect,
             egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
@@ -122,29 +126,49 @@ fn show_texture_scaled(
 /// Show a single image preview (current working buffer)
 fn show_single_preview(ui: &mut egui::Ui, app: &BendApp) {
     if let Some(texture) = &app.preview_texture {
+        // Show decode error indicator if present
+        if app.decode_error.is_some() {
+            ui.horizontal(|ui| {
+                ui.colored_label(
+                    egui::Color32::YELLOW,
+                    "\u{26A0} Preview may be stale (decode error)",
+                );
+            });
+        }
+
         // Get available size for the preview
         let available_size = ui.available_size();
 
         // Calculate scaled size maintaining aspect ratio
         let texture_size = texture.size_vec2();
-        let scale = (available_size.x / texture_size.x).min(available_size.y / texture_size.y);
-        let scaled_size = texture_size * scale.min(1.0); // Don't upscale
+        let scale = (available_size.x / texture_size.x)
+            .min(available_size.y / texture_size.y)
+            .min(1.0); // Don't upscale
+        let scaled_size = texture_size * scale;
 
-        // Center the image
-        ui.with_layout(egui::Layout::centered_and_justified(egui::Direction::TopDown), |ui| {
-            // Show decode error indicator if present
-            if app.decode_error.is_some() {
-                ui.horizontal(|ui| {
-                    ui.colored_label(
-                        egui::Color32::YELLOW,
-                        "\u{26A0} Preview may be stale (decode error)",
-                    );
-                });
-            }
+        // Clamp to available size
+        let clamped_size = egui::vec2(
+            scaled_size.x.min(available_size.x),
+            scaled_size.y.min(available_size.y),
+        );
 
-            // Display the image
-            ui.image((texture.id(), scaled_size));
-        });
+        // Allocate exact space
+        let (rect, _response) = ui.allocate_exact_size(available_size, egui::Sense::hover());
+
+        // Center the image within allocated space
+        let image_pos = egui::pos2(
+            rect.center().x - clamped_size.x / 2.0,
+            rect.center().y - clamped_size.y / 2.0,
+        );
+        let image_rect = egui::Rect::from_min_size(image_pos, clamped_size);
+
+        // Use a painter clipped to the allocated rect to prevent overflow
+        ui.painter().with_clip_rect(rect).image(
+            texture.id(),
+            image_rect,
+            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            egui::Color32::WHITE,
+        );
     } else {
         // No preview available
         ui.centered_and_justified(|ui| {

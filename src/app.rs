@@ -731,22 +731,24 @@ impl BendApp {
 
     /// Render the main content area with hex editor and image preview
     fn render_main_content(&mut self, ctx: &egui::Context) {
+        // Hex editor panel (resizable SidePanel, only shown when file is loaded)
+        if self.editor.is_some() {
+            egui::SidePanel::left("hex_panel")
+                .resizable(true)
+                .default_width(620.0)
+                .min_width(400.0)
+                .max_width(ctx.screen_rect().width() - 400.0) // Leave room for preview
+                .show(ctx, |ui| {
+                    ui.heading("Hex Editor");
+                    hex_editor::show(ui, self);
+                });
+        }
+
+        // Preview panel (CentralPanel takes remaining space)
         egui::CentralPanel::default().show(ctx, |ui| {
             if self.editor.is_some() {
-                // Split view: hex editor on left, image preview on right
-                ui.columns(2, |columns| {
-                    // Left panel: Hex editor
-                    columns[0].group(|ui| {
-                        ui.heading("Hex Editor");
-                        hex_editor::show(ui, self);
-                    });
-
-                    // Right panel: Image preview
-                    columns[1].group(|ui| {
-                        ui.heading("Preview");
-                        image_preview::show(ui, self);
-                    });
-                });
+                ui.heading("Preview");
+                image_preview::show(ui, self);
             } else {
                 // No file loaded - show welcome message
                 ui.centered_and_justified(|ui| {
