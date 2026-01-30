@@ -160,12 +160,12 @@ Prerequisites: Sections 7-8 (format parsing to identify header regions)
 - [x] 15.5 Persist setting per-file (session only)
 
 ## 16. High-Risk Edit Warnings (P3)
-- [ ] 16.1 Implement warning dialog component
-- [ ] 16.2 Trigger warning when editing high-risk regions (e.g., JPEG scan data)
-- [ ] 16.3 Add Proceed and Cancel options
-- [ ] 16.4 Add Don't show again checkbox
-- [ ] 16.5 Persist warning preference for session
-- [ ] 16.6 Add setting to re-enable warnings
+- [x] 16.1 Implement warning dialog component
+- [x] 16.2 Trigger warning when editing high-risk regions (e.g., JPEG scan data)
+- [x] 16.3 Add Proceed and Cancel options
+- [x] 16.4 Add Don't show again checkbox
+- [x] 16.5 Persist warning preference for session
+- [x] 16.6 Add setting to re-enable warnings
 
 ## 17. Polish and Platform Testing
 - [ ] 17.1 Test on macOS, verify native look and feel

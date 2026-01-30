@@ -2,6 +2,7 @@
 
 use crate::app::BendApp;
 use crate::editor::buffer::NibblePosition;
+use crate::formats::RiskLevel;
 use eframe::egui::{self, RichText, TextStyle};
 
 /// Number of bytes per row
@@ -34,6 +35,8 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
     let mut clicked_offset: Option<usize> = None;
     // Track whether shift was held during click
     let shift_held = ui.input(|i| i.modifiers.shift);
+    // Track pending high-risk edit for warning dialog
+    let mut pending_high_risk_edit: Option<(u8, usize, RiskLevel)> = None;
 
     // Pre-compute section colors for the entire file
     // This is cached in app.cached_sections so the lookup is fast
@@ -230,6 +233,10 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
     // Handle keyboard input - track if we need to mark dirty after
     let mut needs_preview_update = false;
 
+    // Pre-compute warning state before mutable borrow of editor
+    let should_warn_for_cursor = app.should_warn_for_edit(cursor_pos);
+    let cursor_risk_level = app.get_high_risk_level(cursor_pos);
+
     ui.input(|i| {
         let Some(editor) = &mut app.editor else {
             return;
@@ -325,14 +332,31 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                 if let egui::Event::Text(text) = event {
                     for c in text.chars() {
                         if let Some(nibble) = c.to_digit(16) {
-                            editor.edit_nibble(nibble as u8);
-                            needs_preview_update = true;
+                            // Check if this edit should trigger a warning
+                            if should_warn_for_cursor {
+                                // Store pending edit for confirmation
+                                if let Some(risk) = cursor_risk_level {
+                                    pending_high_risk_edit = Some((nibble as u8, cursor_pos, risk));
+                                }
+                            } else {
+                                editor.edit_nibble(nibble as u8);
+                                needs_preview_update = true;
+                            }
                         }
                     }
                 }
             }
         }
     });
+
+    // Handle pending high-risk edit (after input borrow ends)
+    if let Some((nibble_value, offset, risk_level)) = pending_high_risk_edit {
+        app.pending_high_risk_edit = Some(crate::app::PendingEdit {
+            nibble_value,
+            offset,
+            risk_level,
+        });
+    }
 
     // Mark preview dirty with debounce timestamp (after editor borrow ends)
     if needs_preview_update {

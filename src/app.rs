@@ -71,6 +71,23 @@ pub struct BendApp {
 
     /// Whether header protection is enabled (blocks edits to high-risk sections)
     pub header_protection: bool,
+
+    /// Whether high-risk edit warnings are suppressed for this session
+    pub suppress_high_risk_warnings: bool,
+
+    /// Pending high-risk edit waiting for user confirmation
+    pub pending_high_risk_edit: Option<PendingEdit>,
+}
+
+/// A pending edit awaiting user confirmation
+#[derive(Clone)]
+pub struct PendingEdit {
+    /// The nibble value to write (0-15)
+    pub nibble_value: u8,
+    /// The byte offset being edited
+    pub offset: usize,
+    /// Risk level of the section being edited
+    pub risk_level: RiskLevel,
 }
 
 impl BendApp {
@@ -91,6 +108,8 @@ impl BendApp {
             search_state: SearchState::default(),
             bookmarks_state: bookmarks::BookmarksPanelState::default(),
             header_protection: false,
+            suppress_high_risk_warnings: false,
+            pending_high_risk_edit: None,
         }
     }
 
@@ -208,6 +227,99 @@ impl BendApp {
         self.section_at_offset(offset)
             .map(|section| matches!(section.risk, RiskLevel::High | RiskLevel::Critical))
             .unwrap_or(false)
+    }
+
+    /// Check if an offset is in a high-risk region that should show a warning
+    /// Returns the risk level if it's High or Critical, None otherwise
+    pub fn get_high_risk_level(&self, offset: usize) -> Option<RiskLevel> {
+        self.section_at_offset(offset)
+            .filter(|section| matches!(section.risk, RiskLevel::High | RiskLevel::Critical))
+            .map(|section| section.risk)
+    }
+
+    /// Check if a warning should be shown for editing at this offset
+    pub fn should_warn_for_edit(&self, offset: usize) -> bool {
+        if self.suppress_high_risk_warnings {
+            return false;
+        }
+        self.get_high_risk_level(offset).is_some()
+    }
+
+    /// Show the high-risk edit warning dialog and handle user response
+    fn show_high_risk_warning_dialog(&mut self, ctx: &egui::Context) {
+        let Some(pending) = self.pending_high_risk_edit.clone() else {
+            return;
+        };
+
+        let mut should_proceed = false;
+        let mut should_cancel = false;
+        let mut dont_show_again = false;
+
+        egui::Window::new("High-Risk Edit Warning")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                ui.vertical(|ui| {
+                    // Warning icon and message
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new("\u{26A0}")
+                                .size(32.0)
+                                .color(egui::Color32::YELLOW),
+                        );
+                        ui.vertical(|ui| {
+                            let risk_name = match pending.risk_level {
+                                RiskLevel::High => "high-risk",
+                                RiskLevel::Critical => "critical",
+                                _ => "sensitive",
+                            };
+                            ui.label(format!(
+                                "You are about to edit a {} region.",
+                                risk_name
+                            ));
+                            ui.label(format!("Offset: 0x{:08X}", pending.offset));
+                        });
+                    });
+
+                    ui.add_space(10.0);
+
+                    ui.label("Editing this region may corrupt the file or make it unreadable.");
+                    ui.label("The image preview may fail to render after this edit.");
+
+                    ui.add_space(10.0);
+
+                    // Don't show again checkbox
+                    ui.checkbox(&mut dont_show_again, "Don't warn me again this session");
+
+                    ui.add_space(10.0);
+
+                    // Buttons
+                    ui.horizontal(|ui| {
+                        if ui.button("Proceed").clicked() {
+                            should_proceed = true;
+                        }
+                        if ui.button("Cancel").clicked() {
+                            should_cancel = true;
+                        }
+                    });
+                });
+            });
+
+        // Handle user response
+        if should_proceed {
+            // Apply the edit
+            if let Some(editor) = &mut self.editor {
+                editor.edit_nibble(pending.nibble_value);
+                self.mark_preview_dirty();
+            }
+            if dont_show_again {
+                self.suppress_high_risk_warnings = true;
+            }
+            self.pending_high_risk_edit = None;
+        } else if should_cancel {
+            self.pending_high_risk_edit = None;
+        }
     }
 
     /// Open file dialog and load selected file
@@ -391,12 +503,25 @@ impl eframe::App for BendApp {
                     if ui.add_enabled(has_file, egui::Checkbox::new(&mut self.header_protection, "Protect Headers")).changed() {
                         // Checkbox already updates the value
                     }
+                    ui.separator();
+                    // Re-enable warnings option (only shown when warnings are suppressed)
+                    if self.suppress_high_risk_warnings {
+                        if ui.button("Re-enable High-Risk Warnings").clicked() {
+                            self.suppress_high_risk_warnings = false;
+                            ui.close_menu();
+                        }
+                    } else {
+                        ui.add_enabled(false, egui::Button::new("High-Risk Warnings: Enabled"));
+                    }
                 });
             });
         });
 
         // Show search dialog if open
         search_dialog::show(ctx, self);
+
+        // Show high-risk edit warning dialog if there's a pending edit
+        self.show_high_risk_warning_dialog(ctx);
 
         // Status bar at bottom
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
@@ -519,6 +644,8 @@ mod tests {
             search_state: SearchState::default(),
             bookmarks_state: bookmarks::BookmarksPanelState::default(),
             header_protection: false,
+            suppress_high_risk_warnings: false,
+            pending_high_risk_edit: None,
         }
     }
 
@@ -631,6 +758,8 @@ mod tests {
             search_state: SearchState::default(),
             bookmarks_state: bookmarks::BookmarksPanelState::default(),
             header_protection: false,
+            suppress_high_risk_warnings: false,
+            pending_high_risk_edit: None,
         };
 
         // Should return None when no sections cached
@@ -668,5 +797,40 @@ mod tests {
 
         // Offset outside any section is not protected
         assert!(!app.is_offset_protected(100));
+    }
+
+    #[test]
+    fn test_high_risk_warnings() {
+        let sections = vec![
+            FileSection::new("Safe", 0, 10, RiskLevel::Safe),
+            FileSection::new("Caution", 10, 20, RiskLevel::Caution),
+            FileSection::new("High", 20, 30, RiskLevel::High),
+            FileSection::new("Critical", 30, 40, RiskLevel::Critical),
+        ];
+        let mut app = create_test_app_with_sections(sections);
+
+        // Warnings not suppressed by default
+        assert!(!app.suppress_high_risk_warnings);
+
+        // Safe and Caution should not trigger warnings
+        assert!(!app.should_warn_for_edit(5));
+        assert!(!app.should_warn_for_edit(15));
+
+        // High and Critical should trigger warnings
+        assert!(app.should_warn_for_edit(25));
+        assert!(app.should_warn_for_edit(35));
+
+        // get_high_risk_level returns correct levels
+        assert!(app.get_high_risk_level(5).is_none());
+        assert!(app.get_high_risk_level(15).is_none());
+        assert_eq!(app.get_high_risk_level(25), Some(RiskLevel::High));
+        assert_eq!(app.get_high_risk_level(35), Some(RiskLevel::Critical));
+
+        // Suppress warnings
+        app.suppress_high_risk_warnings = true;
+
+        // No warnings when suppressed
+        assert!(!app.should_warn_for_edit(25));
+        assert!(!app.should_warn_for_edit(35));
     }
 }
