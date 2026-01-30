@@ -123,11 +123,11 @@ Prerequisites: 2.2-2.3 (hex view must support background colors)
 - [x] 11.5 Display decode error message in status area
 
 ## 12. Comparison View (P2)
-- [ ] 12.1 Add toggle for comparison mode
-- [ ] 12.2 Render original image from preserved bytes
-- [ ] 12.3 Display original and current side-by-side
-- [ ] 12.4 Ensure both images scale together
-- [ ] 12.5 Add labels (Original / Current)
+- [x] 12.1 Add toggle for comparison mode
+- [x] 12.2 Render original image from preserved bytes
+- [x] 12.3 Display original and current side-by-side
+- [x] 12.4 Ensure both images scale together
+- [x] 12.5 Add labels (Original / Current)
 
 ## 13. Search and Replace (P2)
 - [ ] 13.1 Create search dialog UI

@@ -59,6 +59,9 @@ pub struct BendApp {
     /// Cached parsed file sections for structure visualization
     /// Re-parsed when file is loaded or structure potentially changed
     pub cached_sections: Option<Vec<FileSection>>,
+
+    /// Whether comparison mode is enabled (side-by-side original and current)
+    pub comparison_mode: bool,
 }
 
 impl BendApp {
@@ -75,6 +78,7 @@ impl BendApp {
             last_edit_time: None,
             savepoints_state: savepoints::SavePointsPanelState::default(),
             cached_sections: None,
+            comparison_mode: false,
         }
     }
 
@@ -456,6 +460,7 @@ mod tests {
             last_edit_time: None,
             savepoints_state: savepoints::SavePointsPanelState::default(),
             cached_sections: Some(sections),
+            comparison_mode: false,
         }
     }
 
@@ -564,6 +569,7 @@ mod tests {
             last_edit_time: None,
             savepoints_state: savepoints::SavePointsPanelState::default(),
             cached_sections: None,
+            comparison_mode: false,
         };
 
         // Should return None when no sections cached
