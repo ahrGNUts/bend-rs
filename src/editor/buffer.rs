@@ -457,16 +457,18 @@ mod tests {
         editor.edit_nibble(0xF);
         assert_eq!(editor.working()[0], 0xF0);
 
-        // Edit low nibble
+        // Edit low nibble (same byte - will be coalesced with high nibble edit)
         editor.edit_nibble(0xE);
         assert_eq!(editor.working()[0], 0xFE);
 
-        // Undo should restore previous state
-        editor.undo();
-        assert_eq!(editor.working()[0], 0xF0);
-
+        // Undo should restore to original state (edits are coalesced)
+        // Since both nibble edits are to the same byte and within 500ms,
+        // they are coalesced into a single operation
         editor.undo();
         assert_eq!(editor.working()[0], 0x00);
+
+        // No more undo available since both edits were coalesced
+        assert!(!editor.can_undo());
     }
 
     #[test]

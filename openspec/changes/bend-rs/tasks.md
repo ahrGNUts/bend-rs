@@ -50,7 +50,7 @@
 - [x] 4.4 Wire up Ctrl+Z / Cmd+Z for undo
 - [x] 4.5 Wire up Ctrl+Shift+Z / Cmd+Shift+Z for redo
 - [x] 4.6 Update hex view and image preview on undo/redo
-- [ ] 4.7 Implement history management
+- [x] 4.7 Implement history management
   - Coalesce adjacent single-byte edits within 500ms into single operations
   - Cap history at 1000 operations
   - Silently drop oldest operations when limit reached
