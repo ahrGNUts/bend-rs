@@ -41,7 +41,7 @@
   - On decode failure, trigger graceful corruption handling (see 11.1-11.3)
 - [x] 3.5 Show broken image indicator when decode fails
 - [x] 3.6 Implement keyboard navigation (arrow keys, Page Up/Down, Home/End)
-- [ ] 3.7 Implement range selection (Shift+click, Shift+arrow keys)
+- [x] 3.7 Implement range selection (Shift+click, Shift+arrow keys)
 
 ## 4. Undo/Redo System (P0)
 - [x] 4.1 Design edit operation structure (offset, old value, new value)

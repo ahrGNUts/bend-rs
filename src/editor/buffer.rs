@@ -48,6 +48,9 @@ pub struct EditorState {
     /// Selection range (start, end) - None if no selection
     selection: Option<(usize, usize)>,
 
+    /// Selection anchor point - where selection started (for Shift+click/arrow)
+    selection_anchor: Option<usize>,
+
     /// Whether the working buffer has unsaved changes
     modified: bool,
 }
@@ -62,6 +65,7 @@ impl EditorState {
             cursor: 0,
             nibble: NibblePosition::High,
             selection: None,
+            selection_anchor: None,
             modified: false,
         }
     }
@@ -165,6 +169,61 @@ impl EditorState {
     /// Clear selection
     pub fn clear_selection(&mut self) {
         self.selection = None;
+        self.selection_anchor = None;
+    }
+
+    /// Start a new selection at the current cursor position
+    pub fn start_selection(&mut self) {
+        self.selection_anchor = Some(self.cursor);
+        self.selection = Some((self.cursor, self.cursor + 1));
+    }
+
+    /// Extend selection from anchor to the given position
+    /// If no anchor exists, sets anchor at current cursor before extending
+    pub fn extend_selection_to(&mut self, pos: usize) {
+        let pos = pos.min(self.working.len().saturating_sub(1));
+
+        let anchor = self.selection_anchor.unwrap_or(self.cursor);
+
+        let (start, end) = if pos >= anchor {
+            (anchor, pos + 1)
+        } else {
+            (pos, anchor + 1)
+        };
+
+        self.selection = Some((start, end.min(self.working.len())));
+        self.selection_anchor = Some(anchor);
+        self.cursor = pos;
+        self.nibble = NibblePosition::High;
+    }
+
+    /// Move cursor by offset while extending selection (for Shift+arrow)
+    pub fn move_cursor_with_selection(&mut self, offset: isize) {
+        // If no anchor, set it at current position first
+        if self.selection_anchor.is_none() {
+            self.selection_anchor = Some(self.cursor);
+        }
+
+        // Calculate new cursor position
+        let new_pos = if offset < 0 {
+            self.cursor.saturating_sub((-offset) as usize)
+        } else {
+            self.cursor
+                .saturating_add(offset as usize)
+                .min(self.working.len().saturating_sub(1))
+        };
+
+        self.extend_selection_to(new_pos);
+    }
+
+    /// Set cursor with optional selection extension (for Shift+click)
+    pub fn set_cursor_with_selection(&mut self, pos: usize, extend: bool) {
+        if extend {
+            self.extend_selection_to(pos);
+        } else {
+            self.clear_selection();
+            self.set_cursor(pos);
+        }
     }
 
     /// Check if buffer has been modified
@@ -408,5 +467,106 @@ mod tests {
 
         editor.undo();
         assert_eq!(editor.working()[0], 0x00);
+    }
+
+    #[test]
+    fn test_selection_with_shift_arrow() {
+        let data = vec![0x00, 0x01, 0x02, 0x03, 0x04, 0x05];
+        let mut editor = EditorState::new(data);
+
+        // Start at position 2
+        editor.set_cursor(2);
+        assert_eq!(editor.cursor(), 2);
+        assert!(editor.selection().is_none());
+
+        // Shift+right should select from 2 to 3
+        editor.move_cursor_with_selection(1);
+        assert_eq!(editor.cursor(), 3);
+        assert_eq!(editor.selection(), Some((2, 4))); // bytes 2, 3 selected
+
+        // Continue extending right
+        editor.move_cursor_with_selection(1);
+        assert_eq!(editor.cursor(), 4);
+        assert_eq!(editor.selection(), Some((2, 5))); // bytes 2, 3, 4 selected
+
+        // Shift+left should shrink selection
+        editor.move_cursor_with_selection(-1);
+        assert_eq!(editor.cursor(), 3);
+        assert_eq!(editor.selection(), Some((2, 4))); // bytes 2, 3 selected
+    }
+
+    #[test]
+    fn test_selection_backwards() {
+        let data = vec![0x00, 0x01, 0x02, 0x03, 0x04, 0x05];
+        let mut editor = EditorState::new(data);
+
+        // Start at position 4
+        editor.set_cursor(4);
+
+        // Shift+left should select from 4 backwards
+        editor.move_cursor_with_selection(-1);
+        assert_eq!(editor.cursor(), 3);
+        assert_eq!(editor.selection(), Some((3, 5))); // bytes 3, 4 selected
+
+        // Continue extending left
+        editor.move_cursor_with_selection(-1);
+        assert_eq!(editor.cursor(), 2);
+        assert_eq!(editor.selection(), Some((2, 5))); // bytes 2, 3, 4 selected
+    }
+
+    #[test]
+    fn test_set_cursor_with_selection() {
+        let data = vec![0x00, 0x01, 0x02, 0x03, 0x04, 0x05];
+        let mut editor = EditorState::new(data);
+
+        // Start at position 1
+        editor.set_cursor(1);
+
+        // Shift+click at position 4 (extend = true)
+        editor.set_cursor_with_selection(4, true);
+        assert_eq!(editor.cursor(), 4);
+        assert_eq!(editor.selection(), Some((1, 5))); // bytes 1, 2, 3, 4 selected
+
+        // Regular click at position 2 (extend = false)
+        editor.set_cursor_with_selection(2, false);
+        assert_eq!(editor.cursor(), 2);
+        assert!(editor.selection().is_none()); // selection cleared
+    }
+
+    #[test]
+    fn test_selection_with_extend_to() {
+        let data = vec![0x00, 0x01, 0x02, 0x03, 0x04, 0x05];
+        let mut editor = EditorState::new(data);
+
+        // Start at position 2
+        editor.set_cursor(2);
+
+        // Extend to position 5 (like Shift+End)
+        editor.extend_selection_to(5);
+        assert_eq!(editor.cursor(), 5);
+        assert_eq!(editor.selection(), Some((2, 6))); // bytes 2-5 selected
+
+        // Extend back to position 0 (like Shift+Home)
+        editor.extend_selection_to(0);
+        assert_eq!(editor.cursor(), 0);
+        assert_eq!(editor.selection(), Some((0, 3))); // bytes 0, 1, 2 selected (anchor at 2)
+    }
+
+    #[test]
+    fn test_clear_selection_clears_anchor() {
+        let data = vec![0x00, 0x01, 0x02, 0x03];
+        let mut editor = EditorState::new(data);
+
+        editor.set_cursor(1);
+        editor.move_cursor_with_selection(1);
+        assert!(editor.selection().is_some());
+
+        editor.clear_selection();
+        assert!(editor.selection().is_none());
+
+        // After clearing, new selection should start fresh
+        editor.move_cursor_with_selection(1);
+        // New anchor should be at current cursor (2), selecting to 3
+        assert_eq!(editor.selection(), Some((2, 4)));
     }
 }

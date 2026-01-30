@@ -32,6 +32,8 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
 
     // Track clicked byte offset for deferred cursor update
     let mut clicked_offset: Option<usize> = None;
+    // Track whether shift was held during click
+    let shift_held = ui.input(|i| i.modifiers.shift);
 
     egui::ScrollArea::vertical()
         .auto_shrink([false; 2])
@@ -172,8 +174,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
     // Handle deferred click
     if let Some(offset) = clicked_offset {
         if let Some(editor) = &mut app.editor {
-            editor.set_cursor(offset);
-            editor.clear_selection();
+            editor.set_cursor_with_selection(offset, shift_held);
             app.preview_dirty = true;
         }
     }
@@ -186,35 +187,77 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
             return;
         };
 
-        // Navigation
+        let shift = i.modifiers.shift;
+        let ctrl = i.modifiers.ctrl || i.modifiers.mac_cmd;
+
+        // Navigation with optional selection extension
         if i.key_pressed(egui::Key::ArrowLeft) {
-            editor.move_cursor(-1);
+            if shift {
+                editor.move_cursor_with_selection(-1);
+            } else {
+                editor.clear_selection();
+                editor.move_cursor(-1);
+            }
         }
         if i.key_pressed(egui::Key::ArrowRight) {
-            editor.move_cursor(1);
+            if shift {
+                editor.move_cursor_with_selection(1);
+            } else {
+                editor.clear_selection();
+                editor.move_cursor(1);
+            }
         }
         if i.key_pressed(egui::Key::ArrowUp) {
-            editor.move_cursor(-(BYTES_PER_ROW as isize));
+            if shift {
+                editor.move_cursor_with_selection(-(BYTES_PER_ROW as isize));
+            } else {
+                editor.clear_selection();
+                editor.move_cursor(-(BYTES_PER_ROW as isize));
+            }
         }
         if i.key_pressed(egui::Key::ArrowDown) {
-            editor.move_cursor(BYTES_PER_ROW as isize);
+            if shift {
+                editor.move_cursor_with_selection(BYTES_PER_ROW as isize);
+            } else {
+                editor.clear_selection();
+                editor.move_cursor(BYTES_PER_ROW as isize);
+            }
         }
         if i.key_pressed(egui::Key::PageUp) {
-            editor.move_cursor(-(BYTES_PER_ROW as isize * 16));
+            if shift {
+                editor.move_cursor_with_selection(-(BYTES_PER_ROW as isize * 16));
+            } else {
+                editor.clear_selection();
+                editor.move_cursor(-(BYTES_PER_ROW as isize * 16));
+            }
         }
         if i.key_pressed(egui::Key::PageDown) {
-            editor.move_cursor(BYTES_PER_ROW as isize * 16);
+            if shift {
+                editor.move_cursor_with_selection(BYTES_PER_ROW as isize * 16);
+            } else {
+                editor.clear_selection();
+                editor.move_cursor(BYTES_PER_ROW as isize * 16);
+            }
         }
         if i.key_pressed(egui::Key::Home) {
-            editor.set_cursor(0);
+            if shift {
+                editor.extend_selection_to(0);
+            } else {
+                editor.clear_selection();
+                editor.set_cursor(0);
+            }
         }
         if i.key_pressed(egui::Key::End) {
-            editor.set_cursor(editor.len().saturating_sub(1));
+            let last = editor.len().saturating_sub(1);
+            if shift {
+                editor.extend_selection_to(last);
+            } else {
+                editor.clear_selection();
+                editor.set_cursor(last);
+            }
         }
 
         // Undo/Redo
-        let ctrl = i.modifiers.ctrl || i.modifiers.mac_cmd;
-        let shift = i.modifiers.shift;
 
         if ctrl && !shift && i.key_pressed(egui::Key::Z) {
             if editor.undo() {
