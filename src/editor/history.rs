@@ -1,5 +1,6 @@
 //! Undo/redo history management
 
+use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
 /// Maximum number of operations to keep in history
@@ -103,8 +104,8 @@ fn try_coalesce(existing: &mut EditOperation, new: &EditOperation) -> bool {
 
 /// Linear undo/redo history
 pub struct History {
-    /// Stack of operations that can be undone
-    undo_stack: Vec<EditOperation>,
+    /// Stack of operations that can be undone (VecDeque for O(1) front removal)
+    undo_stack: VecDeque<EditOperation>,
 
     /// Stack of operations that can be redone
     redo_stack: Vec<EditOperation>,
@@ -117,7 +118,7 @@ impl History {
     /// Create a new empty history
     pub fn new() -> Self {
         Self {
-            undo_stack: Vec::new(),
+            undo_stack: VecDeque::new(),
             redo_stack: Vec::new(),
             last_push_time: None,
         }
@@ -138,7 +139,7 @@ impl History {
         // Try to coalesce with the previous operation if within time window
         if let Some(last_time) = self.last_push_time {
             if now.duration_since(last_time) <= COALESCE_WINDOW {
-                if let Some(last_op) = self.undo_stack.last_mut() {
+                if let Some(last_op) = self.undo_stack.back_mut() {
                     if try_coalesce(last_op, &op) {
                         self.last_push_time = Some(now);
                         return;
@@ -148,18 +149,18 @@ impl History {
         }
 
         // No coalescing - add as new operation
-        self.undo_stack.push(op);
+        self.undo_stack.push_back(op);
         self.last_push_time = Some(now);
 
-        // Enforce maximum size - drop oldest operations
+        // Enforce maximum size - drop oldest operations (O(1) with VecDeque)
         while self.undo_stack.len() > MAX_HISTORY_SIZE {
-            self.undo_stack.remove(0);
+            self.undo_stack.pop_front();
         }
     }
 
     /// Undo the last operation, returning it for application
     pub fn undo(&mut self) -> Option<EditOperation> {
-        if let Some(op) = self.undo_stack.pop() {
+        if let Some(op) = self.undo_stack.pop_back() {
             self.redo_stack.push(op.clone());
             Some(op)
         } else {
@@ -170,7 +171,7 @@ impl History {
     /// Redo the last undone operation, returning it for application
     pub fn redo(&mut self) -> Option<EditOperation> {
         if let Some(op) = self.redo_stack.pop() {
-            self.undo_stack.push(op.clone());
+            self.undo_stack.push_back(op.clone());
             Some(op)
         } else {
             None

@@ -172,12 +172,13 @@ impl BendApp {
     /// Get the background color for a byte based on its section's risk level
     pub fn section_color_for_offset(&self, offset: usize) -> Option<egui::Color32> {
         self.section_at_offset(offset).map(|section| {
-            // Use subtle background colors for the hex view
+            // Use subtle but visible background colors for the hex view
+            // Alpha of 50 provides good visibility while maintaining text readability
             match section.risk {
-                RiskLevel::Safe => egui::Color32::from_rgba_unmultiplied(100, 200, 100, 30),
-                RiskLevel::Caution => egui::Color32::from_rgba_unmultiplied(200, 180, 80, 30),
-                RiskLevel::High => egui::Color32::from_rgba_unmultiplied(200, 130, 80, 30),
-                RiskLevel::Critical => egui::Color32::from_rgba_unmultiplied(200, 80, 80, 30),
+                RiskLevel::Safe => egui::Color32::from_rgba_unmultiplied(100, 200, 100, 50),
+                RiskLevel::Caution => egui::Color32::from_rgba_unmultiplied(200, 180, 80, 50),
+                RiskLevel::High => egui::Color32::from_rgba_unmultiplied(200, 130, 80, 50),
+                RiskLevel::Critical => egui::Color32::from_rgba_unmultiplied(200, 80, 80, 50),
             }
         })
     }
@@ -434,5 +435,139 @@ impl eframe::App for BendApp {
                 });
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Helper to create a test app with cached sections
+    fn create_test_app_with_sections(sections: Vec<FileSection>) -> BendApp {
+        BendApp {
+            editor: None,
+            current_file: None,
+            preview_texture: None,
+            original_texture: None,
+            preview_dirty: false,
+            decode_error: None,
+            show_close_dialog: false,
+            pending_close: false,
+            last_edit_time: None,
+            savepoints_state: savepoints::SavePointsPanelState::default(),
+            cached_sections: Some(sections),
+        }
+    }
+
+    #[test]
+    fn test_section_at_offset_simple() {
+        let sections = vec![
+            FileSection::new("Header", 0, 14, RiskLevel::Critical),
+            FileSection::new("Data", 14, 100, RiskLevel::Safe),
+        ];
+        let app = create_test_app_with_sections(sections);
+
+        // Test offset in first section
+        let section = app.section_at_offset(5);
+        assert!(section.is_some());
+        assert_eq!(section.unwrap().name, "Header");
+
+        // Test offset in second section
+        let section = app.section_at_offset(50);
+        assert!(section.is_some());
+        assert_eq!(section.unwrap().name, "Data");
+
+        // Test offset beyond all sections
+        let section = app.section_at_offset(200);
+        assert!(section.is_none());
+    }
+
+    #[test]
+    fn test_section_at_offset_nested() {
+        let parent = FileSection::new("Header", 0, 54, RiskLevel::Caution)
+            .with_child(FileSection::new("Magic", 0, 2, RiskLevel::Critical))
+            .with_child(FileSection::new("Size", 2, 6, RiskLevel::High));
+
+        let sections = vec![parent, FileSection::new("Data", 54, 100, RiskLevel::Safe)];
+        let app = create_test_app_with_sections(sections);
+
+        // Test offset in nested child (should return most specific match)
+        let section = app.section_at_offset(0);
+        assert!(section.is_some());
+        assert_eq!(section.unwrap().name, "Magic");
+
+        let section = app.section_at_offset(4);
+        assert!(section.is_some());
+        assert_eq!(section.unwrap().name, "Size");
+
+        // Test offset in parent but not in any child
+        let section = app.section_at_offset(10);
+        assert!(section.is_some());
+        assert_eq!(section.unwrap().name, "Header");
+    }
+
+    #[test]
+    fn test_section_at_offset_boundary() {
+        let sections = vec![
+            FileSection::new("First", 0, 10, RiskLevel::Safe),
+            FileSection::new("Second", 10, 20, RiskLevel::Caution),
+        ];
+        let app = create_test_app_with_sections(sections);
+
+        // Test at exact boundary (end is exclusive)
+        let section = app.section_at_offset(9);
+        assert_eq!(section.unwrap().name, "First");
+
+        let section = app.section_at_offset(10);
+        assert_eq!(section.unwrap().name, "Second");
+    }
+
+    #[test]
+    fn test_section_color_for_offset() {
+        let sections = vec![
+            FileSection::new("Safe", 0, 10, RiskLevel::Safe),
+            FileSection::new("Caution", 10, 20, RiskLevel::Caution),
+            FileSection::new("High", 20, 30, RiskLevel::High),
+            FileSection::new("Critical", 30, 40, RiskLevel::Critical),
+        ];
+        let app = create_test_app_with_sections(sections);
+
+        // Verify colors are returned for each risk level
+        let color = app.section_color_for_offset(5);
+        assert!(color.is_some());
+        // Green-ish for Safe
+        let c = color.unwrap();
+        assert!(c.g() > c.r()); // Green channel should be highest
+
+        let color = app.section_color_for_offset(25);
+        assert!(color.is_some());
+        // Orange-ish for High
+        let c = color.unwrap();
+        assert!(c.r() > c.b()); // Red channel higher than blue
+
+        // No color for offset outside sections
+        let color = app.section_color_for_offset(100);
+        assert!(color.is_none());
+    }
+
+    #[test]
+    fn test_section_at_offset_no_sections() {
+        let app = BendApp {
+            editor: None,
+            current_file: None,
+            preview_texture: None,
+            original_texture: None,
+            preview_dirty: false,
+            decode_error: None,
+            show_close_dialog: false,
+            pending_close: false,
+            last_edit_time: None,
+            savepoints_state: savepoints::SavePointsPanelState::default(),
+            cached_sections: None,
+        };
+
+        // Should return None when no sections cached
+        assert!(app.section_at_offset(0).is_none());
+        assert!(app.section_color_for_offset(0).is_none());
     }
 }

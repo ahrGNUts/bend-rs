@@ -1,7 +1,7 @@
 //! Structure tree UI component for visualizing file sections
 
 use crate::app::BendApp;
-use crate::formats::{parse_file, FileSection, RiskLevel};
+use crate::formats::{FileSection, RiskLevel};
 use eframe::egui::{self, RichText};
 
 /// Get the color for a risk level
@@ -113,18 +113,23 @@ fn show_section(
 
 /// Show the structure tree panel
 pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
-    let Some(editor) = &app.editor else {
-        ui.label("No file loaded");
-        return;
+    // Get cursor position and check if editor exists
+    let current_cursor = match &app.editor {
+        Some(editor) => editor.cursor(),
+        None => {
+            ui.label("No file loaded");
+            return;
+        }
     };
 
-    // Parse the file structure
-    let sections = parse_file(editor.working());
-
-    let Some(sections) = sections else {
+    // Use cached sections (parsed when file was loaded)
+    let Some(sections) = &app.cached_sections else {
         ui.label("Unable to parse file structure");
         return;
     };
+
+    // Clone to avoid borrow issues with the mutable app reference below
+    let sections = sections.clone();
 
     if sections.is_empty() {
         ui.label("No structure detected");
@@ -133,7 +138,6 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
 
     // Track clicked offset for navigation
     let mut clicked_offset: Option<usize> = None;
-    let current_cursor = editor.cursor();
 
     // Legend
     ui.horizontal(|ui| {
