@@ -2,7 +2,7 @@
 
 use crate::editor::{EditorState, GoToOffsetState, SearchState};
 use crate::formats::{parse_file, FileSection, RiskLevel};
-use crate::ui::{bookmarks, go_to_offset_dialog, hex_editor, image_preview, savepoints, search_dialog, structure_tree};
+use crate::ui::{bookmarks, go_to_offset_dialog, hex_editor::{self, ContextMenuState}, image_preview, savepoints, search_dialog, structure_tree};
 use eframe::egui;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -80,6 +80,9 @@ pub struct BendApp {
 
     /// Pending high-risk edit waiting for user confirmation
     pub pending_high_risk_edit: Option<PendingEdit>,
+
+    /// Context menu state for hex editor
+    pub context_menu_state: ContextMenuState,
 }
 
 /// A pending edit awaiting user confirmation
@@ -114,6 +117,7 @@ impl Default for BendApp {
             header_protection: false,
             suppress_high_risk_warnings: false,
             pending_high_risk_edit: None,
+            context_menu_state: ContextMenuState::default(),
         }
     }
 }

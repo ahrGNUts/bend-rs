@@ -174,12 +174,12 @@ Prerequisites: Sections 7-8 (format parsing to identify header regions)
 - [ ] 17.4 Add keyboard shortcut help / cheat sheet (depends on phases 3, 4, 13)
 - [x] 17.5 Implement Go to offset dialog
 - [x] 17.6 Add toolbar with common actions
-- [ ] 17.7 Add right-click context menu in hex view
-  - [ ] 17.7a Create context menu UI component
-  - [ ] 17.7b Implement Copy (hex and ASCII formats)
-  - [ ] 17.7c Implement Paste from clipboard (depends on 3.x editing)
-  - [ ] 17.7d Add "Bookmark here" action (depends on 14.x)
-  - [ ] 17.7e Add "Go to offset..." action (depends on 17.5)
+- [x] 17.7 Add right-click context menu in hex view
+  - [x] 17.7a Create context menu UI component
+  - [x] 17.7b Implement Copy (hex and ASCII formats)
+  - [x] 17.7c Implement Paste from clipboard (depends on 3.x editing)
+  - [x] 17.7d Add "Bookmark here" action (depends on 14.x)
+  - [x] 17.7e Add "Go to offset..." action (depends on 17.5)
 
 ## 18. Settings and Persistence (P3)
 - [ ] 18.1 Design settings data structure (window size, recent files, preferences)

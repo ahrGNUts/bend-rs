@@ -5,6 +5,13 @@ use crate::editor::buffer::NibblePosition;
 use crate::formats::RiskLevel;
 use eframe::egui::{self, RichText, TextStyle};
 
+/// State for the context menu
+#[derive(Default)]
+pub struct ContextMenuState {
+    /// The byte offset where the context menu was triggered
+    pub target_offset: Option<usize>,
+}
+
 /// Number of bytes per row
 const BYTES_PER_ROW: usize = 16;
 
@@ -49,6 +56,8 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
     let shift_held = ui.input(|i| i.modifiers.shift);
     // Track pending high-risk edit for warning dialog
     let mut pending_high_risk_edit: Option<(u8, usize, RiskLevel)> = None;
+    // Track right-clicked byte for context menu
+    let mut context_menu_offset: Option<usize> = None;
 
     // Pre-compute section colors for the entire file
     // This is cached in app.cached_sections so the lookup is fast
@@ -160,6 +169,9 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                             if r1.clicked() || r2.clicked() {
                                 clicked_offset = Some(byte_offset);
                             }
+                            if r1.secondary_clicked() || r2.secondary_clicked() {
+                                context_menu_offset = Some(byte_offset);
+                            }
                         } else {
                             let text = format!("{:02X}", byte);
                             let mut rich_text = RichText::new(text).monospace();
@@ -188,6 +200,9 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                             let response = ui.label(rich_text);
                             if response.clicked() {
                                 clicked_offset = Some(byte_offset);
+                            }
+                            if response.secondary_clicked() {
+                                context_menu_offset = Some(byte_offset);
                             }
                         }
                     }
@@ -374,4 +389,201 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
     if needs_preview_update {
         app.mark_preview_dirty();
     }
+
+    // Handle context menu right-click
+    if let Some(offset) = context_menu_offset {
+        app.context_menu_state.target_offset = Some(offset);
+    }
+
+    // Show context menu if active
+    show_context_menu(ui, app);
+}
+
+/// Show the context menu for the hex editor
+fn show_context_menu(ui: &mut egui::Ui, app: &mut BendApp) {
+    let Some(target_offset) = app.context_menu_state.target_offset else {
+        return;
+    };
+
+    let mut close_menu = false;
+    let mut do_copy_hex = false;
+    let mut do_copy_ascii = false;
+    let mut do_paste = false;
+    let mut do_add_bookmark = false;
+    let mut do_go_to_offset = false;
+
+    // Determine if we have a selection or just cursor
+    let (start, end) = app.editor.as_ref()
+        .and_then(|e| e.selection())
+        .unwrap_or((target_offset, target_offset + 1));
+
+    let byte_count = end - start;
+    let label_suffix = if byte_count > 1 {
+        format!(" ({} bytes)", byte_count)
+    } else {
+        String::new()
+    };
+
+    // Show context menu as a window at mouse position
+    let ctx = ui.ctx().clone();
+    let mouse_pos = ctx.input(|i| i.pointer.hover_pos()).unwrap_or_default();
+
+    egui::Area::new(egui::Id::new("hex_context_menu"))
+        .fixed_pos(mouse_pos)
+        .order(egui::Order::Foreground)
+        .show(&ctx, |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.set_min_width(150.0);
+
+                if ui.button(format!("Copy as Hex{}", label_suffix)).clicked() {
+                    do_copy_hex = true;
+                    close_menu = true;
+                }
+                if ui.button(format!("Copy as ASCII{}", label_suffix)).clicked() {
+                    do_copy_ascii = true;
+                    close_menu = true;
+                }
+
+                ui.separator();
+
+                if ui.button("Paste").clicked() {
+                    do_paste = true;
+                    close_menu = true;
+                }
+
+                ui.separator();
+
+                if ui.button("Add Bookmark").clicked() {
+                    do_add_bookmark = true;
+                    close_menu = true;
+                }
+                if ui.button("Go to Offset...").clicked() {
+                    do_go_to_offset = true;
+                    close_menu = true;
+                }
+            });
+        });
+
+    // Close menu on click outside or Escape
+    let clicked_outside = ctx.input(|i| {
+        i.pointer.any_click() && !i.pointer.secondary_down()
+    });
+    let escape_pressed = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+
+    if clicked_outside || escape_pressed {
+        close_menu = true;
+    }
+
+    // Handle actions
+    if do_copy_hex {
+        copy_as_hex(ui, app, target_offset);
+    }
+    if do_copy_ascii {
+        copy_as_ascii(ui, app, target_offset);
+    }
+    if do_paste {
+        paste_hex(ui, app, target_offset);
+    }
+    if do_add_bookmark {
+        if let Some(editor) = &mut app.editor {
+            editor.add_bookmark(target_offset, format!("Offset 0x{:X}", target_offset));
+        }
+    }
+    if do_go_to_offset {
+        app.go_to_offset_state.open_dialog();
+    }
+
+    if close_menu {
+        app.context_menu_state.target_offset = None;
+    }
+}
+
+/// Copy selected bytes as hex string to clipboard
+fn copy_as_hex(ui: &mut egui::Ui, app: &BendApp, target_offset: usize) {
+    let Some(editor) = &app.editor else { return };
+
+    let (start, end) = editor.selection().unwrap_or((target_offset, target_offset + 1));
+    let bytes = editor.bytes_in_range(start, end);
+
+    let hex_string: String = bytes
+        .iter()
+        .map(|b| format!("{:02X}", b))
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    ui.output_mut(|o| o.copied_text = hex_string);
+}
+
+/// Copy selected bytes as ASCII string to clipboard
+fn copy_as_ascii(ui: &mut egui::Ui, app: &BendApp, target_offset: usize) {
+    let Some(editor) = &app.editor else { return };
+
+    let (start, end) = editor.selection().unwrap_or((target_offset, target_offset + 1));
+    let bytes = editor.bytes_in_range(start, end);
+
+    let ascii_string: String = bytes
+        .iter()
+        .map(|&b| {
+            if b.is_ascii_graphic() || b == b' ' {
+                b as char
+            } else {
+                '.'
+            }
+        })
+        .collect();
+
+    ui.output_mut(|o| o.copied_text = ascii_string);
+}
+
+/// Paste hex string from clipboard
+fn paste_hex(ui: &mut egui::Ui, app: &mut BendApp, target_offset: usize) {
+    let clipboard_text = ui.input(|i| i.events.iter().find_map(|e| {
+        if let egui::Event::Paste(text) = e {
+            Some(text.clone())
+        } else {
+            None
+        }
+    }));
+
+    // Try to get text from clipboard via output
+    let text = clipboard_text.unwrap_or_else(|| {
+        // Fallback: read from platform clipboard if available
+        String::new()
+    });
+
+    if text.is_empty() {
+        return;
+    }
+
+    // Try to parse as hex bytes
+    let bytes = parse_hex_input(&text);
+
+    if let (Some(editor), Some(bytes)) = (&mut app.editor, bytes) {
+        for (i, byte) in bytes.iter().enumerate() {
+            let offset = target_offset + i;
+            if offset < editor.len() {
+                editor.edit_byte(offset, *byte);
+            }
+        }
+        app.mark_preview_dirty();
+    }
+}
+
+/// Parse hex input string into bytes (supports "FF FF FF" or "FFFFFF" formats)
+fn parse_hex_input(input: &str) -> Option<Vec<u8>> {
+    let clean: String = input
+        .chars()
+        .filter(|c| c.is_ascii_hexdigit())
+        .collect();
+
+    if clean.len() % 2 != 0 {
+        return None;
+    }
+
+    let bytes: Option<Vec<u8>> = (0..clean.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&clean[i..i+2], 16).ok())
+        .collect();
+
+    bytes
 }
