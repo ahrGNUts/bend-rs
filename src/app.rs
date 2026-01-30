@@ -414,6 +414,8 @@ impl eframe::App for BendApp {
         let mut wants_export = false;
         let mut wants_search = false;
         let mut wants_go_to = false;
+        let mut wants_undo_kb = false;
+        let mut wants_redo_kb = false;
         ctx.input(|i| {
             for file in &i.raw.dropped_files {
                 if let Some(path) = &file.path {
@@ -423,6 +425,7 @@ impl eframe::App for BendApp {
 
             // Global keyboard shortcuts
             let ctrl = i.modifiers.ctrl || i.modifiers.mac_cmd;
+            let shift = i.modifiers.shift;
             if ctrl && i.key_pressed(egui::Key::O) {
                 wants_open = true;
             }
@@ -434,6 +437,17 @@ impl eframe::App for BendApp {
             }
             if ctrl && i.key_pressed(egui::Key::G) && self.editor.is_some() {
                 wants_go_to = true;
+            }
+            // Undo: Ctrl+Z / Cmd+Z
+            if ctrl && !shift && i.key_pressed(egui::Key::Z) && self.editor.is_some() {
+                wants_undo_kb = true;
+            }
+            // Redo: Ctrl+Shift+Z / Cmd+Shift+Z (or Ctrl+Y on some platforms)
+            if ctrl && shift && i.key_pressed(egui::Key::Z) && self.editor.is_some() {
+                wants_redo_kb = true;
+            }
+            if ctrl && i.key_pressed(egui::Key::Y) && self.editor.is_some() {
+                wants_redo_kb = true;
             }
         });
 
@@ -448,6 +462,18 @@ impl eframe::App for BendApp {
         }
         if wants_go_to {
             self.go_to_offset_state.open_dialog();
+        }
+        if wants_undo_kb {
+            if let Some(editor) = &mut self.editor {
+                editor.undo();
+                self.mark_preview_dirty();
+            }
+        }
+        if wants_redo_kb {
+            if let Some(editor) = &mut self.editor {
+                editor.redo();
+                self.mark_preview_dirty();
+            }
         }
 
         // Update preview if needed
@@ -528,6 +554,74 @@ impl eframe::App for BendApp {
                 });
             });
         });
+
+        // Toolbar with common actions
+        let mut wants_undo = false;
+        let mut wants_redo = false;
+        egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                let has_file = self.editor.is_some();
+                let can_undo = self.editor.as_ref().map_or(false, |e| e.can_undo());
+                let can_redo = self.editor.as_ref().map_or(false, |e| e.can_redo());
+
+                // File operations
+                if ui.button("Open").clicked() {
+                    self.open_file_dialog();
+                }
+                if ui.add_enabled(has_file, egui::Button::new("Export")).clicked() {
+                    self.export_file();
+                }
+
+                ui.separator();
+
+                // Undo/Redo
+                if ui.add_enabled(can_undo, egui::Button::new("Undo")).clicked() {
+                    wants_undo = true;
+                }
+                if ui.add_enabled(can_redo, egui::Button::new("Redo")).clicked() {
+                    wants_redo = true;
+                }
+
+                ui.separator();
+
+                // Navigation/Search
+                if ui.add_enabled(has_file, egui::Button::new("Search")).clicked() {
+                    self.search_state.open_dialog();
+                }
+                if ui.add_enabled(has_file, egui::Button::new("Go to")).clicked() {
+                    self.go_to_offset_state.open_dialog();
+                }
+
+                ui.separator();
+
+                // View toggles
+                if ui.add_enabled(has_file, egui::SelectableLabel::new(self.comparison_mode, "Compare"))
+                    .clicked()
+                {
+                    self.comparison_mode = !self.comparison_mode;
+                }
+                if ui.add_enabled(has_file, egui::SelectableLabel::new(self.header_protection, "Protect"))
+                    .on_hover_text("Protect header regions from editing")
+                    .clicked()
+                {
+                    self.header_protection = !self.header_protection;
+                }
+            });
+        });
+
+        // Handle toolbar undo/redo actions
+        if wants_undo {
+            if let Some(editor) = &mut self.editor {
+                editor.undo();
+                self.mark_preview_dirty();
+            }
+        }
+        if wants_redo {
+            if let Some(editor) = &mut self.editor {
+                editor.redo();
+                self.mark_preview_dirty();
+            }
+        }
 
         // Show search dialog if open
         search_dialog::show(ctx, self);
