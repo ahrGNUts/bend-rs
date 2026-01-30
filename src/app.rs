@@ -3,7 +3,7 @@
 use crate::editor::{EditorState, GoToOffsetState, SearchState};
 use crate::formats::{parse_file, FileSection, RiskLevel};
 use crate::settings::AppSettings;
-use crate::ui::{bookmarks, go_to_offset_dialog, hex_editor::{self, ContextMenuState}, image_preview, savepoints, search_dialog, shortcuts_dialog::{self, ShortcutsDialogState}, structure_tree};
+use crate::ui::{bookmarks, go_to_offset_dialog, hex_editor::{self, ContextMenuState}, image_preview, savepoints, search_dialog, settings_dialog::{self, SettingsDialogState}, shortcuts_dialog::{self, ShortcutsDialogState}, structure_tree};
 use eframe::egui;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -88,6 +88,9 @@ pub struct BendApp {
     /// Keyboard shortcuts help dialog state
     pub shortcuts_dialog_state: ShortcutsDialogState,
 
+    /// Settings/preferences dialog state
+    pub settings_dialog_state: SettingsDialogState,
+
     /// Application settings (persisted to disk)
     pub settings: AppSettings,
 
@@ -140,6 +143,7 @@ impl Default for BendApp {
             pending_high_risk_edit: None,
             context_menu_state: ContextMenuState::default(),
             shortcuts_dialog_state: ShortcutsDialogState::default(),
+            settings_dialog_state: SettingsDialogState::default(),
             settings: AppSettings::default(),
             pending_open_path: None,
         }
@@ -557,6 +561,11 @@ impl BendApp {
                     } else {
                         ui.add_enabled(false, egui::Button::new("High-Risk Warnings: Enabled"));
                     }
+                    ui.separator();
+                    if ui.button("Preferences...").clicked() {
+                        self.settings_dialog_state.open_dialog();
+                        ui.close_menu();
+                    }
                 });
                 ui.menu_button("Help", |ui| {
                     if ui.button("Keyboard Shortcuts").clicked() {
@@ -648,6 +657,7 @@ impl BendApp {
         search_dialog::show(ctx, self);
         go_to_offset_dialog::show(ctx, self);
         shortcuts_dialog::show(ctx, &mut self.shortcuts_dialog_state);
+        settings_dialog::show(ctx, &mut self.settings_dialog_state, &mut self.settings);
         self.show_high_risk_warning_dialog(ctx);
     }
 

@@ -186,13 +186,13 @@ Prerequisites: Sections 7-8 (format parsing to identify header regions)
 - [x] 18.2 Persist settings to disk (platform-appropriate location)
 - [x] 18.3 Restore window size and position on launch
 - [x] 18.4 Implement recent files list (File menu)
-- [ ] 18.5 Add Settings/Preferences dialog
+- [x] 18.5 Add Settings/Preferences dialog
 
 ## 19. Documentation and Release Prep
 - [ ] 19.1 Write README with screenshots and usage guide
 - [ ] 19.2 Create GitHub releases workflow
 - [ ] 19.3 Build binaries for macOS, Windows, Linux
-- [ ] 19.4 Add LICENSE file
+- [x] 19.4 Add LICENSE file
 - [ ] 19.5 Create CONTRIBUTING guide if accepting contributions
 
 ## 20. Performance Validation
