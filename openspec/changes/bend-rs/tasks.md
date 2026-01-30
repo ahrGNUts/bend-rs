@@ -1,55 +1,55 @@
 # Tasks: bend-rs Implementation
 
 ## 1. Project Foundation
-- [ ] 1.1 Initialize Rust project with Cargo
-- [ ] 1.2 Add core dependencies (eframe, egui, image, rfd, serde)
-- [ ] 1.3 Create basic egui application window with eframe
-- [ ] 1.4 Implement native file open dialog (rfd)
-- [ ] 1.5 Implement drag-and-drop file open
-- [ ] 1.6 Load file bytes into memory buffer
-- [ ] 1.7 Create app state structure to hold loaded file data
-- [ ] 1.8 Implement dual-buffer architecture
+- [x] 1.1 Initialize Rust project with Cargo
+- [x] 1.2 Add core dependencies (eframe, egui, image, rfd, serde)
+- [x] 1.3 Create basic egui application window with eframe
+- [x] 1.4 Implement native file open dialog (rfd)
+- [x] 1.5 Implement drag-and-drop file open
+- [x] 1.6 Load file bytes into memory buffer
+- [x] 1.7 Create app state structure to hold loaded file data
+- [x] 1.8 Implement dual-buffer architecture
   - `original: Vec<u8>` - immutable after load, used for comparison and save point base
   - `working: Vec<u8>` - all edits apply here, undo/redo operates on this
   - Document this architecture in code comments
 
 ## 2. Split View Layout (P0)
-- [ ] 2.1 Create two-panel split layout in egui
-- [ ] 2.2 Implement hex view layout structure
-  - [ ] 2.2a Define row structure: offset column (8 chars) + hex bytes + ASCII column
-  - [ ] 2.2b Implement byte grouping (16 bytes per row, space every 8 bytes)
-  - [ ] 2.2c Render rows with monospace font and proper column alignment
-- [ ] 2.3 Add ASCII column alongside hex display
-- [ ] 2.4 Implement virtual scrolling for hex view
+- [x] 2.1 Create two-panel split layout in egui
+- [x] 2.2 Implement hex view layout structure
+  - [x] 2.2a Define row structure: offset column (8 chars) + hex bytes + ASCII column
+  - [x] 2.2b Implement byte grouping (16 bytes per row, space every 8 bytes)
+  - [x] 2.2c Render rows with monospace font and proper column alignment
+- [x] 2.3 Add ASCII column alongside hex display
+- [x] 2.4 Implement virtual scrolling for hex view
   - Use row-based virtualization (16 bytes per row)
   - Calculate visible row range from scroll position
   - Only render rows in viewport + small buffer above/below
   - Target: handle files up to 100MB without UI lag
-- [ ] 2.5 Render image from buffer bytes using image crate
-- [ ] 2.6 Display rendered image in right panel with scaling
-- [ ] 2.7 Handle image decode errors gracefully (show placeholder)
+- [x] 2.5 Render image from buffer bytes using image crate
+- [x] 2.6 Display rendered image in right panel with scaling
+- [x] 2.7 Handle image decode errors gracefully (show placeholder)
 
 ## 3. Byte Editing with Live Preview (P0)
-- [ ] 3.1 Implement cursor/selection in hex view
+- [x] 3.1 Implement cursor/selection in hex view
 - [ ] 3.2 Handle keyboard input for hex editing
-  - [ ] 3.2a Capture and filter keyboard input (accept only 0-9, A-F, a-f)
+  - [x] 3.2a Capture and filter keyboard input (accept only 0-9, A-F, a-f)
   - [ ] 3.2b Implement nibble-level editing (track high/low nibble state)
   - [ ] 3.2c Auto-advance cursor after completing byte (two nibbles entered)
-- [ ] 3.3 Update buffer when user types valid hex
-- [ ] 3.4 Trigger image re-render on buffer change
+- [x] 3.3 Update buffer when user types valid hex
+- [x] 3.4 Trigger image re-render on buffer change
   - Debounce re-renders (100-200ms after last edit)
   - On decode failure, trigger graceful corruption handling (see 11.1-11.3)
-- [ ] 3.5 Show broken image indicator when decode fails
-- [ ] 3.6 Implement keyboard navigation (arrow keys, Page Up/Down, Home/End)
+- [x] 3.5 Show broken image indicator when decode fails
+- [x] 3.6 Implement keyboard navigation (arrow keys, Page Up/Down, Home/End)
 - [ ] 3.7 Implement range selection (Shift+click, Shift+arrow keys)
 
 ## 4. Undo/Redo System (P0)
-- [ ] 4.1 Design edit operation structure (offset, old value, new value)
-- [ ] 4.2 Implement history stack for undo
-- [ ] 4.3 Implement redo stack
-- [ ] 4.4 Wire up Ctrl+Z / Cmd+Z for undo
-- [ ] 4.5 Wire up Ctrl+Shift+Z / Cmd+Shift+Z for redo
-- [ ] 4.6 Update hex view and image preview on undo/redo
+- [x] 4.1 Design edit operation structure (offset, old value, new value)
+- [x] 4.2 Implement history stack for undo
+- [x] 4.3 Implement redo stack
+- [x] 4.4 Wire up Ctrl+Z / Cmd+Z for undo
+- [x] 4.5 Wire up Ctrl+Shift+Z / Cmd+Shift+Z for redo
+- [x] 4.6 Update hex view and image preview on undo/redo
 - [ ] 4.7 Implement history management
   - Coalesce adjacent single-byte edits within 500ms into single operations
   - Cap history at 1000 operations
@@ -57,7 +57,7 @@
   - Consider: add UI indicator when history is truncated
 
 ## 5. Non-Destructive Workflow (P0)
-- [ ] 5.1 Store original bytes separately (never modify)
+- [x] 5.1 Store original bytes separately (never modify)
 - [ ] 5.2 Implement Export / Save As with file dialog
 - [ ] 5.3 Write modified buffer to chosen destination
 - [ ] 5.4 Add unsaved changes indicator in UI
@@ -116,11 +116,11 @@ Prerequisites: 2.2-2.3 (hex view must support background colors)
 - [ ] 10.5 Test section highlighting with screen reader / accessibility tools
 
 ## 11. Graceful Corruption Handling (P1)
-- [ ] 11.1 Implement last valid state caching
-- [ ] 11.2 Show last valid image when current buffer fails to decode
-- [ ] 11.3 Add visual indicator that preview is stale/cached
-- [ ] 11.4 Provide clear broken image icon as fallback
-- [ ] 11.5 Display decode error message in status area
+- [x] 11.1 Implement last valid state caching
+- [x] 11.2 Show last valid image when current buffer fails to decode
+- [x] 11.3 Add visual indicator that preview is stale/cached
+- [x] 11.4 Provide clear broken image icon as fallback
+- [x] 11.5 Display decode error message in status area
 
 ## 12. Comparison View (P2)
 - [ ] 12.1 Add toggle for comparison mode
