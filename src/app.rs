@@ -1,8 +1,8 @@
 //! Main application state and egui integration
 
-use crate::editor::{EditorState, SearchState};
+use crate::editor::{EditorState, GoToOffsetState, SearchState};
 use crate::formats::{parse_file, FileSection, RiskLevel};
-use crate::ui::{bookmarks, hex_editor, image_preview, savepoints, search_dialog, structure_tree};
+use crate::ui::{bookmarks, go_to_offset_dialog, hex_editor, image_preview, savepoints, search_dialog, structure_tree};
 use eframe::egui;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -66,6 +66,9 @@ pub struct BendApp {
     /// Search and replace state
     pub search_state: SearchState,
 
+    /// Go to offset dialog state
+    pub go_to_offset_state: GoToOffsetState,
+
     /// State for the bookmarks panel
     bookmarks_state: bookmarks::BookmarksPanelState,
 
@@ -106,6 +109,7 @@ impl Default for BendApp {
             cached_sections: None,
             comparison_mode: false,
             search_state: SearchState::default(),
+            go_to_offset_state: GoToOffsetState::default(),
             bookmarks_state: bookmarks::BookmarksPanelState::default(),
             header_protection: false,
             suppress_high_risk_warnings: false,
@@ -409,6 +413,7 @@ impl eframe::App for BendApp {
         let mut wants_open = false;
         let mut wants_export = false;
         let mut wants_search = false;
+        let mut wants_go_to = false;
         ctx.input(|i| {
             for file in &i.raw.dropped_files {
                 if let Some(path) = &file.path {
@@ -427,6 +432,9 @@ impl eframe::App for BendApp {
             if ctrl && i.key_pressed(egui::Key::F) && self.editor.is_some() {
                 wants_search = true;
             }
+            if ctrl && i.key_pressed(egui::Key::G) && self.editor.is_some() {
+                wants_go_to = true;
+            }
         });
 
         if wants_open {
@@ -437,6 +445,9 @@ impl eframe::App for BendApp {
         }
         if wants_search {
             self.search_state.open_dialog();
+        }
+        if wants_go_to {
+            self.go_to_offset_state.open_dialog();
         }
 
         // Update preview if needed
@@ -496,6 +507,10 @@ impl eframe::App for BendApp {
                         self.search_state.open_dialog();
                         ui.close_menu();
                     }
+                    if ui.add_enabled(has_file, egui::Button::new("Go to Offset...")).clicked() {
+                        self.go_to_offset_state.open_dialog();
+                        ui.close_menu();
+                    }
                     ui.separator();
                     if ui.add_enabled(has_file, egui::Checkbox::new(&mut self.header_protection, "Protect Headers")).changed() {
                         // Checkbox already updates the value
@@ -516,6 +531,9 @@ impl eframe::App for BendApp {
 
         // Show search dialog if open
         search_dialog::show(ctx, self);
+
+        // Show go to offset dialog if open
+        go_to_offset_dialog::show(ctx, self);
 
         // Show high-risk edit warning dialog if there's a pending edit
         self.show_high_risk_warning_dialog(ctx);
