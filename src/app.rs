@@ -68,6 +68,9 @@ pub struct BendApp {
 
     /// State for the bookmarks panel
     bookmarks_state: bookmarks::BookmarksPanelState,
+
+    /// Whether header protection is enabled (blocks edits to high-risk sections)
+    pub header_protection: bool,
 }
 
 impl BendApp {
@@ -87,6 +90,7 @@ impl BendApp {
             comparison_mode: false,
             search_state: SearchState::default(),
             bookmarks_state: bookmarks::BookmarksPanelState::default(),
+            header_protection: false,
         }
     }
 
@@ -193,6 +197,17 @@ impl BendApp {
                 RiskLevel::Critical => egui::Color32::from_rgba_unmultiplied(200, 80, 80, 50),
             }
         })
+    }
+
+    /// Check if an offset is in a protected region (header protection enabled + High/Critical risk)
+    pub fn is_offset_protected(&self, offset: usize) -> bool {
+        if !self.header_protection {
+            return false;
+        }
+
+        self.section_at_offset(offset)
+            .map(|section| matches!(section.risk, RiskLevel::High | RiskLevel::Critical))
+            .unwrap_or(false)
     }
 
     /// Open file dialog and load selected file
@@ -372,6 +387,10 @@ impl eframe::App for BendApp {
                         self.search_state.open_dialog();
                         ui.close_menu();
                     }
+                    ui.separator();
+                    if ui.add_enabled(has_file, egui::Checkbox::new(&mut self.header_protection, "Protect Headers")).changed() {
+                        // Checkbox already updates the value
+                    }
                 });
             });
         });
@@ -499,6 +518,7 @@ mod tests {
             comparison_mode: false,
             search_state: SearchState::default(),
             bookmarks_state: bookmarks::BookmarksPanelState::default(),
+            header_protection: false,
         }
     }
 
@@ -610,10 +630,43 @@ mod tests {
             comparison_mode: false,
             search_state: SearchState::default(),
             bookmarks_state: bookmarks::BookmarksPanelState::default(),
+            header_protection: false,
         };
 
         // Should return None when no sections cached
         assert!(app.section_at_offset(0).is_none());
         assert!(app.section_color_for_offset(0).is_none());
+    }
+
+    #[test]
+    fn test_header_protection() {
+        let sections = vec![
+            FileSection::new("Safe", 0, 10, RiskLevel::Safe),
+            FileSection::new("Caution", 10, 20, RiskLevel::Caution),
+            FileSection::new("High", 20, 30, RiskLevel::High),
+            FileSection::new("Critical", 30, 40, RiskLevel::Critical),
+        ];
+        let mut app = create_test_app_with_sections(sections);
+
+        // Header protection disabled - nothing protected
+        assert!(!app.header_protection);
+        assert!(!app.is_offset_protected(5));  // Safe
+        assert!(!app.is_offset_protected(15)); // Caution
+        assert!(!app.is_offset_protected(25)); // High
+        assert!(!app.is_offset_protected(35)); // Critical
+
+        // Enable header protection
+        app.header_protection = true;
+
+        // Safe and Caution still not protected
+        assert!(!app.is_offset_protected(5));
+        assert!(!app.is_offset_protected(15));
+
+        // High and Critical are now protected
+        assert!(app.is_offset_protected(25));
+        assert!(app.is_offset_protected(35));
+
+        // Offset outside any section is not protected
+        assert!(!app.is_offset_protected(100));
     }
 }

@@ -153,11 +153,11 @@ Prerequisites: 2.2-2.3 (hex view must support background colors)
 ## 15. Header Protection Toggle (P2)
 Prerequisites: Sections 7-8 (format parsing to identify header regions)
 
-- [ ] 15.1 Add Protect Headers toggle in toolbar
-- [ ] 15.2 Mark header/metadata sections as protected when enabled
-- [ ] 15.3 Block edits to protected regions with visual feedback
-- [ ] 15.4 Show protection status indicator in hex view
-- [ ] 15.5 Persist setting per-file (session only)
+- [x] 15.1 Add Protect Headers toggle in toolbar
+- [x] 15.2 Mark header/metadata sections as protected when enabled
+- [x] 15.3 Block edits to protected regions with visual feedback
+- [x] 15.4 Show protection status indicator in hex view
+- [x] 15.5 Persist setting per-file (session only)
 
 ## 16. High-Risk Edit Warnings (P3)
 - [ ] 16.1 Implement warning dialog component

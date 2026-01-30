@@ -56,6 +56,14 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
         app.editor.as_ref().map_or(false, |e| e.has_bookmark_at(offset))
     };
 
+    // Check if an offset is protected (header protection enabled)
+    let is_protected = |offset: usize| -> bool {
+        app.is_offset_protected(offset)
+    };
+
+    // Check if cursor is at a protected position
+    let cursor_protected = app.is_offset_protected(cursor_pos);
+
     egui::ScrollArea::vertical()
         .auto_shrink([false; 2])
         .show_viewport(ui, |ui, viewport| {
@@ -140,8 +148,9 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                         } else {
                             let text = format!("{:02X}", byte);
                             let mut rich_text = RichText::new(text).monospace();
+                            let byte_protected = is_protected(byte_offset);
 
-                            // Apply background color priority: selection > current_match > search_match > bookmark > section
+                            // Apply background color priority: selection > current_match > search_match > bookmark > protected > section
                             if is_selected {
                                 rich_text = rich_text.background_color(egui::Color32::from_rgb(40, 80, 40));
                             } else if is_current_match(byte_offset) {
@@ -153,6 +162,9 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                             } else if has_bookmark(byte_offset) {
                                 // Bookmark: cyan highlight
                                 rich_text = rich_text.background_color(egui::Color32::from_rgb(60, 160, 180));
+                            } else if byte_protected {
+                                // Protected region: red-tinted background with strikethrough effect
+                                rich_text = rich_text.background_color(egui::Color32::from_rgb(140, 50, 50));
                             } else if let Some(bg) = section_bg {
                                 rich_text = rich_text.background_color(bg);
                             }
@@ -307,12 +319,15 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
         }
 
         // Hex input (0-9, A-F) - nibble-level editing
-        for event in &i.events {
-            if let egui::Event::Text(text) = event {
-                for c in text.chars() {
-                    if let Some(nibble) = c.to_digit(16) {
-                        editor.edit_nibble(nibble as u8);
-                        needs_preview_update = true;
+        // Skip if cursor is at a protected position
+        if !cursor_protected {
+            for event in &i.events {
+                if let egui::Event::Text(text) = event {
+                    for c in text.chars() {
+                        if let Some(nibble) = c.to_digit(16) {
+                            editor.edit_nibble(nibble as u8);
+                            needs_preview_update = true;
+                        }
                     }
                 }
             }
