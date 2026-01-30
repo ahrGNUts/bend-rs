@@ -258,14 +258,13 @@ fn replace_all(app: &mut BendApp) -> Result<usize, String> {
     }
 
     let editor = app.editor.as_mut().ok_or("No file loaded")?;
-
-    // Collect all match positions (they don't change during replacement since we require same length)
-    let matches: Vec<usize> = app.search_state.matches.clone();
-    let count = matches.len();
+    let count = app.search_state.matches.len();
 
     // Apply all replacements
     // Since we require replacement to be same length, positions don't shift
-    for match_offset in matches {
+    // Note: We can borrow app.search_state.matches while editor is mutably borrowed
+    // because they are separate fields (split borrowing)
+    for &match_offset in &app.search_state.matches {
         for (i, &byte) in replacement.iter().enumerate() {
             let offset = match_offset + i;
             if offset < editor.len() {

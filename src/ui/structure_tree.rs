@@ -102,43 +102,45 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
         }
     };
 
-    // Use cached sections (parsed when file was loaded)
-    let Some(sections) = &app.cached_sections else {
-        ui.label("Unable to parse file structure");
-        return;
-    };
-
-    // Clone to avoid borrow issues with the mutable app reference below
-    let sections = sections.clone();
-
-    if sections.is_empty() {
-        ui.label("No structure detected");
-        return;
+    // Early return for missing or empty sections
+    match &app.cached_sections {
+        None => {
+            ui.label("Unable to parse file structure");
+            return;
+        }
+        Some(sections) if sections.is_empty() => {
+            ui.label("No structure detected");
+            return;
+        }
+        _ => {}
     }
 
     // Track clicked offset for navigation
     let mut clicked_offset: Option<usize> = None;
 
-    // Legend
-    ui.horizontal(|ui| {
-        ui.label("Risk:");
-        for risk in [RiskLevel::Safe, RiskLevel::Caution, RiskLevel::High, RiskLevel::Critical] {
-            ui.colored_label(risk.color(), risk.label());
-        }
-    });
-
-    ui.separator();
-
-    // Show sections
-    egui::ScrollArea::vertical()
-        .auto_shrink([false; 2])
-        .show(ui, |ui| {
-            for section in &sections {
-                show_section(ui, section, &mut clicked_offset, current_cursor);
+    // Scope the immutable borrow of sections for UI rendering
+    if let Some(sections) = &app.cached_sections {
+        // Legend
+        ui.horizontal(|ui| {
+            ui.label("Risk:");
+            for risk in [RiskLevel::Safe, RiskLevel::Caution, RiskLevel::High, RiskLevel::Critical] {
+                ui.colored_label(risk.color(), risk.label());
             }
         });
 
-    // Handle navigation
+        ui.separator();
+
+        // Show sections
+        egui::ScrollArea::vertical()
+            .auto_shrink([false; 2])
+            .show(ui, |ui| {
+                for section in sections {
+                    show_section(ui, section, &mut clicked_offset, current_cursor);
+                }
+            });
+    }
+
+    // Handle navigation - borrow of cached_sections has ended
     if let Some(offset) = clicked_offset {
         if let Some(editor) = &mut app.editor {
             editor.set_cursor(offset);

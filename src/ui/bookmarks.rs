@@ -18,13 +18,14 @@ pub struct BookmarksPanelState {
 
 /// Show the bookmarks panel
 pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelState) {
-    if app.editor.is_none() {
+    let Some(editor) = &app.editor else {
         ui.label("No file loaded");
         return;
-    }
+    };
 
     // Get cursor position before borrowing mutably
-    let cursor_pos = app.editor.as_ref().unwrap().cursor();
+    let cursor_pos = editor.cursor();
+    let bookmarks: Vec<_> = editor.bookmarks().all().iter().cloned().collect();
 
     // Add bookmark button
     ui.horizontal(|ui| {
@@ -37,9 +38,6 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
     });
 
     ui.separator();
-
-    let editor = app.editor.as_ref().unwrap();
-    let bookmarks = editor.bookmarks().all();
 
     if bookmarks.is_empty() {
         ui.label("No bookmarks yet");

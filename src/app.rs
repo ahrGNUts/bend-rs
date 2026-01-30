@@ -106,6 +106,17 @@ pub struct PendingEdit {
     pub risk_level: RiskLevel,
 }
 
+/// Actions triggered by keyboard/mouse input, processed after input handling
+#[derive(Default)]
+struct InputActions {
+    open: bool,
+    export: bool,
+    search: bool,
+    go_to: bool,
+    undo: bool,
+    redo: bool,
+}
+
 impl Default for BendApp {
     fn default() -> Self {
         Self {
@@ -362,94 +373,11 @@ impl BendApp {
         }
     }
 
-    /// Update the image preview texture from the working buffer
-    /// Uses debouncing to prevent excessive re-renders during rapid editing
-    pub fn update_preview(&mut self, ctx: &egui::Context) {
-        if !self.preview_dirty {
-            return;
-        }
+    /// Handle dropped files and keyboard shortcuts
+    /// Returns flags for deferred actions
+    fn handle_input(&mut self, ctx: &egui::Context) -> InputActions {
+        let mut actions = InputActions::default();
 
-        // Debounce: wait for edits to settle before re-rendering
-        if let Some(edit_time) = self.last_edit_time {
-            let elapsed = edit_time.elapsed();
-            let debounce_duration = std::time::Duration::from_millis(PREVIEW_DEBOUNCE_MS);
-            if elapsed < debounce_duration {
-                // Schedule a repaint after the remaining debounce time
-                let remaining = debounce_duration - elapsed;
-                ctx.request_repaint_after(remaining);
-                return;
-            }
-        }
-
-        let Some(editor) = &self.editor else {
-            return;
-        };
-
-        // Try to decode the working buffer as an image
-        match image::load_from_memory(editor.working()) {
-            Ok(img) => {
-                let rgba = img.to_rgba8();
-                let size = [rgba.width() as usize, rgba.height() as usize];
-                let pixels = rgba.into_raw();
-
-                let color_image = egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
-
-                self.preview_texture = Some(ctx.load_texture(
-                    "preview",
-                    color_image,
-                    egui::TextureOptions::LINEAR,
-                ));
-                self.decode_error = None;
-            }
-            Err(e) => {
-                log::warn!("Failed to decode image: {}", e);
-                self.decode_error = Some(format!("Decode error: {}", e));
-                // Keep the old texture as "last valid state"
-            }
-        }
-
-        // Also update original texture if not yet loaded
-        if self.original_texture.is_none() {
-            if let Ok(img) = image::load_from_memory(editor.original()) {
-                let rgba = img.to_rgba8();
-                let size = [rgba.width() as usize, rgba.height() as usize];
-                let pixels = rgba.into_raw();
-
-                let color_image = egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
-
-                self.original_texture = Some(ctx.load_texture(
-                    "original",
-                    color_image,
-                    egui::TextureOptions::LINEAR,
-                ));
-            }
-        }
-
-        self.preview_dirty = false;
-    }
-}
-
-impl eframe::App for BendApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Handle close confirmation
-        if self.pending_close {
-            self.settings.save();
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-            return;
-        }
-
-        // Handle deferred file opening from recent files menu
-        if let Some(path) = self.pending_open_path.take() {
-            self.open_file(path);
-        }
-
-        // Handle dropped files and keyboard shortcuts
-        let mut wants_open = false;
-        let mut wants_export = false;
-        let mut wants_search = false;
-        let mut wants_go_to = false;
-        let mut wants_undo_kb = false;
-        let mut wants_redo_kb = false;
         ctx.input(|i| {
             for file in &i.raw.dropped_files {
                 if let Some(path) = &file.path {
@@ -461,27 +389,27 @@ impl eframe::App for BendApp {
             let ctrl = i.modifiers.ctrl || i.modifiers.mac_cmd;
             let shift = i.modifiers.shift;
             if ctrl && i.key_pressed(egui::Key::O) {
-                wants_open = true;
+                actions.open = true;
             }
             if ctrl && i.key_pressed(egui::Key::E) && self.editor.is_some() {
-                wants_export = true;
+                actions.export = true;
             }
             if ctrl && i.key_pressed(egui::Key::F) && self.editor.is_some() {
-                wants_search = true;
+                actions.search = true;
             }
             if ctrl && i.key_pressed(egui::Key::G) && self.editor.is_some() {
-                wants_go_to = true;
+                actions.go_to = true;
             }
             // Undo: Ctrl+Z / Cmd+Z
             if ctrl && !shift && i.key_pressed(egui::Key::Z) && self.editor.is_some() {
-                wants_undo_kb = true;
+                actions.undo = true;
             }
             // Redo: Ctrl+Shift+Z / Cmd+Shift+Z (or Ctrl+Y on some platforms)
             if ctrl && shift && i.key_pressed(egui::Key::Z) && self.editor.is_some() {
-                wants_redo_kb = true;
+                actions.redo = true;
             }
             if ctrl && i.key_pressed(egui::Key::Y) && self.editor.is_some() {
-                wants_redo_kb = true;
+                actions.redo = true;
             }
             // F1: Show keyboard shortcuts help
             if i.key_pressed(egui::Key::F1) {
@@ -489,60 +417,68 @@ impl eframe::App for BendApp {
             }
         });
 
-        if wants_open {
+        actions
+    }
+
+    /// Process input actions (deferred to avoid borrow conflicts)
+    fn process_input_actions(&mut self, actions: InputActions) {
+        if actions.open {
             self.open_file_dialog();
         }
-        if wants_export {
+        if actions.export {
             self.export_file();
         }
-        if wants_search {
+        if actions.search {
             self.search_state.open_dialog();
         }
-        if wants_go_to {
+        if actions.go_to {
             self.go_to_offset_state.open_dialog();
         }
-        if wants_undo_kb {
+        if actions.undo {
             if let Some(editor) = &mut self.editor {
                 editor.undo();
                 self.mark_preview_dirty();
             }
         }
-        if wants_redo_kb {
+        if actions.redo {
             if let Some(editor) = &mut self.editor {
                 editor.redo();
                 self.mark_preview_dirty();
             }
         }
+    }
 
-        // Update preview if needed
-        self.update_preview(ctx);
-
-        // Close confirmation dialog
-        if self.show_close_dialog {
-            egui::Window::new("Unsaved Changes")
-                .collapsible(false)
-                .resizable(false)
-                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                .show(ctx, |ui| {
-                    ui.label("You have unsaved changes. Are you sure you want to exit?");
-                    ui.add_space(10.0);
-                    ui.horizontal(|ui| {
-                        if ui.button("Export First").clicked() {
-                            self.export_file();
-                            self.show_close_dialog = false;
-                        }
-                        if ui.button("Discard & Exit").clicked() {
-                            self.pending_close = true;
-                            self.show_close_dialog = false;
-                        }
-                        if ui.button("Cancel").clicked() {
-                            self.show_close_dialog = false;
-                        }
-                    });
-                });
+    /// Show the close confirmation dialog
+    fn show_close_dialog(&mut self, ctx: &egui::Context) {
+        if !self.show_close_dialog {
+            return;
         }
 
-        // Top menu bar
+        egui::Window::new("Unsaved Changes")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                ui.label("You have unsaved changes. Are you sure you want to exit?");
+                ui.add_space(10.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Export First").clicked() {
+                        self.export_file();
+                        self.show_close_dialog = false;
+                    }
+                    if ui.button("Discard & Exit").clicked() {
+                        self.pending_close = true;
+                        self.show_close_dialog = false;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        self.show_close_dialog = false;
+                    }
+                });
+            });
+    }
+
+    /// Render the top menu bar
+    fn render_menu_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
@@ -630,10 +566,13 @@ impl eframe::App for BendApp {
                 });
             });
         });
+    }
 
-        // Toolbar with common actions
+    /// Render the toolbar and return undo/redo action flags
+    fn render_toolbar(&mut self, ctx: &egui::Context) -> (bool, bool) {
         let mut wants_undo = false;
         let mut wants_redo = false;
+
         egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 let has_file = self.editor.is_some();
@@ -685,7 +624,11 @@ impl eframe::App for BendApp {
             });
         });
 
-        // Handle toolbar undo/redo actions
+        (wants_undo, wants_redo)
+    }
+
+    /// Process toolbar undo/redo actions
+    fn process_toolbar_actions(&mut self, wants_undo: bool, wants_redo: bool) {
         if wants_undo {
             if let Some(editor) = &mut self.editor {
                 editor.undo();
@@ -698,20 +641,18 @@ impl eframe::App for BendApp {
                 self.mark_preview_dirty();
             }
         }
+    }
 
-        // Show search dialog if open
+    /// Show all modal dialogs
+    fn show_dialogs(&mut self, ctx: &egui::Context) {
         search_dialog::show(ctx, self);
-
-        // Show go to offset dialog if open
         go_to_offset_dialog::show(ctx, self);
-
-        // Show keyboard shortcuts help dialog if open
         shortcuts_dialog::show(ctx, &mut self.shortcuts_dialog_state);
-
-        // Show high-risk edit warning dialog if there's a pending edit
         self.show_high_risk_warning_dialog(ctx);
+    }
 
-        // Status bar at bottom
+    /// Render the status bar
+    fn render_status_bar(&self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 // Unsaved changes indicator
@@ -734,46 +675,52 @@ impl eframe::App for BendApp {
                 }
             });
         });
+    }
 
-        // Structure tree sidebar (when file is loaded)
-        if self.editor.is_some() {
-            egui::SidePanel::left("structure_panel")
-                .resizable(true)
-                .default_width(250.0)
-                .min_width(150.0)
-                .show(ctx, |ui| {
-                    // File structure section
-                    egui::CollapsingHeader::new("File Structure")
-                        .default_open(true)
-                        .show(ui, |ui| {
-                            structure_tree::show(ui, self);
-                        });
-
-                    ui.add_space(10.0);
-
-                    // Save points section
-                    egui::CollapsingHeader::new("Save Points")
-                        .default_open(true)
-                        .show(ui, |ui| {
-                            let mut state = std::mem::take(&mut self.savepoints_state);
-                            savepoints::show(ui, self, &mut state);
-                            self.savepoints_state = state;
-                        });
-
-                    ui.add_space(10.0);
-
-                    // Bookmarks section
-                    egui::CollapsingHeader::new("Bookmarks")
-                        .default_open(true)
-                        .show(ui, |ui| {
-                            let mut state = std::mem::take(&mut self.bookmarks_state);
-                            bookmarks::show(ui, self, &mut state);
-                            self.bookmarks_state = state;
-                        });
-                });
+    /// Render the sidebar with structure tree, save points, and bookmarks
+    fn render_sidebar(&mut self, ctx: &egui::Context) {
+        if self.editor.is_none() {
+            return;
         }
 
-        // Main content area with split view
+        egui::SidePanel::left("structure_panel")
+            .resizable(true)
+            .default_width(250.0)
+            .min_width(150.0)
+            .show(ctx, |ui| {
+                // File structure section
+                egui::CollapsingHeader::new("File Structure")
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        structure_tree::show(ui, self);
+                    });
+
+                ui.add_space(10.0);
+
+                // Save points section
+                egui::CollapsingHeader::new("Save Points")
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        let mut state = std::mem::take(&mut self.savepoints_state);
+                        savepoints::show(ui, self, &mut state);
+                        self.savepoints_state = state;
+                    });
+
+                ui.add_space(10.0);
+
+                // Bookmarks section
+                egui::CollapsingHeader::new("Bookmarks")
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        let mut state = std::mem::take(&mut self.bookmarks_state);
+                        bookmarks::show(ui, self, &mut state);
+                        self.bookmarks_state = state;
+                    });
+            });
+    }
+
+    /// Render the main content area with hex editor and image preview
+    fn render_main_content(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default().show(ctx, |ui| {
             if self.editor.is_some() {
                 // Split view: hex editor on left, image preview on right
@@ -807,6 +754,105 @@ impl eframe::App for BendApp {
                 });
             }
         });
+    }
+
+    /// Update the image preview texture from the working buffer
+    /// Uses debouncing to prevent excessive re-renders during rapid editing
+    pub fn update_preview(&mut self, ctx: &egui::Context) {
+        if !self.preview_dirty {
+            return;
+        }
+
+        // Debounce: wait for edits to settle before re-rendering
+        if let Some(edit_time) = self.last_edit_time {
+            let elapsed = edit_time.elapsed();
+            let debounce_duration = std::time::Duration::from_millis(PREVIEW_DEBOUNCE_MS);
+            if elapsed < debounce_duration {
+                // Schedule a repaint after the remaining debounce time
+                let remaining = debounce_duration - elapsed;
+                ctx.request_repaint_after(remaining);
+                return;
+            }
+        }
+
+        let Some(editor) = &self.editor else {
+            return;
+        };
+
+        // Try to decode the working buffer as an image
+        match image::load_from_memory(editor.working()) {
+            Ok(img) => {
+                let rgba = img.to_rgba8();
+                let size = [rgba.width() as usize, rgba.height() as usize];
+                let pixels = rgba.into_raw();
+
+                let color_image = egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
+
+                self.preview_texture = Some(ctx.load_texture(
+                    "preview",
+                    color_image,
+                    egui::TextureOptions::LINEAR,
+                ));
+                self.decode_error = None;
+            }
+            Err(e) => {
+                log::warn!("Failed to decode image: {}", e);
+                self.decode_error = Some(format!("Decode error: {}", e));
+                // Keep the old texture as "last valid state"
+            }
+        }
+
+        // Also update original texture if not yet loaded
+        if self.original_texture.is_none() {
+            if let Ok(img) = image::load_from_memory(editor.original()) {
+                let rgba = img.to_rgba8();
+                let size = [rgba.width() as usize, rgba.height() as usize];
+                let pixels = rgba.into_raw();
+
+                let color_image = egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
+
+                self.original_texture = Some(ctx.load_texture(
+                    "original",
+                    color_image,
+                    egui::TextureOptions::LINEAR,
+                ));
+            }
+        }
+
+        self.preview_dirty = false;
+    }
+}
+
+impl eframe::App for BendApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Handle close confirmation
+        if self.pending_close {
+            self.settings.save();
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            return;
+        }
+
+        // Handle deferred file opening from recent files menu
+        if let Some(path) = self.pending_open_path.take() {
+            self.open_file(path);
+        }
+
+        // Handle input and process actions
+        let input_actions = self.handle_input(ctx);
+        self.process_input_actions(input_actions);
+
+        // Update preview if needed
+        self.update_preview(ctx);
+
+        // Render UI components
+        self.show_close_dialog(ctx);
+        self.render_menu_bar(ctx);
+        let (wants_undo, wants_redo) = self.render_toolbar(ctx);
+        self.process_toolbar_actions(wants_undo, wants_redo);
+        self.show_dialogs(ctx);
+        self.render_status_bar(ctx);
+        self.render_sidebar(ctx);
+        self.render_main_content(ctx);
     }
 }
 
