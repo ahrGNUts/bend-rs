@@ -132,7 +132,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
 
         // Show sections
         egui::ScrollArea::vertical()
-            .auto_shrink([false; 2])
+            .auto_shrink([false, true])
             .show(ui, |ui| {
                 for section in sections {
                     show_section(ui, section, &mut clicked_offset, current_cursor);
