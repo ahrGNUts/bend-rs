@@ -2,7 +2,7 @@
 
 use crate::editor::{EditorState, GoToOffsetState, SearchState};
 use crate::formats::{parse_file, FileSection, RiskLevel};
-use crate::ui::{bookmarks, go_to_offset_dialog, hex_editor::{self, ContextMenuState}, image_preview, savepoints, search_dialog, structure_tree};
+use crate::ui::{bookmarks, go_to_offset_dialog, hex_editor::{self, ContextMenuState}, image_preview, savepoints, search_dialog, shortcuts_dialog::{self, ShortcutsDialogState}, structure_tree};
 use eframe::egui;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -83,6 +83,9 @@ pub struct BendApp {
 
     /// Context menu state for hex editor
     pub context_menu_state: ContextMenuState,
+
+    /// Keyboard shortcuts help dialog state
+    pub shortcuts_dialog_state: ShortcutsDialogState,
 }
 
 /// A pending edit awaiting user confirmation
@@ -118,6 +121,7 @@ impl Default for BendApp {
             suppress_high_risk_warnings: false,
             pending_high_risk_edit: None,
             context_menu_state: ContextMenuState::default(),
+            shortcuts_dialog_state: ShortcutsDialogState::default(),
         }
     }
 }
@@ -453,6 +457,10 @@ impl eframe::App for BendApp {
             if ctrl && i.key_pressed(egui::Key::Y) && self.editor.is_some() {
                 wants_redo_kb = true;
             }
+            // F1: Show keyboard shortcuts help
+            if i.key_pressed(egui::Key::F1) {
+                self.shortcuts_dialog_state.open_dialog();
+            }
         });
 
         if wants_open {
@@ -556,6 +564,12 @@ impl eframe::App for BendApp {
                         ui.add_enabled(false, egui::Button::new("High-Risk Warnings: Enabled"));
                     }
                 });
+                ui.menu_button("Help", |ui| {
+                    if ui.button("Keyboard Shortcuts").clicked() {
+                        self.shortcuts_dialog_state.open_dialog();
+                        ui.close_menu();
+                    }
+                });
             });
         });
 
@@ -632,6 +646,9 @@ impl eframe::App for BendApp {
 
         // Show go to offset dialog if open
         go_to_offset_dialog::show(ctx, self);
+
+        // Show keyboard shortcuts help dialog if open
+        shortcuts_dialog::show(ctx, &mut self.shortcuts_dialog_state);
 
         // Show high-risk edit warning dialog if there's a pending edit
         self.show_high_risk_warning_dialog(ctx);
