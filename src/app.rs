@@ -1,7 +1,7 @@
 //! Main application state and egui integration
 
 use crate::editor::EditorState;
-use crate::ui::{hex_editor, image_preview, structure_tree};
+use crate::ui::{hex_editor, image_preview, savepoints, structure_tree};
 use eframe::egui;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -51,6 +51,9 @@ pub struct BendApp {
 
     /// Timestamp of last edit (for debouncing preview updates)
     last_edit_time: Option<Instant>,
+
+    /// State for the save points panel
+    savepoints_state: savepoints::SavePointsPanelState,
 }
 
 impl BendApp {
@@ -65,6 +68,7 @@ impl BendApp {
             show_close_dialog: false,
             pending_close: false,
             last_edit_time: None,
+            savepoints_state: savepoints::SavePointsPanelState::default(),
         }
     }
 
@@ -335,9 +339,23 @@ impl eframe::App for BendApp {
                 .default_width(250.0)
                 .min_width(150.0)
                 .show(ctx, |ui| {
-                    ui.heading("File Structure");
-                    ui.separator();
-                    structure_tree::show(ui, self);
+                    // File structure section
+                    egui::CollapsingHeader::new("File Structure")
+                        .default_open(true)
+                        .show(ui, |ui| {
+                            structure_tree::show(ui, self);
+                        });
+
+                    ui.add_space(10.0);
+
+                    // Save points section
+                    egui::CollapsingHeader::new("Save Points")
+                        .default_open(true)
+                        .show(ui, |ui| {
+                            let mut state = std::mem::take(&mut self.savepoints_state);
+                            savepoints::show(ui, self, &mut state);
+                            self.savepoints_state = state;
+                        });
                 });
         }
 

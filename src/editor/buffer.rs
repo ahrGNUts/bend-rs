@@ -18,6 +18,7 @@
 //! 4. Export writes working buffer to a new location
 
 use super::history::{EditOperation, History};
+use super::savepoints::{SavePoint, SavePointManager};
 
 /// Which nibble (half-byte) is currently being edited
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -39,6 +40,9 @@ pub struct EditorState {
     /// Edit history for undo/redo
     history: History,
 
+    /// Save point manager for named snapshots
+    save_points: SavePointManager,
+
     /// Current cursor position in the buffer
     cursor: usize,
 
@@ -58,10 +62,12 @@ pub struct EditorState {
 impl EditorState {
     /// Create a new editor state from file bytes
     pub fn new(bytes: Vec<u8>) -> Self {
+        let save_points = SavePointManager::new(&bytes);
         Self {
             working: bytes.clone(),
             original: bytes,
             history: History::new(),
+            save_points,
             cursor: 0,
             nibble: NibblePosition::High,
             selection: None,
@@ -358,6 +364,67 @@ impl EditorState {
     pub fn is_empty(&self) -> bool {
         self.working.is_empty()
     }
+
+    // ========== Save Points ==========
+
+    /// Create a new save point with the current state
+    pub fn create_save_point(&mut self, name: String) -> u64 {
+        self.save_points.create(name, &self.working)
+    }
+
+    /// Get all save points
+    pub fn save_points(&self) -> &[SavePoint] {
+        self.save_points.save_points()
+    }
+
+    /// Restore the buffer to a specific save point
+    ///
+    /// This operation is undoable - the entire restoration is recorded as a
+    /// single edit operation.
+    ///
+    /// Returns true if restoration was successful
+    pub fn restore_save_point(&mut self, id: u64) -> bool {
+        let Some(restored) = self.save_points.restore(id, &self.original) else {
+            return false;
+        };
+
+        // Record the restoration as a range edit for undo support
+        let old_values = self.working.clone();
+        let new_values = restored.clone();
+
+        // Only record if there's actually a change
+        if old_values != new_values {
+            self.history.push(super::history::EditOperation::Range {
+                offset: 0,
+                old_values,
+                new_values: new_values.clone(),
+            });
+        }
+
+        self.working = restored;
+        self.modified = self.working != self.original;
+        true
+    }
+
+    /// Rename a save point
+    pub fn rename_save_point(&mut self, id: u64, new_name: String) -> bool {
+        self.save_points.rename(id, new_name)
+    }
+
+    /// Check if a save point can be deleted
+    pub fn can_delete_save_point(&self, id: u64) -> bool {
+        self.save_points.can_delete(id)
+    }
+
+    /// Delete a save point (only leaf save points can be deleted)
+    pub fn delete_save_point(&mut self, id: u64) -> bool {
+        self.save_points.delete(id)
+    }
+
+    /// Get the number of save points
+    pub fn save_point_count(&self) -> usize {
+        self.save_points.len()
+    }
 }
 
 #[cfg(test)]
@@ -570,5 +637,66 @@ mod tests {
         editor.move_cursor_with_selection(1);
         // New anchor should be at current cursor (2), selecting to 3
         assert_eq!(editor.selection(), Some((2, 4)));
+    }
+
+    #[test]
+    fn test_save_point_create_and_restore() {
+        let data = vec![0x00, 0x01, 0x02, 0x03];
+        let mut editor = EditorState::new(data.clone());
+
+        // Make some edits
+        editor.edit_nibble(0xA);
+        editor.edit_nibble(0xB);
+        assert_eq!(editor.working()[0], 0xAB);
+
+        // Create a save point
+        let sp_id = editor.create_save_point("First checkpoint".to_string());
+        assert_eq!(editor.save_point_count(), 1);
+
+        // Make more edits
+        editor.edit_nibble(0xC);
+        editor.edit_nibble(0xD);
+        assert_eq!(editor.working()[1], 0xCD);
+
+        // Restore to save point
+        assert!(editor.restore_save_point(sp_id));
+        assert_eq!(editor.working()[0], 0xAB);
+        assert_eq!(editor.working()[1], 0x01); // Should be back to original
+
+        // Undo should restore the state before the save point restoration
+        assert!(editor.undo());
+        assert_eq!(editor.working()[1], 0xCD);
+    }
+
+    #[test]
+    fn test_save_point_rename() {
+        let data = vec![0x00, 0x01, 0x02, 0x03];
+        let mut editor = EditorState::new(data);
+
+        let sp_id = editor.create_save_point("Original name".to_string());
+        assert!(editor.rename_save_point(sp_id, "New name".to_string()));
+
+        let sps = editor.save_points();
+        assert_eq!(sps[0].name, "New name");
+    }
+
+    #[test]
+    fn test_save_point_delete() {
+        let data = vec![0x00, 0x01, 0x02, 0x03];
+        let mut editor = EditorState::new(data);
+
+        let sp1 = editor.create_save_point("SP1".to_string());
+        let sp2 = editor.create_save_point("SP2".to_string());
+
+        // Can only delete leaf (sp2)
+        assert!(!editor.can_delete_save_point(sp1));
+        assert!(editor.can_delete_save_point(sp2));
+
+        assert!(editor.delete_save_point(sp2));
+        assert_eq!(editor.save_point_count(), 1);
+
+        // Now sp1 is the leaf
+        assert!(editor.delete_save_point(sp1));
+        assert_eq!(editor.save_point_count(), 0);
     }
 }

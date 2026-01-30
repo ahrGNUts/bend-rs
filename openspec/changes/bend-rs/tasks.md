@@ -64,19 +64,19 @@
 - [x] 5.5 Prompt before closing with unsaved changes
 
 ## 6. Save Points (P1)
-- [ ] 6.1 Design save point data structure
+- [x] 6.1 Design save point data structure
   - Store: name, timestamp, Vec<(offset, old_byte, new_byte)> as diff from previous save point
   - First save point diffs from original file
   - Restore by: reset to original, apply chain of diffs up to target
   - Memory: only stores incremental changes between save points
   - Note: deletion must either recompute successor's diff or prevent deleting non-leaf save points
-- [ ] 6.2 Implement Create Save Point action
-- [ ] 6.3 Add save points list UI (sidebar or dropdown)
-- [ ] 6.4 Implement Restore Save Point action
-- [ ] 6.5 Make restore operation undoable
-- [ ] 6.6 Allow naming/renaming save points
-- [ ] 6.7 Allow deleting save points
-- [ ] 6.8 Handle save point deletion in chain
+- [x] 6.2 Implement Create Save Point action
+- [x] 6.3 Add save points list UI (sidebar or dropdown)
+- [x] 6.4 Implement Restore Save Point action
+- [x] 6.5 Make restore operation undoable
+- [x] 6.6 Allow naming/renaming save points
+- [x] 6.7 Allow deleting save points
+- [x] 6.8 Handle save point deletion in chain
   - Either recompute successor's diff or restrict to leaf-only deletion
   - Update UI to reflect deletion constraints
 

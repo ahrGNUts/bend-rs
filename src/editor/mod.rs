@@ -2,6 +2,7 @@
 
 pub mod buffer;
 mod history;
+pub mod savepoints;
 
 pub use buffer::{EditorState, NibblePosition};
-pub use history::{EditOperation, History};
+pub use savepoints::{SavePoint, SavePointManager};
