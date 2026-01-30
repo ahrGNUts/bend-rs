@@ -4,26 +4,6 @@ use crate::app::BendApp;
 use crate::formats::{FileSection, RiskLevel};
 use eframe::egui::{self, RichText};
 
-/// Get the color for a risk level
-fn risk_color(risk: RiskLevel) -> egui::Color32 {
-    match risk {
-        RiskLevel::Safe => egui::Color32::from_rgb(100, 200, 100),      // Green
-        RiskLevel::Caution => egui::Color32::from_rgb(200, 180, 80),    // Yellow
-        RiskLevel::High => egui::Color32::from_rgb(200, 130, 80),       // Orange
-        RiskLevel::Critical => egui::Color32::from_rgb(200, 80, 80),    // Red
-    }
-}
-
-/// Get a risk level label
-fn risk_label(risk: RiskLevel) -> &'static str {
-    match risk {
-        RiskLevel::Safe => "Safe",
-        RiskLevel::Caution => "Caution",
-        RiskLevel::High => "High Risk",
-        RiskLevel::Critical => "Critical",
-    }
-}
-
 /// Show a single section in the tree
 fn show_section(
     ui: &mut egui::Ui,
@@ -34,7 +14,7 @@ fn show_section(
     let is_cursor_in_section = current_cursor >= section.start && current_cursor < section.end;
 
     // Color the section name based on risk level
-    let color = risk_color(section.risk);
+    let color = section.risk.color();
     let mut name = RichText::new(&section.name).color(color);
 
     if is_cursor_in_section {
@@ -143,7 +123,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
     ui.horizontal(|ui| {
         ui.label("Risk:");
         for risk in [RiskLevel::Safe, RiskLevel::Caution, RiskLevel::High, RiskLevel::Critical] {
-            ui.colored_label(risk_color(risk), risk_label(risk));
+            ui.colored_label(risk.color(), risk.label());
         }
     });
 

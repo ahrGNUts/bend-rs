@@ -164,7 +164,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut SavePointsPanelSta
 
     if let Some(id) = action_delete {
         if let Some(editor) = &mut app.editor {
-            editor.delete_save_point(id);
+            let _ = editor.delete_save_point(id);
         }
     }
 
@@ -175,7 +175,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut SavePointsPanelSta
 
     if let Some((id, new_name)) = action_finish_rename {
         if let Some(editor) = &mut app.editor {
-            editor.rename_save_point(id, new_name);
+            let _ = editor.rename_save_point(id, new_name);
         }
     }
 }

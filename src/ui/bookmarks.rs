@@ -175,7 +175,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
             }
             BookmarkAction::FinishRename(id, name) => {
                 if let Some(editor) = &mut app.editor {
-                    editor.bookmarks_mut().rename(id, name);
+                    let _ = editor.bookmarks_mut().rename(id, name);
                 }
                 state.renaming = None;
                 state.rename_text.clear();
@@ -190,7 +190,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
             }
             BookmarkAction::FinishAnnotation(id, annotation) => {
                 if let Some(editor) = &mut app.editor {
-                    editor.bookmarks_mut().set_annotation(id, annotation);
+                    let _ = editor.bookmarks_mut().set_annotation(id, annotation);
                 }
                 state.editing_annotation = None;
                 state.annotation_text.clear();
@@ -201,7 +201,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
             }
             BookmarkAction::Delete(id) => {
                 if let Some(editor) = &mut app.editor {
-                    editor.remove_bookmark(id);
+                    let _ = editor.remove_bookmark(id);
                 }
             }
         }

@@ -126,6 +126,7 @@ impl EditorState {
 
     /// Edit the current nibble with a hex digit (0-15)
     /// Returns true if cursor should advance to next byte
+    #[must_use = "returns whether the cursor advanced to the next byte"]
     pub fn edit_nibble(&mut self, nibble_value: u8) -> bool {
         if self.cursor >= self.working.len() || nibble_value > 15 {
             return false;
@@ -292,6 +293,7 @@ impl EditorState {
     }
 
     /// Undo the last edit operation
+    #[must_use = "returns whether an operation was undone"]
     pub fn undo(&mut self) -> bool {
         if let Some(op) = self.history.undo() {
             match op {
@@ -316,6 +318,7 @@ impl EditorState {
     }
 
     /// Redo the last undone operation
+    #[must_use = "returns whether an operation was redone"]
     pub fn redo(&mut self) -> bool {
         if let Some(op) = self.history.redo() {
             match op {
@@ -388,6 +391,7 @@ impl EditorState {
     /// single edit operation.
     ///
     /// Returns true if restoration was successful
+    #[must_use = "returns whether the restore was successful"]
     pub fn restore_save_point(&mut self, id: u64) -> bool {
         let Some(restored) = self.save_points.restore(id, &self.original) else {
             return false;
@@ -412,6 +416,7 @@ impl EditorState {
     }
 
     /// Rename a save point
+    #[must_use = "returns whether the save point was found and renamed"]
     pub fn rename_save_point(&mut self, id: u64, new_name: String) -> bool {
         self.save_points.rename(id, new_name)
     }
@@ -422,6 +427,7 @@ impl EditorState {
     }
 
     /// Delete a save point (only leaf save points can be deleted)
+    #[must_use = "returns whether the save point was deleted"]
     pub fn delete_save_point(&mut self, id: u64) -> bool {
         self.save_points.delete(id)
     }
@@ -439,6 +445,7 @@ impl EditorState {
     }
 
     /// Remove a bookmark by ID
+    #[must_use = "returns whether the bookmark was found and removed"]
     pub fn remove_bookmark(&mut self, id: u64) -> bool {
         self.bookmarks.remove(id)
     }

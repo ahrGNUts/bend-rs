@@ -90,8 +90,8 @@ pub struct PendingEdit {
     pub risk_level: RiskLevel,
 }
 
-impl BendApp {
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+impl Default for BendApp {
+    fn default() -> Self {
         Self {
             editor: None,
             current_file: None,
@@ -111,6 +111,12 @@ impl BendApp {
             suppress_high_risk_warnings: false,
             pending_high_risk_edit: None,
         }
+    }
+}
+
+impl BendApp {
+    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+        Self::default()
     }
 
     /// Mark the preview as needing update (with debounce timestamp)
@@ -206,16 +212,7 @@ impl BendApp {
 
     /// Get the background color for a byte based on its section's risk level
     pub fn section_color_for_offset(&self, offset: usize) -> Option<egui::Color32> {
-        self.section_at_offset(offset).map(|section| {
-            // Use subtle but visible background colors for the hex view
-            // Alpha of 50 provides good visibility while maintaining text readability
-            match section.risk {
-                RiskLevel::Safe => egui::Color32::from_rgba_unmultiplied(100, 200, 100, 50),
-                RiskLevel::Caution => egui::Color32::from_rgba_unmultiplied(200, 180, 80, 50),
-                RiskLevel::High => egui::Color32::from_rgba_unmultiplied(200, 130, 80, 50),
-                RiskLevel::Critical => egui::Color32::from_rgba_unmultiplied(200, 80, 80, 50),
-            }
-        })
+        self.section_at_offset(offset).map(|section| section.risk.background_color())
     }
 
     /// Check if an offset is in a protected region (header protection enabled + High/Critical risk)
@@ -310,7 +307,7 @@ impl BendApp {
         if should_proceed {
             // Apply the edit
             if let Some(editor) = &mut self.editor {
-                editor.edit_nibble(pending.nibble_value);
+                let _ = editor.edit_nibble(pending.nibble_value);
                 self.mark_preview_dirty();
             }
             if dont_show_again {
@@ -629,23 +626,8 @@ mod tests {
     /// Helper to create a test app with cached sections
     fn create_test_app_with_sections(sections: Vec<FileSection>) -> BendApp {
         BendApp {
-            editor: None,
-            current_file: None,
-            preview_texture: None,
-            original_texture: None,
-            preview_dirty: false,
-            decode_error: None,
-            show_close_dialog: false,
-            pending_close: false,
-            last_edit_time: None,
-            savepoints_state: savepoints::SavePointsPanelState::default(),
             cached_sections: Some(sections),
-            comparison_mode: false,
-            search_state: SearchState::default(),
-            bookmarks_state: bookmarks::BookmarksPanelState::default(),
-            header_protection: false,
-            suppress_high_risk_warnings: false,
-            pending_high_risk_edit: None,
+            ..Default::default()
         }
     }
 
@@ -742,25 +724,7 @@ mod tests {
 
     #[test]
     fn test_section_at_offset_no_sections() {
-        let app = BendApp {
-            editor: None,
-            current_file: None,
-            preview_texture: None,
-            original_texture: None,
-            preview_dirty: false,
-            decode_error: None,
-            show_close_dialog: false,
-            pending_close: false,
-            last_edit_time: None,
-            savepoints_state: savepoints::SavePointsPanelState::default(),
-            cached_sections: None,
-            comparison_mode: false,
-            search_state: SearchState::default(),
-            bookmarks_state: bookmarks::BookmarksPanelState::default(),
-            header_protection: false,
-            suppress_high_risk_warnings: false,
-            pending_high_risk_edit: None,
-        };
+        let app = BendApp::default();
 
         // Should return None when no sections cached
         assert!(app.section_at_offset(0).is_none());

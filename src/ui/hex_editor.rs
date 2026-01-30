@@ -11,6 +11,18 @@ const BYTES_PER_ROW: usize = 16;
 /// Number of rows to render above/below viewport for smooth scrolling
 const BUFFER_ROWS: usize = 2;
 
+/// Spacing between offset column and hex bytes
+const OFFSET_HEX_SPACING: f32 = 8.0;
+
+/// Spacing between hex byte groups (after every 8 bytes)
+const HEX_GROUP_SPACING: f32 = 8.0;
+
+/// Spacing between hex bytes and ASCII column
+const HEX_ASCII_SPACING: f32 = 16.0;
+
+/// Approximate width of a hex byte display ("XX ")
+const HEX_BYTE_WIDTH: f32 = 24.0;
+
 /// Show the hex editor panel
 pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
     let Some(editor) = &app.editor else {
@@ -101,13 +113,13 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                             .color(egui::Color32::GRAY),
                     );
 
-                    ui.add_space(8.0);
+                    ui.add_space(OFFSET_HEX_SPACING);
 
                     // Hex bytes
                     for (i, byte) in row_bytes.iter().enumerate() {
                         // Space after every 8 bytes
                         if i == 8 {
-                            ui.add_space(8.0);
+                            ui.add_space(HEX_GROUP_SPACING);
                         }
 
                         let byte_offset = offset + i;
@@ -183,10 +195,10 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                     // Pad remaining space if row is incomplete
                     let missing = BYTES_PER_ROW - row_bytes.len();
                     if missing > 0 {
-                        ui.add_space(missing as f32 * 24.0); // Approximate width of "XX "
+                        ui.add_space(missing as f32 * HEX_BYTE_WIDTH);
                     }
 
-                    ui.add_space(16.0);
+                    ui.add_space(HEX_ASCII_SPACING);
 
                     // ASCII column
                     ui.label(
@@ -339,7 +351,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                                     pending_high_risk_edit = Some((nibble as u8, cursor_pos, risk));
                                 }
                             } else {
-                                editor.edit_nibble(nibble as u8);
+                                let _ = editor.edit_nibble(nibble as u8);
                                 needs_preview_update = true;
                             }
                         }

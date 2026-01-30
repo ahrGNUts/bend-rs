@@ -1,5 +1,7 @@
 //! Bookmarks and annotations for the hex editor
 
+use std::collections::HashMap;
+
 /// A bookmark marking a specific offset in the file with an optional annotation
 #[derive(Debug, Clone)]
 pub struct Bookmark {
@@ -26,12 +28,23 @@ impl Bookmark {
 }
 
 /// Manager for bookmarks in the current file
-#[derive(Default)]
 pub struct BookmarkManager {
     /// All bookmarks, sorted by offset
     bookmarks: Vec<Bookmark>,
+    /// Index lookup by ID for O(1) access
+    id_to_index: HashMap<u64, usize>,
     /// Next ID to assign
     next_id: u64,
+}
+
+impl Default for BookmarkManager {
+    fn default() -> Self {
+        Self {
+            bookmarks: Vec::new(),
+            id_to_index: HashMap::new(),
+            next_id: 0,
+        }
+    }
 }
 
 impl BookmarkManager {
@@ -51,13 +64,27 @@ impl BookmarkManager {
         // Keep bookmarks sorted by offset
         self.bookmarks.sort_by_key(|b| b.offset);
 
+        // Rebuild the index map after sorting
+        self.rebuild_index();
+
         id
     }
 
+    /// Rebuild the ID -> index map after structural changes
+    fn rebuild_index(&mut self) {
+        self.id_to_index.clear();
+        for (index, bookmark) in self.bookmarks.iter().enumerate() {
+            self.id_to_index.insert(bookmark.id, index);
+        }
+    }
+
     /// Remove a bookmark by ID
+    #[must_use = "returns whether the bookmark was found and removed"]
     pub fn remove(&mut self, id: u64) -> bool {
-        if let Some(pos) = self.bookmarks.iter().position(|b| b.id == id) {
-            self.bookmarks.remove(pos);
+        if let Some(&index) = self.id_to_index.get(&id) {
+            self.bookmarks.remove(index);
+            // Rebuild index after removal (indices shift)
+            self.rebuild_index();
             true
         } else {
             false
@@ -66,12 +93,16 @@ impl BookmarkManager {
 
     /// Get a bookmark by ID
     pub fn get(&self, id: u64) -> Option<&Bookmark> {
-        self.bookmarks.iter().find(|b| b.id == id)
+        self.id_to_index.get(&id).map(|&i| &self.bookmarks[i])
     }
 
     /// Get a mutable reference to a bookmark by ID
     pub fn get_mut(&mut self, id: u64) -> Option<&mut Bookmark> {
-        self.bookmarks.iter_mut().find(|b| b.id == id)
+        if let Some(&index) = self.id_to_index.get(&id) {
+            Some(&mut self.bookmarks[index])
+        } else {
+            None
+        }
     }
 
     /// Get all bookmarks
@@ -80,6 +111,7 @@ impl BookmarkManager {
     }
 
     /// Rename a bookmark
+    #[must_use = "returns whether the bookmark was found and renamed"]
     pub fn rename(&mut self, id: u64, new_name: String) -> bool {
         if let Some(bookmark) = self.get_mut(id) {
             bookmark.name = new_name;
@@ -90,6 +122,7 @@ impl BookmarkManager {
     }
 
     /// Set the annotation for a bookmark
+    #[must_use = "returns whether the bookmark was found and annotation was set"]
     pub fn set_annotation(&mut self, id: u64, annotation: String) -> bool {
         if let Some(bookmark) = self.get_mut(id) {
             bookmark.annotation = annotation;
@@ -122,6 +155,7 @@ impl BookmarkManager {
     /// Clear all bookmarks
     pub fn clear(&mut self) {
         self.bookmarks.clear();
+        self.id_to_index.clear();
     }
 }
 

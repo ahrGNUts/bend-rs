@@ -21,6 +21,7 @@
 //! - Allows restoring to any point in the chain
 //! - Requires careful handling when deleting non-leaf save points
 
+use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// A single byte change in a diff
@@ -71,6 +72,9 @@ pub struct SavePointManager {
     /// Index 0 is the first save point (diff from original)
     save_points: Vec<SavePoint>,
 
+    /// Index lookup by ID for O(1) access
+    id_to_index: HashMap<u64, usize>,
+
     /// Counter for generating unique save point IDs
     next_id: u64,
 
@@ -84,6 +88,7 @@ impl SavePointManager {
     pub fn new(original_bytes: &[u8]) -> Self {
         Self {
             save_points: Vec::new(),
+            id_to_index: HashMap::new(),
             next_id: 1,
             last_save_point_state: original_bytes.to_vec(),
         }
@@ -96,12 +101,16 @@ impl SavePointManager {
 
     /// Get a save point by ID
     pub fn get(&self, id: u64) -> Option<&SavePoint> {
-        self.save_points.iter().find(|sp| sp.id == id)
+        self.id_to_index.get(&id).map(|&i| &self.save_points[i])
     }
 
     /// Get a mutable reference to a save point by ID
     pub fn get_mut(&mut self, id: u64) -> Option<&mut SavePoint> {
-        self.save_points.iter_mut().find(|sp| sp.id == id)
+        if let Some(&index) = self.id_to_index.get(&id) {
+            Some(&mut self.save_points[index])
+        } else {
+            None
+        }
     }
 
     /// Create a new save point from the current working buffer state
@@ -115,7 +124,9 @@ impl SavePointManager {
         self.next_id += 1;
 
         let save_point = SavePoint::new(id, name, diff);
+        let index = self.save_points.len();
         self.save_points.push(save_point);
+        self.id_to_index.insert(id, index);
 
         // Update last save point state to current
         self.last_save_point_state = current_state.to_vec();
@@ -146,6 +157,7 @@ impl SavePointManager {
     }
 
     /// Rename a save point
+    #[must_use = "returns whether the save point was found and renamed"]
     pub fn rename(&mut self, id: u64, new_name: String) -> bool {
         if let Some(sp) = self.get_mut(id) {
             sp.name = new_name;
@@ -167,12 +179,16 @@ impl SavePointManager {
     /// Delete a save point (only leaf save points can be deleted)
     ///
     /// Returns true if the save point was deleted, false otherwise
+    #[must_use = "returns whether the save point was deleted"]
     pub fn delete(&mut self, id: u64) -> bool {
         if !self.can_delete(id) {
             return false;
         }
 
         if let Some(deleted) = self.save_points.pop() {
+            // Remove from index
+            self.id_to_index.remove(&deleted.id);
+
             // Revert last_save_point_state by undoing the deleted save point's diff
             for change in deleted.diff.iter().rev() {
                 if change.offset < self.last_save_point_state.len() {

@@ -1,5 +1,7 @@
 //! Search and replace functionality for the hex editor
 
+use std::collections::HashSet;
+
 /// Search mode - either hex pattern or ASCII string
 #[derive(Debug, Clone, PartialEq)]
 pub enum SearchMode {
@@ -25,7 +27,6 @@ pub enum PatternElement {
 }
 
 /// Search state and results
-#[derive(Default)]
 pub struct SearchState {
     /// The current search query string
     pub query: String,
@@ -35,6 +36,8 @@ pub struct SearchState {
     pub case_sensitive: bool,
     /// All match positions (byte offsets)
     pub matches: Vec<usize>,
+    /// Pre-computed set of all offsets within any match (for O(1) highlight lookup)
+    highlighted_offsets: HashSet<usize>,
     /// Current match index (for Next/Previous navigation)
     pub current_match: Option<usize>,
     /// Whether the search dialog is visible
@@ -43,6 +46,22 @@ pub struct SearchState {
     pub replace_with: String,
     /// Last search error message
     pub error: Option<String>,
+}
+
+impl Default for SearchState {
+    fn default() -> Self {
+        Self {
+            query: String::new(),
+            mode: SearchMode::default(),
+            case_sensitive: false,
+            matches: Vec::new(),
+            highlighted_offsets: HashSet::new(),
+            current_match: None,
+            dialog_open: false,
+            replace_with: String::new(),
+            error: None,
+        }
+    }
 }
 
 impl SearchState {
@@ -61,14 +80,26 @@ impl SearchState {
         self.dialog_open = false;
     }
 
-    /// Check if an offset is a match
+    /// Check if an offset is the start of a match
     pub fn is_match(&self, offset: usize) -> bool {
-        self.matches.iter().any(|&m| m == offset)
+        // Use binary search since matches are sorted
+        self.matches.binary_search(&offset).is_ok()
     }
 
     /// Check if an offset is within a match (considering pattern length)
-    pub fn is_within_match(&self, offset: usize, pattern_len: usize) -> bool {
-        self.matches.iter().any(|&m| offset >= m && offset < m + pattern_len)
+    /// Uses pre-computed HashSet for O(1) lookup
+    pub fn is_within_match(&self, offset: usize, _pattern_len: usize) -> bool {
+        self.highlighted_offsets.contains(&offset)
+    }
+
+    /// Rebuild the highlighted offsets set from current matches
+    fn rebuild_highlighted_offsets(&mut self, pattern_len: usize) {
+        self.highlighted_offsets.clear();
+        for &match_start in &self.matches {
+            for offset in match_start..(match_start + pattern_len) {
+                self.highlighted_offsets.insert(offset);
+            }
+        }
     }
 
     /// Get the current pattern length based on query and mode
@@ -138,6 +169,7 @@ impl SearchState {
     /// Clear search results
     pub fn clear_results(&mut self) {
         self.matches.clear();
+        self.highlighted_offsets.clear();
         self.current_match = None;
         self.error = None;
     }
@@ -286,21 +318,29 @@ pub fn execute_search(state: &mut SearchState, data: &[u8]) {
         return;
     }
 
-    match state.mode {
+    let pattern_len = match state.mode {
         SearchMode::Hex => {
             match parse_hex_pattern(&state.query) {
                 Ok(pattern) => {
+                    let len = pattern.len();
                     state.matches = search_hex(data, &pattern);
+                    len
                 }
                 Err(e) => {
                     state.error = Some(e);
+                    return;
                 }
             }
         }
         SearchMode::Ascii => {
+            let len = state.query.len();
             state.matches = search_ascii(data, &state.query, state.case_sensitive);
+            len
         }
-    }
+    };
+
+    // Build the highlighted offsets set for O(1) lookup during rendering
+    state.rebuild_highlighted_offsets(pattern_len);
 
     // Set current match to first one if any found
     if !state.matches.is_empty() {
