@@ -35,6 +35,12 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
     // Track whether shift was held during click
     let shift_held = ui.input(|i| i.modifiers.shift);
 
+    // Pre-compute section colors for the entire file
+    // This is cached in app.cached_sections so the lookup is fast
+    let get_section_color = |offset: usize| -> Option<egui::Color32> {
+        app.section_color_for_offset(offset)
+    };
+
     egui::ScrollArea::vertical()
         .auto_shrink([false; 2])
         .show_viewport(ui, |ui, viewport| {
@@ -84,6 +90,9 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                             .map(|(start, end)| byte_offset >= start && byte_offset < end)
                             .unwrap_or(false);
 
+                        // Get section color for background (if not cursor/selected)
+                        let section_bg = get_section_color(byte_offset);
+
                         // For cursor position, show nibble highlight
                         if is_cursor {
                             let high_nibble = format!("{:X}", (byte >> 4) & 0x0F);
@@ -117,8 +126,11 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                             let text = format!("{:02X}", byte);
                             let mut rich_text = RichText::new(text).monospace();
 
+                            // Apply background color: selection > section
                             if is_selected {
                                 rich_text = rich_text.background_color(egui::Color32::from_rgb(40, 80, 40));
+                            } else if let Some(bg) = section_bg {
+                                rich_text = rich_text.background_color(bg);
                             }
 
                             // Make bytes clickable

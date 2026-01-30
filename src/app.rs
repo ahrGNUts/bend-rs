@@ -1,6 +1,7 @@
 //! Main application state and egui integration
 
 use crate::editor::EditorState;
+use crate::formats::{parse_file, FileSection, RiskLevel};
 use crate::ui::{hex_editor, image_preview, savepoints, structure_tree};
 use eframe::egui;
 use std::path::PathBuf;
@@ -54,6 +55,10 @@ pub struct BendApp {
 
     /// State for the save points panel
     savepoints_state: savepoints::SavePointsPanelState,
+
+    /// Cached parsed file sections for structure visualization
+    /// Re-parsed when file is loaded or structure potentially changed
+    pub cached_sections: Option<Vec<FileSection>>,
 }
 
 impl BendApp {
@@ -69,6 +74,7 @@ impl BendApp {
             pending_close: false,
             last_edit_time: None,
             savepoints_state: savepoints::SavePointsPanelState::default(),
+            cached_sections: None,
         }
     }
 
@@ -126,6 +132,8 @@ impl BendApp {
         match std::fs::read(&path) {
             Ok(bytes) => {
                 log::info!("Loaded file: {} ({} bytes)", path.display(), bytes.len());
+                // Parse file structure for section highlighting
+                self.cached_sections = parse_file(&bytes);
                 self.editor = Some(EditorState::new(bytes));
                 self.current_file = Some(path);
                 self.preview_dirty = true;
@@ -139,6 +147,39 @@ impl BendApp {
                 self.decode_error = Some(format!("Failed to load file: {}", e));
             }
         }
+    }
+
+    /// Find the section containing a byte offset
+    pub fn section_at_offset(&self, offset: usize) -> Option<&FileSection> {
+        fn find_in_sections(sections: &[FileSection], offset: usize) -> Option<&FileSection> {
+            for section in sections {
+                if offset >= section.start && offset < section.end {
+                    // Check children first for more specific match
+                    if let Some(child) = find_in_sections(&section.children, offset) {
+                        return Some(child);
+                    }
+                    return Some(section);
+                }
+            }
+            None
+        }
+
+        self.cached_sections
+            .as_ref()
+            .and_then(|sections| find_in_sections(sections, offset))
+    }
+
+    /// Get the background color for a byte based on its section's risk level
+    pub fn section_color_for_offset(&self, offset: usize) -> Option<egui::Color32> {
+        self.section_at_offset(offset).map(|section| {
+            // Use subtle background colors for the hex view
+            match section.risk {
+                RiskLevel::Safe => egui::Color32::from_rgba_unmultiplied(100, 200, 100, 30),
+                RiskLevel::Caution => egui::Color32::from_rgba_unmultiplied(200, 180, 80, 30),
+                RiskLevel::High => egui::Color32::from_rgba_unmultiplied(200, 130, 80, 30),
+                RiskLevel::Critical => egui::Color32::from_rgba_unmultiplied(200, 80, 80, 30),
+            }
+        })
     }
 
     /// Open file dialog and load selected file

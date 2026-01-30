@@ -110,9 +110,9 @@ Prerequisites: Sections 7-8 (Format Parsing)
 Prerequisites: 2.2-2.3 (hex view must support background colors)
 
 - [x] 10.1 Define color scheme for different section types
-- [ ] 10.2 Apply background colors to hex view based on sections
+- [x] 10.2 Apply background colors to hex view based on sections
 - [x] 10.3 Add legend or tooltip explaining colors
-- [ ] 10.4 Ensure colors are accessible (contrast, colorblind-friendly)
+- [x] 10.4 Ensure colors are accessible (contrast, colorblind-friendly)
 - [ ] 10.5 Test section highlighting with screen reader / accessibility tools
 
 ## 11. Graceful Corruption Handling (P1)
