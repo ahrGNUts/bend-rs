@@ -1,7 +1,7 @@
 //! Main application state and egui integration
 
 use crate::editor::EditorState;
-use crate::ui::{hex_editor, image_preview};
+use crate::ui::{hex_editor, image_preview, structure_tree};
 use eframe::egui;
 use std::path::PathBuf;
 
@@ -300,6 +300,19 @@ impl eframe::App for BendApp {
                 }
             });
         });
+
+        // Structure tree sidebar (when file is loaded)
+        if self.editor.is_some() {
+            egui::SidePanel::left("structure_panel")
+                .resizable(true)
+                .default_width(250.0)
+                .min_width(150.0)
+                .show(ctx, |ui| {
+                    ui.heading("File Structure");
+                    ui.separator();
+                    structure_tree::show(ui, self);
+                });
+        }
 
         // Main content area with split view
         egui::CentralPanel::default().show(ctx, |ui| {

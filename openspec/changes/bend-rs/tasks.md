@@ -81,37 +81,37 @@
   - Update UI to reflect deletion constraints
 
 ## 7. Format Parsing - BMP (P1)
-- [ ] 7.1 Define ImageFormat trait (sections, labels, risk levels)
-- [ ] 7.2 Implement BMP header parsing (file header, DIB header)
-- [ ] 7.3 Identify pixel data offset and size
-- [ ] 7.4 Identify optional color table region
-- [ ] 7.5 Return structured section list with offsets and labels
-- [ ] 7.6 Handle malformed BMP files gracefully
+- [x] 7.1 Define ImageFormat trait (sections, labels, risk levels)
+- [x] 7.2 Implement BMP header parsing (file header, DIB header)
+- [x] 7.3 Identify pixel data offset and size
+- [x] 7.4 Identify optional color table region
+- [x] 7.5 Return structured section list with offsets and labels
+- [x] 7.6 Handle malformed BMP files gracefully
 
 ## 8. Format Parsing - JPEG (P1)
-- [ ] 8.1 Implement JPEG marker segment parsing
-- [ ] 8.2 Identify SOI, EOI markers
-- [ ] 8.3 Identify APP markers (APP0, APP1 for EXIF)
-- [ ] 8.4 Identify DQT, DHT, SOF segments
-- [ ] 8.5 Identify SOS and scan data region
-- [ ] 8.6 Mark scan data as high risk for warnings
-- [ ] 8.7 Handle malformed JPEG files gracefully
+- [x] 8.1 Implement JPEG marker segment parsing
+- [x] 8.2 Identify SOI, EOI markers
+- [x] 8.3 Identify APP markers (APP0, APP1 for EXIF)
+- [x] 8.4 Identify DQT, DHT, SOF segments
+- [x] 8.5 Identify SOS and scan data region
+- [x] 8.6 Mark scan data as high risk for warnings
+- [x] 8.7 Handle malformed JPEG files gracefully
 
 ## 9. Structure Visualization (P1)
 Prerequisites: Sections 7-8 (Format Parsing)
 
-- [ ] 9.1 Create collapsible tree UI component
-- [ ] 9.2 Populate tree from parsed format sections
-- [ ] 9.3 Show section name, offset, and size
-- [ ] 9.4 Click section to scroll hex view to that offset
-- [ ] 9.5 Highlight current section based on cursor position
+- [x] 9.1 Create collapsible tree UI component
+- [x] 9.2 Populate tree from parsed format sections
+- [x] 9.3 Show section name, offset, and size
+- [x] 9.4 Click section to scroll hex view to that offset
+- [x] 9.5 Highlight current section based on cursor position
 
 ## 10. Section Highlighting (P1)
 Prerequisites: 2.2-2.3 (hex view must support background colors)
 
-- [ ] 10.1 Define color scheme for different section types
+- [x] 10.1 Define color scheme for different section types
 - [ ] 10.2 Apply background colors to hex view based on sections
-- [ ] 10.3 Add legend or tooltip explaining colors
+- [x] 10.3 Add legend or tooltip explaining colors
 - [ ] 10.4 Ensure colors are accessible (contrast, colorblind-friendly)
 - [ ] 10.5 Test section highlighting with screen reader / accessibility tools
 
