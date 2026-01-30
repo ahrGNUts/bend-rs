@@ -182,10 +182,10 @@ Prerequisites: Sections 7-8 (format parsing to identify header regions)
   - [x] 17.7e Add "Go to offset..." action (depends on 17.5)
 
 ## 18. Settings and Persistence (P3)
-- [ ] 18.1 Design settings data structure (window size, recent files, preferences)
-- [ ] 18.2 Persist settings to disk (platform-appropriate location)
-- [ ] 18.3 Restore window size and position on launch
-- [ ] 18.4 Implement recent files list (File menu)
+- [x] 18.1 Design settings data structure (window size, recent files, preferences)
+- [x] 18.2 Persist settings to disk (platform-appropriate location)
+- [x] 18.3 Restore window size and position on launch
+- [x] 18.4 Implement recent files list (File menu)
 - [ ] 18.5 Add Settings/Preferences dialog
 
 ## 19. Documentation and Release Prep

@@ -2,6 +2,7 @@
 
 use crate::editor::{EditorState, GoToOffsetState, SearchState};
 use crate::formats::{parse_file, FileSection, RiskLevel};
+use crate::settings::AppSettings;
 use crate::ui::{bookmarks, go_to_offset_dialog, hex_editor::{self, ContextMenuState}, image_preview, savepoints, search_dialog, shortcuts_dialog::{self, ShortcutsDialogState}, structure_tree};
 use eframe::egui;
 use std::path::PathBuf;
@@ -86,6 +87,12 @@ pub struct BendApp {
 
     /// Keyboard shortcuts help dialog state
     pub shortcuts_dialog_state: ShortcutsDialogState,
+
+    /// Application settings (persisted to disk)
+    pub settings: AppSettings,
+
+    /// Pending file path to open (for deferred actions from menus)
+    pending_open_path: Option<PathBuf>,
 }
 
 /// A pending edit awaiting user confirmation
@@ -122,13 +129,24 @@ impl Default for BendApp {
             pending_high_risk_edit: None,
             context_menu_state: ContextMenuState::default(),
             shortcuts_dialog_state: ShortcutsDialogState::default(),
+            settings: AppSettings::default(),
+            pending_open_path: None,
         }
     }
 }
 
 impl BendApp {
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        Self::default()
+    pub fn new(_cc: &eframe::CreationContext<'_>, settings: AppSettings) -> Self {
+        // Apply settings to initial state
+        let header_protection = settings.default_header_protection;
+        let suppress_warnings = !settings.show_high_risk_warnings;
+
+        Self {
+            header_protection,
+            suppress_high_risk_warnings: suppress_warnings,
+            settings,
+            ..Default::default()
+        }
     }
 
     /// Mark the preview as needing update (with debounce timestamp)
@@ -188,12 +206,14 @@ impl BendApp {
                 // Parse file structure for section highlighting
                 self.cached_sections = parse_file(&bytes);
                 self.editor = Some(EditorState::new(bytes));
-                self.current_file = Some(path);
+                self.current_file = Some(path.clone());
                 self.preview_dirty = true;
                 self.decode_error = None;
                 // Clear existing textures - they'll be recreated on next frame
                 self.preview_texture = None;
                 self.original_texture = None;
+                // Add to recent files
+                self.settings.add_recent_file(path);
             }
             Err(e) => {
                 log::error!("Failed to load file: {}", e);
@@ -413,8 +433,14 @@ impl eframe::App for BendApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Handle close confirmation
         if self.pending_close {
+            self.settings.save();
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
+        }
+
+        // Handle deferred file opening from recent files menu
+        if let Some(path) = self.pending_open_path.take() {
+            self.open_file(path);
         }
 
         // Handle dropped files and keyboard shortcuts
@@ -530,10 +556,42 @@ impl eframe::App for BendApp {
                         ui.close_menu();
                     }
                     ui.separator();
+
+                    // Recent files submenu
+                    let recent_files = self.settings.recent_files().to_vec();
+                    let has_recent = !recent_files.is_empty();
+                    ui.menu_button("Recent Files", |ui| {
+                        if has_recent {
+                            for path in &recent_files {
+                                let display_name = path
+                                    .file_name()
+                                    .map(|n| n.to_string_lossy().to_string())
+                                    .unwrap_or_else(|| path.to_string_lossy().to_string());
+
+                                if ui.button(&display_name)
+                                    .on_hover_text(path.to_string_lossy())
+                                    .clicked()
+                                {
+                                    self.pending_open_path = Some(path.clone());
+                                    ui.close_menu();
+                                }
+                            }
+                            ui.separator();
+                            if ui.button("Clear Recent Files").clicked() {
+                                self.settings.clear_recent_files();
+                                ui.close_menu();
+                            }
+                        } else {
+                            ui.label("No recent files");
+                        }
+                    });
+
+                    ui.separator();
                     if ui.button("Exit").clicked() {
                         if self.has_unsaved_changes() {
                             self.show_close_dialog = true;
                         } else {
+                            self.settings.save();
                             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                         }
                         ui.close_menu();

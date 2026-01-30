@@ -6,17 +6,22 @@
 mod app;
 mod editor;
 mod formats;
+mod settings;
 mod ui;
 
 use app::BendApp;
 use eframe::NativeOptions;
+use settings::AppSettings;
 
 fn main() -> eframe::Result<()> {
     env_logger::init();
 
+    // Load settings for window size
+    let settings = AppSettings::load();
+
     let options = NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1200.0, 800.0])
+            .with_inner_size([settings.window_width, settings.window_height])
             .with_min_inner_size([800.0, 600.0])
             .with_drag_and_drop(true),
         ..Default::default()
@@ -25,6 +30,6 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "bend-rs - Databending Studio",
         options,
-        Box::new(|cc| Ok(Box::new(BendApp::new(cc)))),
+        Box::new(|cc| Ok(Box::new(BendApp::new(cc, settings)))),
     )
 }
