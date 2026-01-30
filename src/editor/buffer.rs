@@ -19,6 +19,15 @@
 
 use super::history::{EditOperation, History};
 
+/// Which nibble (half-byte) is currently being edited
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum NibblePosition {
+    /// High nibble (first hex digit, bits 7-4)
+    High,
+    /// Low nibble (second hex digit, bits 3-0)
+    Low,
+}
+
 /// Editor state containing buffers and edit history
 pub struct EditorState {
     /// Original bytes loaded from file (immutable after load)
@@ -32,6 +41,9 @@ pub struct EditorState {
 
     /// Current cursor position in the buffer
     cursor: usize,
+
+    /// Which nibble is being edited at the cursor
+    nibble: NibblePosition,
 
     /// Selection range (start, end) - None if no selection
     selection: Option<(usize, usize)>,
@@ -48,6 +60,7 @@ impl EditorState {
             original: bytes,
             history: History::new(),
             cursor: 0,
+            nibble: NibblePosition::High,
             selection: None,
             modified: false,
         }
@@ -74,11 +87,14 @@ impl EditorState {
     }
 
     /// Set the cursor position, clamping to valid range
+    /// Also resets nibble position to High
     pub fn set_cursor(&mut self, pos: usize) {
         self.cursor = pos.min(self.working.len().saturating_sub(1));
+        self.nibble = NibblePosition::High;
     }
 
     /// Move cursor by offset, clamping to valid range
+    /// Also resets nibble position to High
     pub fn move_cursor(&mut self, offset: isize) {
         let new_pos = if offset < 0 {
             self.cursor.saturating_sub((-offset) as usize)
@@ -86,6 +102,52 @@ impl EditorState {
             self.cursor.saturating_add(offset as usize)
         };
         self.set_cursor(new_pos);
+    }
+
+    /// Get the current nibble position
+    pub fn nibble(&self) -> NibblePosition {
+        self.nibble
+    }
+
+    /// Edit the current nibble with a hex digit (0-15)
+    /// Returns true if cursor should advance to next byte
+    pub fn edit_nibble(&mut self, nibble_value: u8) -> bool {
+        if self.cursor >= self.working.len() || nibble_value > 15 {
+            return false;
+        }
+
+        let current = self.working[self.cursor];
+        let new_value = match self.nibble {
+            NibblePosition::High => (nibble_value << 4) | (current & 0x0F),
+            NibblePosition::Low => (current & 0xF0) | nibble_value,
+        };
+
+        if current != new_value {
+            // Record the edit for undo
+            self.history.push(EditOperation::Single {
+                offset: self.cursor,
+                old_value: current,
+                new_value,
+            });
+            self.working[self.cursor] = new_value;
+            self.modified = true;
+        }
+
+        // Toggle nibble position
+        match self.nibble {
+            NibblePosition::High => {
+                self.nibble = NibblePosition::Low;
+                false // Don't advance cursor yet
+            }
+            NibblePosition::Low => {
+                self.nibble = NibblePosition::High;
+                // Advance cursor to next byte
+                if self.cursor + 1 < self.working.len() {
+                    self.cursor += 1;
+                }
+                true // Cursor advanced
+            }
+        }
     }
 
     /// Get the current selection range
@@ -302,5 +364,49 @@ mod tests {
         // Should clamp at 0
         editor.move_cursor(-10);
         assert_eq!(editor.cursor(), 0);
+    }
+
+    #[test]
+    fn test_nibble_editing() {
+        let data = vec![0x00, 0x01, 0x02, 0x03];
+        let mut editor = EditorState::new(data);
+
+        // Should start at high nibble
+        assert_eq!(editor.nibble(), NibblePosition::High);
+        assert_eq!(editor.cursor(), 0);
+
+        // Edit high nibble with 'A' (10)
+        let advanced = editor.edit_nibble(0xA);
+        assert!(!advanced); // Should not advance after high nibble
+        assert_eq!(editor.nibble(), NibblePosition::Low);
+        assert_eq!(editor.working()[0], 0xA0); // High nibble changed, low stayed
+
+        // Edit low nibble with 'B' (11)
+        let advanced = editor.edit_nibble(0xB);
+        assert!(advanced); // Should advance after completing byte
+        assert_eq!(editor.nibble(), NibblePosition::High);
+        assert_eq!(editor.working()[0], 0xAB); // Full byte is now 0xAB
+        assert_eq!(editor.cursor(), 1); // Cursor moved to next byte
+    }
+
+    #[test]
+    fn test_nibble_editing_undo() {
+        let data = vec![0x00, 0x01, 0x02, 0x03];
+        let mut editor = EditorState::new(data.clone());
+
+        // Edit high nibble
+        editor.edit_nibble(0xF);
+        assert_eq!(editor.working()[0], 0xF0);
+
+        // Edit low nibble
+        editor.edit_nibble(0xE);
+        assert_eq!(editor.working()[0], 0xFE);
+
+        // Undo should restore previous state
+        editor.undo();
+        assert_eq!(editor.working()[0], 0xF0);
+
+        editor.undo();
+        assert_eq!(editor.working()[0], 0x00);
     }
 }

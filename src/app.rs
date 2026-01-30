@@ -38,6 +38,12 @@ pub struct BendApp {
 
     /// Last decode error message (if any)
     pub decode_error: Option<String>,
+
+    /// Whether the close confirmation dialog is showing
+    show_close_dialog: bool,
+
+    /// Pending close action (true = confirmed close)
+    pending_close: bool,
 }
 
 impl BendApp {
@@ -49,6 +55,51 @@ impl BendApp {
             original_texture: None,
             preview_dirty: false,
             decode_error: None,
+            show_close_dialog: false,
+            pending_close: false,
+        }
+    }
+
+    /// Check if there are unsaved changes
+    pub fn has_unsaved_changes(&self) -> bool {
+        self.editor.as_ref().map_or(false, |e| e.is_modified())
+    }
+
+    /// Export the working buffer to a new file
+    pub fn export_file(&self) {
+        let Some(editor) = &self.editor else {
+            return;
+        };
+
+        // Suggest a default filename based on original
+        let default_name = self
+            .current_file
+            .as_ref()
+            .and_then(|p| p.file_stem())
+            .map(|s| format!("{}_glitched", s.to_string_lossy()))
+            .unwrap_or_else(|| "export".to_string());
+
+        let extension = self
+            .current_file
+            .as_ref()
+            .and_then(|p| p.extension())
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "bmp".to_string());
+
+        if let Some(path) = rfd::FileDialog::new()
+            .set_file_name(format!("{}.{}", default_name, extension))
+            .add_filter("Images", &["bmp", "jpg", "jpeg"])
+            .add_filter("All files", &["*"])
+            .save_file()
+        {
+            match std::fs::write(&path, editor.working()) {
+                Ok(()) => {
+                    log::info!("Exported to: {}", path.display());
+                }
+                Err(e) => {
+                    log::error!("Failed to export: {}", e);
+                }
+            }
         }
     }
 
@@ -139,17 +190,66 @@ impl BendApp {
 
 impl eframe::App for BendApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Handle dropped files
+        // Handle close confirmation
+        if self.pending_close {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            return;
+        }
+
+        // Handle dropped files and keyboard shortcuts
+        let mut wants_open = false;
+        let mut wants_export = false;
         ctx.input(|i| {
             for file in &i.raw.dropped_files {
                 if let Some(path) = &file.path {
                     self.open_file(path.clone());
                 }
             }
+
+            // Global keyboard shortcuts
+            let ctrl = i.modifiers.ctrl || i.modifiers.mac_cmd;
+            if ctrl && i.key_pressed(egui::Key::O) {
+                wants_open = true;
+            }
+            if ctrl && i.key_pressed(egui::Key::E) && self.editor.is_some() {
+                wants_export = true;
+            }
         });
+
+        if wants_open {
+            self.open_file_dialog();
+        }
+        if wants_export {
+            self.export_file();
+        }
 
         // Update preview if needed
         self.update_preview(ctx);
+
+        // Close confirmation dialog
+        if self.show_close_dialog {
+            egui::Window::new("Unsaved Changes")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .show(ctx, |ui| {
+                    ui.label("You have unsaved changes. Are you sure you want to exit?");
+                    ui.add_space(10.0);
+                    ui.horizontal(|ui| {
+                        if ui.button("Export First").clicked() {
+                            self.export_file();
+                            self.show_close_dialog = false;
+                        }
+                        if ui.button("Discard & Exit").clicked() {
+                            self.pending_close = true;
+                            self.show_close_dialog = false;
+                        }
+                        if ui.button("Cancel").clicked() {
+                            self.show_close_dialog = false;
+                        }
+                    });
+                });
+        }
 
         // Top menu bar
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
@@ -159,9 +259,19 @@ impl eframe::App for BendApp {
                         self.open_file_dialog();
                         ui.close_menu();
                     }
+                    let has_file = self.editor.is_some();
+                    if ui.add_enabled(has_file, egui::Button::new("Export...")).clicked() {
+                        self.export_file();
+                        ui.close_menu();
+                    }
                     ui.separator();
                     if ui.button("Exit").clicked() {
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                        if self.has_unsaved_changes() {
+                            self.show_close_dialog = true;
+                        } else {
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                        }
+                        ui.close_menu();
                     }
                 });
             });
@@ -170,12 +280,19 @@ impl eframe::App for BendApp {
         // Status bar at bottom
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
+                // Unsaved changes indicator
+                if self.has_unsaved_changes() {
+                    ui.colored_label(egui::Color32::from_rgb(255, 180, 0), "\u{25CF} Modified");
+                    ui.separator();
+                }
                 if let Some(path) = &self.current_file {
                     ui.label(format!("File: {}", path.display()));
                 }
                 if let Some(editor) = &self.editor {
                     ui.separator();
                     ui.label(format!("{} bytes", editor.working().len()));
+                    ui.separator();
+                    ui.label(format!("Cursor: 0x{:08X}", editor.cursor()));
                 }
                 if let Some(err) = &self.decode_error {
                     ui.separator();

@@ -1,7 +1,7 @@
 //! Editor module: buffer management, history, and edit operations
 
-mod buffer;
+pub mod buffer;
 mod history;
 
-pub use buffer::EditorState;
+pub use buffer::{EditorState, NibblePosition};
 pub use history::{EditOperation, History};

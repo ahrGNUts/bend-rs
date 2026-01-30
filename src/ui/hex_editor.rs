@@ -1,6 +1,7 @@
 //! Hex editor UI component with virtual scrolling
 
 use crate::app::BendApp;
+use crate::editor::buffer::NibblePosition;
 use eframe::egui::{self, RichText, TextStyle};
 
 /// Number of bytes per row
@@ -20,6 +21,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
 
     // Cache cursor and selection state for rendering
     let cursor_pos = editor.cursor();
+    let cursor_nibble = editor.nibble();
     let selection = editor.selection();
 
     // Get monospace font metrics
@@ -80,19 +82,48 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                             .map(|(start, end)| byte_offset >= start && byte_offset < end)
                             .unwrap_or(false);
 
-                        let text = format!("{:02X}", byte);
-                        let mut rich_text = RichText::new(text).monospace();
-
+                        // For cursor position, show nibble highlight
                         if is_cursor {
-                            rich_text = rich_text.background_color(egui::Color32::from_rgb(60, 60, 120));
-                        } else if is_selected {
-                            rich_text = rich_text.background_color(egui::Color32::from_rgb(40, 80, 40));
-                        }
+                            let high_nibble = format!("{:X}", (byte >> 4) & 0x0F);
+                            let low_nibble = format!("{:X}", byte & 0x0F);
 
-                        // Make bytes clickable
-                        let response = ui.label(rich_text);
-                        if response.clicked() {
-                            clicked_offset = Some(byte_offset);
+                            let (high_bg, low_bg) = match cursor_nibble {
+                                NibblePosition::High => (
+                                    egui::Color32::from_rgb(80, 80, 160),
+                                    egui::Color32::from_rgb(40, 40, 80),
+                                ),
+                                NibblePosition::Low => (
+                                    egui::Color32::from_rgb(40, 40, 80),
+                                    egui::Color32::from_rgb(80, 80, 160),
+                                ),
+                            };
+
+                            let high_text = RichText::new(high_nibble)
+                                .monospace()
+                                .background_color(high_bg);
+                            let low_text = RichText::new(low_nibble)
+                                .monospace()
+                                .background_color(low_bg);
+
+                            let r1 = ui.label(high_text);
+                            let r2 = ui.label(low_text);
+
+                            if r1.clicked() || r2.clicked() {
+                                clicked_offset = Some(byte_offset);
+                            }
+                        } else {
+                            let text = format!("{:02X}", byte);
+                            let mut rich_text = RichText::new(text).monospace();
+
+                            if is_selected {
+                                rich_text = rich_text.background_color(egui::Color32::from_rgb(40, 80, 40));
+                            }
+
+                            // Make bytes clickable
+                            let response = ui.label(rich_text);
+                            if response.clicked() {
+                                clicked_offset = Some(byte_offset);
+                            }
                         }
                     }
 
@@ -194,19 +225,13 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
             }
         }
 
-        // Hex input (0-9, A-F)
+        // Hex input (0-9, A-F) - nibble-level editing
         for event in &i.events {
             if let egui::Event::Text(text) = event {
                 for c in text.chars() {
                     if let Some(nibble) = c.to_digit(16) {
-                        let cursor = editor.cursor();
-                        if let Some(current) = editor.byte_at_cursor() {
-                            // For simplicity, replace the entire byte
-                            // TODO: Implement proper nibble editing
-                            let new_value = (nibble as u8) << 4 | (current & 0x0F);
-                            editor.edit_byte(cursor, new_value);
-                            app.preview_dirty = true;
-                        }
+                        editor.edit_nibble(nibble as u8);
+                        app.preview_dirty = true;
                     }
                 }
             }

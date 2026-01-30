@@ -31,10 +31,10 @@
 
 ## 3. Byte Editing with Live Preview (P0)
 - [x] 3.1 Implement cursor/selection in hex view
-- [ ] 3.2 Handle keyboard input for hex editing
+- [x] 3.2 Handle keyboard input for hex editing
   - [x] 3.2a Capture and filter keyboard input (accept only 0-9, A-F, a-f)
-  - [ ] 3.2b Implement nibble-level editing (track high/low nibble state)
-  - [ ] 3.2c Auto-advance cursor after completing byte (two nibbles entered)
+  - [x] 3.2b Implement nibble-level editing (track high/low nibble state)
+  - [x] 3.2c Auto-advance cursor after completing byte (two nibbles entered)
 - [x] 3.3 Update buffer when user types valid hex
 - [x] 3.4 Trigger image re-render on buffer change
   - Debounce re-renders (100-200ms after last edit)
@@ -58,10 +58,10 @@
 
 ## 5. Non-Destructive Workflow (P0)
 - [x] 5.1 Store original bytes separately (never modify)
-- [ ] 5.2 Implement Export / Save As with file dialog
-- [ ] 5.3 Write modified buffer to chosen destination
-- [ ] 5.4 Add unsaved changes indicator in UI
-- [ ] 5.5 Prompt before closing with unsaved changes
+- [x] 5.2 Implement Export / Save As with file dialog
+- [x] 5.3 Write modified buffer to chosen destination
+- [x] 5.4 Add unsaved changes indicator in UI
+- [x] 5.5 Prompt before closing with unsaved changes
 
 ## 6. Save Points (P1)
 - [ ] 6.1 Design save point data structure
