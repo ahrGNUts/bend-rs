@@ -82,6 +82,9 @@ pub struct BendApp {
     /// Pending high-risk edit waiting for user confirmation
     pub pending_high_risk_edit: Option<PendingEdit>,
 
+    /// Checkbox state for "don't warn again" in high-risk dialog
+    high_risk_dialog_dont_show: bool,
+
     /// Context menu state for hex editor
     pub context_menu_state: ContextMenuState,
 
@@ -144,6 +147,7 @@ impl Default for BendApp {
             header_protection: false,
             suppress_high_risk_warnings: false,
             pending_high_risk_edit: None,
+            high_risk_dialog_dont_show: false,
             context_menu_state: ContextMenuState::default(),
             shortcuts_dialog_state: ShortcutsDialogState::default(),
             settings_dialog_state: SettingsDialogState::default(),
@@ -306,7 +310,6 @@ impl BendApp {
 
         let mut should_proceed = false;
         let mut should_cancel = false;
-        let mut dont_show_again = false;
 
         egui::Window::new("High-Risk Edit Warning")
             .collapsible(false)
@@ -343,7 +346,7 @@ impl BendApp {
                     ui.add_space(10.0);
 
                     // Don't show again checkbox
-                    ui.checkbox(&mut dont_show_again, "Don't warn me again this session");
+                    ui.checkbox(&mut self.high_risk_dialog_dont_show, "Don't warn me again this session");
 
                     ui.add_space(10.0);
 
@@ -366,11 +369,13 @@ impl BendApp {
                 let _ = editor.edit_nibble(pending.nibble_value);
                 self.mark_preview_dirty();
             }
-            if dont_show_again {
+            if self.high_risk_dialog_dont_show {
                 self.suppress_high_risk_warnings = true;
             }
+            self.high_risk_dialog_dont_show = false;
             self.pending_high_risk_edit = None;
         } else if should_cancel {
+            self.high_risk_dialog_dont_show = false;
             self.pending_high_risk_edit = None;
         }
     }
