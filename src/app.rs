@@ -1,8 +1,8 @@
 //! Main application state and egui integration
 
-use crate::editor::EditorState;
+use crate::editor::{EditorState, SearchState};
 use crate::formats::{parse_file, FileSection, RiskLevel};
-use crate::ui::{hex_editor, image_preview, savepoints, structure_tree};
+use crate::ui::{hex_editor, image_preview, savepoints, search_dialog, structure_tree};
 use eframe::egui;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -62,6 +62,9 @@ pub struct BendApp {
 
     /// Whether comparison mode is enabled (side-by-side original and current)
     pub comparison_mode: bool,
+
+    /// Search and replace state
+    pub search_state: SearchState,
 }
 
 impl BendApp {
@@ -79,6 +82,7 @@ impl BendApp {
             savepoints_state: savepoints::SavePointsPanelState::default(),
             cached_sections: None,
             comparison_mode: false,
+            search_state: SearchState::default(),
         }
     }
 
@@ -276,6 +280,7 @@ impl eframe::App for BendApp {
         // Handle dropped files and keyboard shortcuts
         let mut wants_open = false;
         let mut wants_export = false;
+        let mut wants_search = false;
         ctx.input(|i| {
             for file in &i.raw.dropped_files {
                 if let Some(path) = &file.path {
@@ -291,6 +296,9 @@ impl eframe::App for BendApp {
             if ctrl && i.key_pressed(egui::Key::E) && self.editor.is_some() {
                 wants_export = true;
             }
+            if ctrl && i.key_pressed(egui::Key::F) && self.editor.is_some() {
+                wants_search = true;
+            }
         });
 
         if wants_open {
@@ -298,6 +306,9 @@ impl eframe::App for BendApp {
         }
         if wants_export {
             self.export_file();
+        }
+        if wants_search {
+            self.search_state.open_dialog();
         }
 
         // Update preview if needed
@@ -351,8 +362,18 @@ impl eframe::App for BendApp {
                         ui.close_menu();
                     }
                 });
+                ui.menu_button("Edit", |ui| {
+                    let has_file = self.editor.is_some();
+                    if ui.add_enabled(has_file, egui::Button::new("Find & Replace...")).clicked() {
+                        self.search_state.open_dialog();
+                        ui.close_menu();
+                    }
+                });
             });
         });
+
+        // Show search dialog if open
+        search_dialog::show(ctx, self);
 
         // Status bar at bottom
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
@@ -461,6 +482,7 @@ mod tests {
             savepoints_state: savepoints::SavePointsPanelState::default(),
             cached_sections: Some(sections),
             comparison_mode: false,
+            search_state: SearchState::default(),
         }
     }
 
@@ -570,6 +592,7 @@ mod tests {
             savepoints_state: savepoints::SavePointsPanelState::default(),
             cached_sections: None,
             comparison_mode: false,
+            search_state: SearchState::default(),
         };
 
         // Should return None when no sections cached

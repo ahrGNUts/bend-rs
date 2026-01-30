@@ -130,16 +130,16 @@ Prerequisites: 2.2-2.3 (hex view must support background colors)
 - [x] 12.5 Add labels (Original / Current)
 
 ## 13. Search and Replace (P2)
-- [ ] 13.1 Create search dialog UI
-- [ ] 13.2 Implement hex pattern search (e.g., FF D8 FF)
-- [ ] 13.3 Add wildcard support for hex search (e.g., FF ?? FF)
-- [ ] 13.4 Implement ASCII string search
-- [ ] 13.5 Add case-sensitive toggle for ASCII search
-- [ ] 13.6 Highlight all matches in hex view
-- [ ] 13.7 Add Next / Previous match navigation
-- [ ] 13.8 Implement single-occurrence replace
-- [ ] 13.9 Implement Replace All as single undoable operation
-- [ ] 13.10 Show no matches found feedback
+- [x] 13.1 Create search dialog UI
+- [x] 13.2 Implement hex pattern search (e.g., FF D8 FF)
+- [x] 13.3 Add wildcard support for hex search (e.g., FF ?? FF)
+- [x] 13.4 Implement ASCII string search
+- [x] 13.5 Add case-sensitive toggle for ASCII search
+- [x] 13.6 Highlight all matches in hex view
+- [x] 13.7 Add Next / Previous match navigation
+- [x] 13.8 Implement single-occurrence replace
+- [x] 13.9 Implement Replace All as single undoable operation
+- [x] 13.10 Show no matches found feedback
 
 ## 14. Bookmarks and Annotations (P2)
 - [ ] 14.1 Design bookmark data structure (offset, name, annotation)

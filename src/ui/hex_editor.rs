@@ -41,6 +41,16 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
         app.section_color_for_offset(offset)
     };
 
+    // Check if an offset is within a search match
+    let pattern_len = app.search_state.pattern_length();
+    let current_match_offset = app.search_state.current_match_offset();
+    let is_search_match = |offset: usize| -> bool {
+        app.search_state.is_within_match(offset, pattern_len)
+    };
+    let is_current_match = |offset: usize| -> bool {
+        current_match_offset.map_or(false, |m| offset >= m && offset < m + pattern_len)
+    };
+
     egui::ScrollArea::vertical()
         .auto_shrink([false; 2])
         .show_viewport(ui, |ui, viewport| {
@@ -126,9 +136,15 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                             let text = format!("{:02X}", byte);
                             let mut rich_text = RichText::new(text).monospace();
 
-                            // Apply background color: selection > section
+                            // Apply background color priority: selection > current_match > search_match > section
                             if is_selected {
                                 rich_text = rich_text.background_color(egui::Color32::from_rgb(40, 80, 40));
+                            } else if is_current_match(byte_offset) {
+                                // Current match: bright orange highlight
+                                rich_text = rich_text.background_color(egui::Color32::from_rgb(200, 120, 40));
+                            } else if is_search_match(byte_offset) {
+                                // Other matches: yellow highlight
+                                rich_text = rich_text.background_color(egui::Color32::from_rgb(180, 180, 60));
                             } else if let Some(bg) = section_bg {
                                 rich_text = rich_text.background_color(bg);
                             }
