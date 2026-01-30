@@ -142,8 +142,15 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
 
                         // For cursor position, show nibble highlight
                         if is_cursor {
-                            let high_nibble = format!("{:X}", (byte >> 4) & 0x0F);
-                            let low_nibble = format!("{:X}", byte & 0x0F);
+                            // Render as a single label to maintain consistent spacing,
+                            // then use painter to draw nibble backgrounds
+                            let text = format!("{:02X}", byte);
+                            let rich_text = RichText::new(text).monospace();
+                            let response = ui.label(rich_text);
+
+                            // Draw nibble highlight backgrounds using painter
+                            let rect = response.rect;
+                            let half_width = rect.width() / 2.0;
 
                             let (high_bg, low_bg) = match cursor_nibble {
                                 NibblePosition::High => (
@@ -156,20 +163,34 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                                 ),
                             };
 
-                            let high_text = RichText::new(high_nibble)
-                                .monospace()
-                                .background_color(high_bg);
-                            let low_text = RichText::new(low_nibble)
-                                .monospace()
-                                .background_color(low_bg);
+                            // Draw background rectangles behind each nibble
+                            let high_rect = egui::Rect::from_min_size(
+                                rect.min,
+                                egui::vec2(half_width, rect.height()),
+                            );
+                            let low_rect = egui::Rect::from_min_size(
+                                egui::pos2(rect.min.x + half_width, rect.min.y),
+                                egui::vec2(half_width, rect.height()),
+                            );
 
-                            let r1 = ui.label(high_text);
-                            let r2 = ui.label(low_text);
+                            // Paint backgrounds behind the text (using background layer)
+                            ui.painter().rect_filled(high_rect, 0.0, high_bg);
+                            ui.painter().rect_filled(low_rect, 0.0, low_bg);
 
-                            if r1.clicked() || r2.clicked() {
+                            // Re-paint the text on top so it's visible over the backgrounds
+                            let text = format!("{:02X}", byte);
+                            ui.painter().text(
+                                rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                text,
+                                egui::TextStyle::Monospace.resolve(ui.style()),
+                                egui::Color32::WHITE,
+                            );
+
+                            if response.clicked() {
                                 clicked_offset = Some(byte_offset);
                             }
-                            if r1.secondary_clicked() || r2.secondary_clicked() {
+                            if response.secondary_clicked() {
                                 context_menu_offset = Some(byte_offset);
                             }
                         } else {
@@ -253,7 +274,6 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
     if let Some(offset) = clicked_offset {
         if let Some(editor) = &mut app.editor {
             editor.set_cursor_with_selection(offset, shift_held);
-            app.preview_dirty = true;
         }
     }
 
