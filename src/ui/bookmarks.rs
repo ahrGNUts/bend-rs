@@ -64,7 +64,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
                                 if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                                     action = Some(BookmarkAction::FinishRename(
                                         bookmark.id,
-                                        state.rename_text.clone(),
+                                        std::mem::take(&mut state.rename_text),
                                     ));
                                 } else if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                                     action = Some(BookmarkAction::CancelRename);
@@ -73,7 +73,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
                             if ui.button("Save").clicked() {
                                 action = Some(BookmarkAction::FinishRename(
                                     bookmark.id,
-                                    state.rename_text.clone(),
+                                    std::mem::take(&mut state.rename_text),
                                 ));
                             }
                             if ui.button("Cancel").clicked() {
@@ -110,7 +110,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
                                 if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                                     action = Some(BookmarkAction::FinishAnnotation(
                                         bookmark.id,
-                                        state.annotation_text.clone(),
+                                        std::mem::take(&mut state.annotation_text),
                                     ));
                                 } else if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                                     action = Some(BookmarkAction::CancelAnnotation);
@@ -119,7 +119,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
                             if ui.button("Save").clicked() {
                                 action = Some(BookmarkAction::FinishAnnotation(
                                     bookmark.id,
-                                    state.annotation_text.clone(),
+                                    std::mem::take(&mut state.annotation_text),
                                 ));
                             }
                         });
@@ -166,6 +166,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
                 if let Some(editor) = &mut app.editor {
                     editor.set_cursor(offset);
                 }
+                app.scroll_hex_to_offset(offset);
             }
             BookmarkAction::StartRename(id, name) => {
                 state.renaming = Some(id);

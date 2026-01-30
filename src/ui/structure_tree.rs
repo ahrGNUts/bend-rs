@@ -145,5 +145,6 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
         if let Some(editor) = &mut app.editor {
             editor.set_cursor(offset);
         }
+        app.scroll_hex_to_offset(offset);
     }
 }

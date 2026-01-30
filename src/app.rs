@@ -96,10 +96,13 @@ pub struct BendApp {
 
     /// Pending file path to open (for deferred actions from menus)
     pending_open_path: Option<PathBuf>,
+
+    /// Pending scroll offset for hex editor (Some(offset) = scroll to this byte offset)
+    pub pending_hex_scroll: Option<usize>,
 }
 
 /// A pending edit awaiting user confirmation
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct PendingEdit {
     /// The nibble value to write (0-15)
     pub nibble_value: u8,
@@ -146,6 +149,7 @@ impl Default for BendApp {
             settings_dialog_state: SettingsDialogState::default(),
             settings: AppSettings::default(),
             pending_open_path: None,
+            pending_hex_scroll: None,
         }
     }
 }
@@ -168,6 +172,11 @@ impl BendApp {
     pub fn mark_preview_dirty(&mut self) {
         self.preview_dirty = true;
         self.last_edit_time = Some(Instant::now());
+    }
+
+    /// Request the hex editor to scroll to show the given byte offset
+    pub fn scroll_hex_to_offset(&mut self, offset: usize) {
+        self.pending_hex_scroll = Some(offset);
     }
 
     /// Check if there are unsaved changes
@@ -291,7 +300,7 @@ impl BendApp {
 
     /// Show the high-risk edit warning dialog and handle user response
     fn show_high_risk_warning_dialog(&mut self, ctx: &egui::Context) {
-        let Some(pending) = self.pending_high_risk_edit.clone() else {
+        let Some(pending) = self.pending_high_risk_edit else {
             return;
         };
 
@@ -505,8 +514,8 @@ impl BendApp {
                             for path in &recent_files {
                                 let display_name = path
                                     .file_name()
-                                    .map(|n| n.to_string_lossy().to_string())
-                                    .unwrap_or_else(|| path.to_string_lossy().to_string());
+                                    .map(|n| n.to_string_lossy().into_owned())
+                                    .unwrap_or_else(|| path.to_string_lossy().into_owned());
 
                                 if ui.button(&display_name)
                                     .on_hover_text(path.to_string_lossy())

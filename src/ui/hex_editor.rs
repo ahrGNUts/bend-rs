@@ -30,6 +30,9 @@ const HEX_ASCII_SPACING: f32 = 16.0;
 /// Approximate width of a hex byte display ("XX ")
 const HEX_BYTE_WIDTH: f32 = 24.0;
 
+/// Number of rows to scroll above target when jumping to an offset
+const SCROLL_BUFFER_ROWS: usize = 5;
+
 /// Show the hex editor panel
 pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
     let Some(editor) = &app.editor else {
@@ -47,17 +50,25 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
     // Get monospace font metrics
     let row_height = ui.text_style_height(&TextStyle::Monospace);
 
-    // Calculate content height for scrolling
-    let content_height = total_rows as f32 * row_height;
-
     // Track clicked byte offset for deferred cursor update
     let mut clicked_offset: Option<usize> = None;
     // Track whether shift was held during click
     let shift_held = ui.input(|i| i.modifiers.shift);
-    // Track pending high-risk edit for warning dialog
-    let mut pending_high_risk_edit: Option<(u8, usize, RiskLevel)> = None;
     // Track right-clicked byte for context menu
     let mut context_menu_offset: Option<usize> = None;
+
+    // Check if navigation was requested (must be done before closures capture app)
+    // We use vertical_scroll_offset to jump to the approximate area, then scroll_to_me() to fine-tune
+    let scroll_to_row: Option<usize> = app.pending_hex_scroll.take().map(|byte_offset| {
+        byte_offset / BYTES_PER_ROW
+    });
+
+    // Calculate approximate scroll offset to ensure target row is rendered
+    let initial_scroll_offset: Option<f32> = scroll_to_row.map(|target_row| {
+        // Jump to a position where the target row will be rendered
+        // We aim for slightly before the target so it's in the rendered range
+        (target_row.saturating_sub(SCROLL_BUFFER_ROWS) as f32 * row_height).max(0.0)
+    });
 
     // Pre-compute section colors for the entire file
     // This is cached in app.cached_sections so the lookup is fast
@@ -88,9 +99,15 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
     // Check if cursor is at a protected position
     let cursor_protected = app.is_offset_protected(cursor_pos);
 
-    egui::ScrollArea::both()
-        .auto_shrink([false; 2])
-        .show_viewport(ui, |ui, viewport| {
+    let mut scroll_area = egui::ScrollArea::both()
+        .auto_shrink([false; 2]);
+
+    // Set initial scroll offset to ensure target row is in the rendered range
+    if let Some(offset_y) = initial_scroll_offset {
+        scroll_area = scroll_area.vertical_scroll_offset(offset_y);
+    }
+
+    scroll_area.show_viewport(ui, |ui, viewport| {
             // Calculate which rows are visible
             let first_visible_row = (viewport.min.y / row_height).floor() as usize;
             let last_visible_row = ((viewport.max.y / row_height).ceil() as usize).min(total_rows);
@@ -114,7 +131,10 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                 // Copy the bytes to avoid borrow issues
                 let row_bytes: Vec<u8> = editor.bytes_in_range(offset, row_end).to_vec();
 
-                ui.horizontal(|ui| {
+                // Check if this is the row we need to scroll to
+                let should_scroll_to_this_row = scroll_to_row == Some(row_idx);
+
+                let row_response = ui.horizontal(|ui| {
                     // Offset column (8 hex digits)
                     ui.label(
                         RichText::new(format!("{:08X}", offset))
@@ -258,6 +278,11 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                         RichText::new("|").monospace().color(egui::Color32::DARK_GRAY),
                     );
                 });
+
+                // Scroll to this row if it was the navigation target
+                if should_scroll_to_this_row {
+                    row_response.response.scroll_to_me(Some(egui::Align::Center));
+                }
             }
 
             // Reserve space for rows after visible area
@@ -265,9 +290,6 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
             if rows_after > 0 {
                 ui.allocate_space(egui::vec2(ui.available_width(), rows_after as f32 * row_height));
             }
-
-            // Ensure content height is correct for scroll
-            let _ = content_height;
         });
 
     // Handle deferred click
@@ -277,8 +299,49 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
         }
     }
 
-    // Handle keyboard input - track if we need to mark dirty after
+    // Handle keyboard input
+    let keyboard_result = handle_keyboard_input(ui, app, cursor_pos, cursor_protected);
+
+    // Handle pending high-risk edit (after input borrow ends)
+    if let Some((nibble_value, offset, risk_level)) = keyboard_result.pending_high_risk_edit {
+        app.pending_high_risk_edit = Some(crate::app::PendingEdit {
+            nibble_value,
+            offset,
+            risk_level,
+        });
+    }
+
+    // Mark preview dirty with debounce timestamp (after editor borrow ends)
+    if keyboard_result.needs_preview_update {
+        app.mark_preview_dirty();
+    }
+
+    // Handle context menu right-click
+    if let Some(offset) = context_menu_offset {
+        app.context_menu_state.target_offset = Some(offset);
+    }
+
+    // Show context menu if active
+    show_context_menu(ui, app);
+}
+
+/// Result of keyboard input handling
+struct KeyboardResult {
+    /// Whether the preview needs to be updated
+    needs_preview_update: bool,
+    /// Pending high-risk edit awaiting confirmation (nibble_value, offset, risk_level)
+    pending_high_risk_edit: Option<(u8, usize, RiskLevel)>,
+}
+
+/// Handle keyboard input for navigation and editing
+fn handle_keyboard_input(
+    ui: &mut egui::Ui,
+    app: &mut BendApp,
+    cursor_pos: usize,
+    cursor_protected: bool,
+) -> KeyboardResult {
     let mut needs_preview_update = false;
+    let mut pending_high_risk_edit: Option<(u8, usize, RiskLevel)> = None;
 
     // Pre-compute warning state before mutable borrow of editor
     let should_warn_for_cursor = app.should_warn_for_edit(cursor_pos);
@@ -360,7 +423,6 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
         }
 
         // Undo/Redo
-
         if ctrl && !shift && i.key_pressed(egui::Key::Z) {
             if editor.undo() {
                 needs_preview_update = true;
@@ -396,27 +458,10 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
         }
     });
 
-    // Handle pending high-risk edit (after input borrow ends)
-    if let Some((nibble_value, offset, risk_level)) = pending_high_risk_edit {
-        app.pending_high_risk_edit = Some(crate::app::PendingEdit {
-            nibble_value,
-            offset,
-            risk_level,
-        });
+    KeyboardResult {
+        needs_preview_update,
+        pending_high_risk_edit,
     }
-
-    // Mark preview dirty with debounce timestamp (after editor borrow ends)
-    if needs_preview_update {
-        app.mark_preview_dirty();
-    }
-
-    // Handle context menu right-click
-    if let Some(offset) = context_menu_offset {
-        app.context_menu_state.target_offset = Some(offset);
-    }
-
-    // Show context menu if active
-    show_context_menu(ui, app);
 }
 
 /// Show the context menu for the hex editor

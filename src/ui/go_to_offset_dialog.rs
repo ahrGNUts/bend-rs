@@ -4,6 +4,26 @@ use crate::app::BendApp;
 use crate::editor::go_to_offset::parse_offset;
 use eframe::egui;
 
+/// Attempt to navigate to the offset specified in the dialog input
+fn attempt_navigate(app: &mut BendApp) -> Result<(), String> {
+    let offset = parse_offset(&app.go_to_offset_state.input_text)?;
+
+    let editor = app.editor.as_mut()
+        .ok_or_else(|| "No file loaded".to_string())?;
+
+    let file_len = editor.len();
+    if offset >= file_len {
+        return Err(format!(
+            "Offset 0x{:X} ({}) is beyond file size (0x{:X} / {} bytes)",
+            offset, offset, file_len, file_len
+        ));
+    }
+
+    editor.set_cursor(offset);
+    app.scroll_hex_to_offset(offset);
+    Ok(())
+}
+
 /// Show the "Go to offset" dialog (modal window)
 pub fn show(ctx: &egui::Context, app: &mut BendApp) {
     if !app.go_to_offset_state.dialog_open {
@@ -79,26 +99,9 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
 
     // Handle navigation after UI scope ends (to avoid borrow issues)
     if do_navigate {
-        match parse_offset(&app.go_to_offset_state.input_text) {
-            Ok(offset) => {
-                if let Some(editor) = &mut app.editor {
-                    let file_len = editor.len();
-                    if offset < file_len {
-                        editor.set_cursor(offset);
-                        close_dialog = true;
-                    } else {
-                        app.go_to_offset_state.error = Some(format!(
-                            "Offset 0x{:X} ({}) is beyond file size (0x{:X} / {} bytes)",
-                            offset, offset, file_len, file_len
-                        ));
-                    }
-                } else {
-                    app.go_to_offset_state.error = Some("No file loaded".to_string());
-                }
-            }
-            Err(e) => {
-                app.go_to_offset_state.error = Some(e);
-            }
+        match attempt_navigate(app) {
+            Ok(()) => close_dialog = true,
+            Err(e) => app.go_to_offset_state.error = Some(e),
         }
     }
 
