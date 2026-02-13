@@ -124,6 +124,8 @@ struct InputActions {
     go_to: bool,
     undo: bool,
     redo: bool,
+    create_save_point: bool,
+    add_bookmark: bool,
 }
 
 impl Default for BendApp {
@@ -429,6 +431,14 @@ impl BendApp {
             if ctrl && i.key_pressed(egui::Key::Y) && self.editor.is_some() {
                 actions.redo = true;
             }
+            // Create save point: Ctrl+S / Cmd+S
+            if ctrl && i.key_pressed(egui::Key::S) && self.editor.is_some() {
+                actions.create_save_point = true;
+            }
+            // Add bookmark: Ctrl+D / Cmd+D
+            if ctrl && i.key_pressed(egui::Key::D) && self.editor.is_some() {
+                actions.add_bookmark = true;
+            }
             // F1: Show keyboard shortcuts help
             if i.key_pressed(egui::Key::F1) {
                 self.shortcuts_dialog_state.open_dialog();
@@ -462,6 +472,20 @@ impl BendApp {
             if let Some(editor) = &mut self.editor {
                 editor.redo();
                 self.mark_preview_dirty();
+            }
+        }
+        if actions.create_save_point {
+            if let Some(editor) = &mut self.editor {
+                let count = editor.save_points().len();
+                let name = format!("Save Point {}", count + 1);
+                editor.create_save_point(name);
+            }
+        }
+        if actions.add_bookmark {
+            if let Some(editor) = &mut self.editor {
+                let cursor_pos = editor.cursor();
+                let name = format!("Bookmark at 0x{:08X}", cursor_pos);
+                editor.add_bookmark(cursor_pos, name);
             }
         }
     }

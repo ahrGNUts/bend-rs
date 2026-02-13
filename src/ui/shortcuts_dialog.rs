@@ -53,6 +53,8 @@ pub fn show(ctx: &egui::Context, state: &mut ShortcutsDialogState) {
                     ("Ctrl+Y / Cmd+Y", "Redo (alternative)"),
                     ("Ctrl+F / Cmd+F", "Find & Replace"),
                     ("Ctrl+G / Cmd+G", "Go to offset"),
+                    ("Ctrl+S / Cmd+S", "Create save point"),
+                    ("Ctrl+D / Cmd+D", "Add bookmark at cursor"),
                 ]);
 
                 ui.add_space(10.0);

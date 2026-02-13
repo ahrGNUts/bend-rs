@@ -79,6 +79,7 @@
 - [x] 6.8 Handle save point deletion in chain
   - Either recompute successor's diff or restrict to leaf-only deletion
   - Update UI to reflect deletion constraints
+- [x] 6.9 Add keyboard shortcut of command/ctrl + S to create new save point
 
 ## 7. Format Parsing - BMP (P1)
 - [x] 7.1 Define ImageFormat trait (sections, labels, risk levels)
@@ -149,6 +150,7 @@ Prerequisites: 2.2-2.3 (hex view must support background colors)
 - [x] 14.5 Highlight bookmarked positions in hex view
 - [x] 14.6 Allow editing bookmark name and annotation
 - [x] 14.7 Allow deleting bookmarks
+- [x] 14.8 Create keyboard shortcut of command/ctrl + D to add a new bookmark in the hex editor
 
 ## 15. Header Protection Toggle (P2)
 Prerequisites: Sections 7-8 (format parsing to identify header regions)
