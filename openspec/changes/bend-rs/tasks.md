@@ -182,6 +182,7 @@ Prerequisites: Sections 7-8 (format parsing to identify header regions)
   - [x] 17.7c Implement Paste from clipboard (depends on 3.x editing)
   - [x] 17.7d Add "Bookmark here" action (depends on 14.x)
   - [x] 17.7e Add "Go to offset..." action (depends on 17.5)
+- [x] 17.8 BUG: Settings should be persistent between application restarts
 
 ## 18. Settings and Persistence (P3)
 - [x] 18.1 Design settings data structure (window size, recent files, preferences)

@@ -6,7 +6,7 @@ use crate::settings::AppSettings;
 use crate::ui::{bookmarks, go_to_offset_dialog, hex_editor::{self, ContextMenuState}, image_preview, savepoints, search_dialog, settings_dialog::{self, SettingsDialogState}, shortcuts_dialog::{self, ShortcutsDialogState}, structure_tree};
 use eframe::egui;
 use std::path::PathBuf;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// Returns the platform-appropriate modifier key text for shortcuts
 fn modifier_key() -> &'static str {
@@ -159,6 +159,12 @@ pub struct BendApp {
 
     /// Pending scroll offset for hex editor (Some(offset) = scroll to this byte offset)
     pub pending_hex_scroll: Option<usize>,
+
+    /// Last known window size (for change detection)
+    last_window_size: Option<egui::Vec2>,
+
+    /// Timer for debouncing window resize saves
+    window_resize_timer: Option<Instant>,
 }
 
 /// A pending edit awaiting user confirmation
@@ -213,6 +219,8 @@ impl Default for BendApp {
             settings: AppSettings::default(),
             pending_open_path: None,
             pending_hex_scroll: None,
+            last_window_size: None,
+            window_resize_timer: None,
         }
     }
 }
@@ -299,8 +307,9 @@ impl BendApp {
                 // Clear existing textures - they'll be recreated on next frame
                 self.preview_texture = None;
                 self.original_texture = None;
-                // Add to recent files
+                // Add to recent files and save settings
                 self.settings.add_recent_file(path);
+                self.settings.save();
             }
             Err(e) => {
                 log::error!("Failed to load file: {}", e);
@@ -620,6 +629,7 @@ impl BendApp {
                             ui.separator();
                             if ui.button("Clear Recent Files").clicked() {
                                 self.settings.clear_recent_files();
+                                self.settings.save();
                                 ui.close_menu();
                             }
                         } else {
@@ -664,7 +674,7 @@ impl BendApp {
                     }
                     ui.separator();
                     if ui.button("Preferences...").clicked() {
-                        self.settings_dialog_state.open_dialog();
+                        self.settings_dialog_state.open_dialog_with_settings(&self.settings);
                         ui.close_menu();
                     }
                 });
@@ -758,7 +768,8 @@ impl BendApp {
         search_dialog::show(ctx, self);
         go_to_offset_dialog::show(ctx, self);
         shortcuts_dialog::show(ctx, &mut self.shortcuts_dialog_state);
-        settings_dialog::show(ctx, &mut self.settings_dialog_state, &mut self.settings);
+        // Settings dialog handles saving internally
+        let _ = settings_dialog::show(ctx, &mut self.settings_dialog_state, &mut self.settings);
         self.show_high_risk_warning_dialog(ctx);
     }
 
@@ -943,6 +954,29 @@ impl eframe::App for BendApp {
             self.settings.save();
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
+        }
+
+        // Track window size changes (debounced save)
+        let current_size = ctx.screen_rect().size();
+        if let Some(last_size) = self.last_window_size {
+            if (current_size.x - last_size.x).abs() > 1.0
+                || (current_size.y - last_size.y).abs() > 1.0
+            {
+                self.window_resize_timer = Some(Instant::now());
+                self.last_window_size = Some(current_size);
+            }
+        } else {
+            self.last_window_size = Some(current_size);
+        }
+
+        // Save window size after 500ms of no resize activity
+        if let Some(timer) = self.window_resize_timer {
+            if timer.elapsed() > Duration::from_millis(500) {
+                self.settings.window_width = current_size.x;
+                self.settings.window_height = current_size.y;
+                self.settings.save();
+                self.window_resize_timer = None;
+            }
         }
 
         // Handle deferred file opening from recent files menu

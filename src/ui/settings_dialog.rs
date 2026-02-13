@@ -8,9 +8,19 @@ use eframe::egui;
 pub struct SettingsDialogState {
     /// Whether the dialog is visible
     pub dialog_open: bool,
+    /// Snapshot of settings when dialog opened (for change detection)
+    initial_header_protection: bool,
+    initial_show_warnings: bool,
 }
 
 impl SettingsDialogState {
+    /// Open the settings dialog and snapshot current settings
+    pub fn open_dialog_with_settings(&mut self, settings: &AppSettings) {
+        self.dialog_open = true;
+        self.initial_header_protection = settings.default_header_protection;
+        self.initial_show_warnings = settings.show_high_risk_warnings;
+    }
+
     /// Open the settings dialog
     pub fn open_dialog(&mut self) {
         self.dialog_open = true;
@@ -23,9 +33,10 @@ impl SettingsDialogState {
 }
 
 /// Show the settings/preferences dialog
-pub fn show(ctx: &egui::Context, state: &mut SettingsDialogState, settings: &mut AppSettings) {
+/// Returns true if settings were changed and should be saved
+pub fn show(ctx: &egui::Context, state: &mut SettingsDialogState, settings: &mut AppSettings) -> bool {
     if !state.dialog_open {
-        return;
+        return false;
     }
 
     let mut close_dialog = false;
@@ -83,7 +94,7 @@ pub fn show(ctx: &egui::Context, state: &mut SettingsDialogState, settings: &mut
             ui.add_space(4.0);
 
             ui.label(
-                egui::RichText::new("Settings are saved automatically when the application closes.")
+                egui::RichText::new("Settings are saved automatically when changed.")
                     .small()
                     .color(egui::Color32::GRAY),
             );
@@ -113,13 +124,29 @@ pub fn show(ctx: &egui::Context, state: &mut SettingsDialogState, settings: &mut
         });
 
     // Process actions after UI scope
+    let mut should_save = false;
+
     if clear_recent {
         settings.clear_recent_files();
+        should_save = true;
     }
 
     if close_dialog {
+        // Check if checkbox settings changed
+        if settings.default_header_protection != state.initial_header_protection
+            || settings.show_high_risk_warnings != state.initial_show_warnings
+        {
+            should_save = true;
+        }
         state.close_dialog();
     }
+
+    // Save immediately if needed
+    if should_save {
+        settings.save();
+    }
+
+    should_save
 }
 
 #[cfg(test)]
