@@ -8,6 +8,63 @@ use eframe::egui;
 use std::path::PathBuf;
 use std::time::Instant;
 
+/// Returns the platform-appropriate modifier key text for shortcuts
+fn modifier_key() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "⌘ " // space to give the character that follows more breathing room
+    } else {
+        "Ctrl+"
+    }
+}
+
+/// Menu item with shortcut hint that has better contrast than egui's default.
+/// Uses a horizontal layout with the shortcut text aligned right.
+/// Shortcut text is dimmer when not hovered, brighter when hovered.
+fn menu_item_with_shortcut(ui: &mut egui::Ui, label: &str, shortcut: &str, enabled: bool) -> bool {
+    // Calculate label and shortcut widths for proper sizing
+    let label_galley = ui.painter().layout_no_wrap(
+        label.to_string(),
+        egui::FontId::default(),
+        egui::Color32::WHITE,
+    );
+    let shortcut_galley = ui.painter().layout_no_wrap(
+        shortcut.to_string(),
+        egui::FontId::default(),
+        egui::Color32::WHITE,
+    );
+
+    // Width = label + gap + shortcut + padding
+    let desired_width = label_galley.size().x + 40.0 + shortcut_galley.size().x + 8.0;
+
+    let response = ui.add_enabled(
+        enabled,
+        egui::Button::new(label).min_size(egui::vec2(desired_width, 0.0)),
+    );
+
+    // Paint shortcut with brightness based on hover state
+    if !shortcut.is_empty() {
+        let shortcut_color = if response.hovered() {
+            egui::Color32::from_gray(200) // Brighter when hovered
+        } else {
+            egui::Color32::from_gray(120) // Dimmer when not hovered
+        };
+
+        let shortcut_galley = ui.painter().layout_no_wrap(
+            shortcut.to_string(),
+            egui::FontId::default(),
+            shortcut_color,
+        );
+
+        let pos = egui::pos2(
+            response.rect.right() - shortcut_galley.size().x - 8.0,
+            response.rect.center().y - shortcut_galley.size().y / 2.0,
+        );
+        ui.painter().galley(pos, shortcut_galley, shortcut_color);
+    }
+
+    response.clicked()
+}
+
 /// Debounce delay for preview updates (milliseconds)
 const PREVIEW_DEBOUNCE_MS: u64 = 150;
 
@@ -521,15 +578,21 @@ impl BendApp {
 
     /// Render the top menu bar
     fn render_menu_bar(&mut self, ctx: &egui::Context) {
+        // Create platform-appropriate shortcut strings
+        let open_shortcut = format!("{}O", modifier_key());
+        let export_shortcut = format!("{}E", modifier_key());
+        let find_shortcut = format!("{}F", modifier_key());
+        let goto_shortcut = format!("{}G", modifier_key());
+
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
-                    if ui.button("Open...").clicked() {
+                    if menu_item_with_shortcut(ui, "Open...", &open_shortcut, true) {
                         self.open_file_dialog();
                         ui.close_menu();
                     }
                     let has_file = self.editor.is_some();
-                    if ui.add_enabled(has_file, egui::Button::new("Export...")).clicked() {
+                    if menu_item_with_shortcut(ui, "Export...", &export_shortcut, has_file) {
                         self.export_file();
                         ui.close_menu();
                     }
@@ -577,11 +640,11 @@ impl BendApp {
                 });
                 ui.menu_button("Edit", |ui| {
                     let has_file = self.editor.is_some();
-                    if ui.add_enabled(has_file, egui::Button::new("Find & Replace...")).clicked() {
+                    if menu_item_with_shortcut(ui, "Find & Replace...", &find_shortcut, has_file) {
                         self.search_state.open_dialog();
                         ui.close_menu();
                     }
-                    if ui.add_enabled(has_file, egui::Button::new("Go to Offset...")).clicked() {
+                    if menu_item_with_shortcut(ui, "Go to Offset...", &goto_shortcut, has_file) {
                         self.go_to_offset_state.open_dialog();
                         ui.close_menu();
                     }
@@ -606,7 +669,7 @@ impl BendApp {
                     }
                 });
                 ui.menu_button("Help", |ui| {
-                    if ui.button("Keyboard Shortcuts").clicked() {
+                    if menu_item_with_shortcut(ui, "Keyboard Shortcuts", "F1", true) {
                         self.shortcuts_dialog_state.open_dialog();
                         ui.close_menu();
                     }
