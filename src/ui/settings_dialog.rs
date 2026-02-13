@@ -14,20 +14,15 @@ pub struct SettingsDialogState {
 }
 
 impl SettingsDialogState {
-    /// Open the settings dialog and snapshot current settings
-    pub fn open_dialog_with_settings(&mut self, settings: &AppSettings) {
+    /// Open the settings dialog and snapshot current settings for change detection
+    pub fn open(&mut self, settings: &AppSettings) {
         self.dialog_open = true;
         self.initial_header_protection = settings.default_header_protection;
         self.initial_show_warnings = settings.show_high_risk_warnings;
     }
 
-    /// Open the settings dialog
-    pub fn open_dialog(&mut self) {
-        self.dialog_open = true;
-    }
-
     /// Close the settings dialog
-    pub fn close_dialog(&mut self) {
+    pub fn close(&mut self) {
         self.dialog_open = false;
     }
 }
@@ -138,7 +133,7 @@ pub fn show(ctx: &egui::Context, state: &mut SettingsDialogState, settings: &mut
         {
             should_save = true;
         }
-        state.close_dialog();
+        state.close();
     }
 
     // Save immediately if needed
@@ -162,11 +157,12 @@ mod tests {
     #[test]
     fn test_settings_dialog_state_open_close() {
         let mut state = SettingsDialogState::default();
+        let settings = AppSettings::default();
 
-        state.open_dialog();
+        state.open(&settings);
         assert!(state.dialog_open);
 
-        state.close_dialog();
+        state.close();
         assert!(!state.dialog_open);
     }
 }

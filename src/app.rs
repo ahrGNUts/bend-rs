@@ -68,6 +68,12 @@ fn menu_item_with_shortcut(ui: &mut egui::Ui, label: &str, shortcut: &str, enabl
 /// Debounce delay for preview updates (milliseconds)
 const PREVIEW_DEBOUNCE_MS: u64 = 150;
 
+/// Threshold for detecting window size changes (pixels)
+const WINDOW_RESIZE_THRESHOLD: f32 = 1.0;
+
+/// Debounce delay for window resize saves (milliseconds)
+const WINDOW_RESIZE_DEBOUNCE_MS: u64 = 500;
+
 /// Main application state for bend-rs
 ///
 /// ## Architecture: Dual-Buffer Design
@@ -674,7 +680,7 @@ impl BendApp {
                     }
                     ui.separator();
                     if ui.button("Preferences...").clicked() {
-                        self.settings_dialog_state.open_dialog_with_settings(&self.settings);
+                        self.settings_dialog_state.open(&self.settings);
                         ui.close_menu();
                     }
                 });
@@ -959,8 +965,8 @@ impl eframe::App for BendApp {
         // Track window size changes (debounced save)
         let current_size = ctx.screen_rect().size();
         if let Some(last_size) = self.last_window_size {
-            if (current_size.x - last_size.x).abs() > 1.0
-                || (current_size.y - last_size.y).abs() > 1.0
+            if (current_size.x - last_size.x).abs() > WINDOW_RESIZE_THRESHOLD
+                || (current_size.y - last_size.y).abs() > WINDOW_RESIZE_THRESHOLD
             {
                 self.window_resize_timer = Some(Instant::now());
                 self.last_window_size = Some(current_size);
@@ -969,9 +975,9 @@ impl eframe::App for BendApp {
             self.last_window_size = Some(current_size);
         }
 
-        // Save window size after 500ms of no resize activity
+        // Save window size after debounce period of no resize activity
         if let Some(timer) = self.window_resize_timer {
-            if timer.elapsed() > Duration::from_millis(500) {
+            if timer.elapsed() > Duration::from_millis(WINDOW_RESIZE_DEBOUNCE_MS) {
                 self.settings.window_width = current_size.x;
                 self.settings.window_height = current_size.y;
                 self.settings.save();
