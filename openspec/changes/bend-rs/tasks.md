@@ -183,6 +183,7 @@ Prerequisites: Sections 7-8 (format parsing to identify header regions)
   - [x] 17.7d Add "Bookmark here" action (depends on 14.x)
   - [x] 17.7e Add "Go to offset..." action (depends on 17.5)
 - [x] 17.8 BUG: Settings should be persistent between application restarts
+- [x] 17.9 ENHANCEMENT: Switch from updating image on keystroke in hex editor to an unsaved changes/reload bytes model
 
 ## 18. Settings and Persistence (P3)
 - [x] 18.1 Design settings data structure (window size, recent files, preferences)

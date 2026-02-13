@@ -311,11 +311,6 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
         });
     }
 
-    // Mark preview dirty with debounce timestamp (after editor borrow ends)
-    if keyboard_result.needs_preview_update {
-        app.mark_preview_dirty();
-    }
-
     // Handle context menu right-click
     if let Some(offset) = context_menu_offset {
         app.context_menu_state.target_offset = Some(offset);
@@ -327,8 +322,6 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
 
 /// Result of keyboard input handling
 struct KeyboardResult {
-    /// Whether the preview needs to be updated
-    needs_preview_update: bool,
     /// Pending high-risk edit awaiting confirmation (nibble_value, offset, risk_level)
     pending_high_risk_edit: Option<(u8, usize, RiskLevel)>,
 }
@@ -340,7 +333,6 @@ fn handle_keyboard_input(
     cursor_pos: usize,
     cursor_protected: bool,
 ) -> KeyboardResult {
-    let mut needs_preview_update = false;
     let mut pending_high_risk_edit: Option<(u8, usize, RiskLevel)> = None;
 
     // Pre-compute warning state before mutable borrow of editor
@@ -424,14 +416,10 @@ fn handle_keyboard_input(
 
         // Undo/Redo
         if ctrl && !shift && i.key_pressed(egui::Key::Z) {
-            if editor.undo() {
-                needs_preview_update = true;
-            }
+            let _ = editor.undo();
         }
         if ctrl && shift && i.key_pressed(egui::Key::Z) {
-            if editor.redo() {
-                needs_preview_update = true;
-            }
+            let _ = editor.redo();
         }
 
         // Hex input (0-9, A-F) - nibble-level editing
@@ -449,7 +437,6 @@ fn handle_keyboard_input(
                                 }
                             } else {
                                 let _ = editor.edit_nibble(nibble as u8);
-                                needs_preview_update = true;
                             }
                         }
                     }
@@ -459,7 +446,6 @@ fn handle_keyboard_input(
     });
 
     KeyboardResult {
-        needs_preview_update,
         pending_high_risk_edit,
     }
 }
@@ -630,7 +616,6 @@ fn paste_hex(ui: &mut egui::Ui, app: &mut BendApp, target_offset: usize) {
                 editor.edit_byte(offset, *byte);
             }
         }
-        app.mark_preview_dirty();
     }
 }
 

@@ -55,6 +55,7 @@ pub fn show(ctx: &egui::Context, state: &mut ShortcutsDialogState) {
                     ("Ctrl+G / Cmd+G", "Go to offset"),
                     ("Ctrl+S / Cmd+S", "Create save point"),
                     ("Ctrl+D / Cmd+D", "Add bookmark at cursor"),
+                    ("Ctrl+R / Cmd+R", "Refresh preview"),
                 ]);
 
                 ui.add_space(10.0);

@@ -195,6 +195,7 @@ struct InputActions {
     redo: bool,
     create_save_point: bool,
     add_bookmark: bool,
+    refresh_preview: bool,
 }
 
 impl Default for BendApp {
@@ -441,7 +442,6 @@ impl BendApp {
             // Apply the edit
             if let Some(editor) = &mut self.editor {
                 let _ = editor.edit_nibble(pending.nibble_value);
-                self.mark_preview_dirty();
             }
             if self.high_risk_dialog_dont_show {
                 self.suppress_high_risk_warnings = true;
@@ -511,6 +511,10 @@ impl BendApp {
             if ctrl && i.key_pressed(egui::Key::D) && self.editor.is_some() {
                 actions.add_bookmark = true;
             }
+            // Refresh preview: Ctrl+R / Cmd+R
+            if ctrl && i.key_pressed(egui::Key::R) && self.editor.is_some() {
+                actions.refresh_preview = true;
+            }
             // F1: Show keyboard shortcuts help
             if i.key_pressed(egui::Key::F1) {
                 self.shortcuts_dialog_state.open_dialog();
@@ -536,14 +540,12 @@ impl BendApp {
         }
         if actions.undo {
             if let Some(editor) = &mut self.editor {
-                editor.undo();
-                self.mark_preview_dirty();
+                let _ = editor.undo();
             }
         }
         if actions.redo {
             if let Some(editor) = &mut self.editor {
-                editor.redo();
-                self.mark_preview_dirty();
+                let _ = editor.redo();
             }
         }
         if actions.create_save_point {
@@ -559,6 +561,9 @@ impl BendApp {
                 let name = format!("Bookmark at 0x{:08X}", cursor_pos);
                 editor.add_bookmark(cursor_pos, name);
             }
+        }
+        if actions.refresh_preview {
+            self.mark_preview_dirty();
         }
     }
 
@@ -656,12 +661,18 @@ impl BendApp {
                 });
                 ui.menu_button("Edit", |ui| {
                     let has_file = self.editor.is_some();
+                    let refresh_shortcut = format!("{}R", modifier_key());
                     if menu_item_with_shortcut(ui, "Find & Replace...", &find_shortcut, has_file) {
                         self.search_state.open_dialog();
                         ui.close_menu();
                     }
                     if menu_item_with_shortcut(ui, "Go to Offset...", &goto_shortcut, has_file) {
                         self.go_to_offset_state.open_dialog();
+                        ui.close_menu();
+                    }
+                    ui.separator();
+                    if menu_item_with_shortcut(ui, "Refresh Preview", &refresh_shortcut, has_file) {
+                        self.mark_preview_dirty();
                         ui.close_menu();
                     }
                     ui.separator();
@@ -694,10 +705,11 @@ impl BendApp {
         });
     }
 
-    /// Render the toolbar and return undo/redo action flags
-    fn render_toolbar(&mut self, ctx: &egui::Context) -> (bool, bool) {
+    /// Render the toolbar and return undo/redo/refresh action flags
+    fn render_toolbar(&mut self, ctx: &egui::Context) -> (bool, bool, bool) {
         let mut wants_undo = false;
         let mut wants_redo = false;
+        let mut wants_refresh = false;
 
         egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
             ui.horizontal(|ui| {
@@ -747,25 +759,36 @@ impl BendApp {
                 {
                     self.header_protection = !self.header_protection;
                 }
+
+                ui.separator();
+
+                // Refresh preview
+                if ui.add_enabled(has_file, egui::Button::new("Refresh"))
+                    .on_hover_text("Refresh preview (Ctrl+R / Cmd+R)")
+                    .clicked()
+                {
+                    wants_refresh = true;
+                }
             });
         });
 
-        (wants_undo, wants_redo)
+        (wants_undo, wants_redo, wants_refresh)
     }
 
-    /// Process toolbar undo/redo actions
-    fn process_toolbar_actions(&mut self, wants_undo: bool, wants_redo: bool) {
+    /// Process toolbar undo/redo/refresh actions
+    fn process_toolbar_actions(&mut self, wants_undo: bool, wants_redo: bool, wants_refresh: bool) {
         if wants_undo {
             if let Some(editor) = &mut self.editor {
-                editor.undo();
-                self.mark_preview_dirty();
+                let _ = editor.undo();
             }
         }
         if wants_redo {
             if let Some(editor) = &mut self.editor {
-                editor.redo();
-                self.mark_preview_dirty();
+                let _ = editor.redo();
             }
+        }
+        if wants_refresh {
+            self.mark_preview_dirty();
         }
     }
 
@@ -1000,8 +1023,8 @@ impl eframe::App for BendApp {
         // Render UI components
         self.show_close_dialog(ctx);
         self.render_menu_bar(ctx);
-        let (wants_undo, wants_redo) = self.render_toolbar(ctx);
-        self.process_toolbar_actions(wants_undo, wants_redo);
+        let (wants_undo, wants_redo, wants_refresh) = self.render_toolbar(ctx);
+        self.process_toolbar_actions(wants_undo, wants_redo, wants_refresh);
         self.show_dialogs(ctx);
         self.render_status_bar(ctx);
         self.render_sidebar(ctx);

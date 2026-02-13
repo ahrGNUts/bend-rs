@@ -173,19 +173,15 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
             if let Some(editor) = &app.editor {
                 execute_search(&mut app.search_state, editor.working());
             }
-            app.mark_preview_dirty();
         }
     }
 
     if do_replace_all {
         match replace_all(app) {
-            Ok(count) => {
+            Ok(_count) => {
                 // Re-execute search (should find nothing now)
                 if let Some(editor) = &app.editor {
                     execute_search(&mut app.search_state, editor.working());
-                }
-                if count > 0 {
-                    app.mark_preview_dirty();
                 }
             }
             Err(e) => {
