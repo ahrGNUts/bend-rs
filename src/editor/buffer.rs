@@ -30,6 +30,16 @@ pub enum NibblePosition {
     Low,
 }
 
+/// Which editing mode is active (hex nibble vs ASCII character)
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum EditMode {
+    /// Hex editing: two keystrokes per byte (nibble-level)
+    #[default]
+    Hex,
+    /// ASCII editing: one keystroke per byte (character-level)
+    Ascii,
+}
+
 /// Editor state containing buffers and edit history
 pub struct EditorState {
     /// Original bytes loaded from file (immutable after load)
@@ -61,6 +71,9 @@ pub struct EditorState {
 
     /// Whether the working buffer has unsaved changes
     modified: bool,
+
+    /// Current editing mode (hex nibble vs ASCII character)
+    edit_mode: EditMode,
 }
 
 impl EditorState {
@@ -78,6 +91,7 @@ impl EditorState {
             selection: None,
             selection_anchor: None,
             modified: false,
+            edit_mode: EditMode::default(),
         }
     }
 
@@ -122,6 +136,65 @@ impl EditorState {
     /// Get the current nibble position
     pub fn nibble(&self) -> NibblePosition {
         self.nibble
+    }
+
+    /// Get the current edit mode
+    pub fn edit_mode(&self) -> EditMode {
+        self.edit_mode
+    }
+
+    /// Set the edit mode
+    pub fn set_edit_mode(&mut self, mode: EditMode) {
+        self.edit_mode = mode;
+        // Reset nibble to High when switching modes
+        self.nibble = NibblePosition::High;
+    }
+
+    /// Toggle between Hex and ASCII editing modes
+    pub fn toggle_edit_mode(&mut self) {
+        self.edit_mode = match self.edit_mode {
+            EditMode::Hex => EditMode::Ascii,
+            EditMode::Ascii => EditMode::Hex,
+        };
+        // Reset nibble to High when switching modes
+        self.nibble = NibblePosition::High;
+    }
+
+    /// Edit the current byte with an ASCII character
+    /// Only accepts printable ASCII (0x20-0x7E)
+    /// Returns true if the character was accepted, false if rejected
+    #[must_use = "returns whether the character was accepted"]
+    pub fn edit_ascii(&mut self, ch: char) -> bool {
+        // Only accept printable ASCII characters (space through tilde)
+        let byte_value = ch as u32;
+        if byte_value < 0x20 || byte_value > 0x7E {
+            return false;
+        }
+
+        if self.cursor >= self.working.len() {
+            return false;
+        }
+
+        let new_value = byte_value as u8;
+        let current = self.working[self.cursor];
+
+        if current != new_value {
+            // Record the edit for undo
+            self.history.push(EditOperation::Single {
+                offset: self.cursor,
+                old_value: current,
+                new_value,
+            });
+            self.working[self.cursor] = new_value;
+            self.modified = true;
+        }
+
+        // Advance cursor to next byte
+        if self.cursor + 1 < self.working.len() {
+            self.cursor += 1;
+        }
+
+        true
     }
 
     /// Edit the current nibble with a hex digit (0-15)
@@ -737,5 +810,128 @@ mod tests {
         // Now sp1 is the leaf
         assert!(editor.delete_save_point(sp1));
         assert_eq!(editor.save_point_count(), 0);
+    }
+
+    #[test]
+    fn test_edit_mode_default() {
+        let data = vec![0x00, 0x01, 0x02, 0x03];
+        let editor = EditorState::new(data);
+
+        // Default should be Hex mode
+        assert_eq!(editor.edit_mode(), EditMode::Hex);
+    }
+
+    #[test]
+    fn test_edit_mode_toggle() {
+        let data = vec![0x00, 0x01, 0x02, 0x03];
+        let mut editor = EditorState::new(data);
+
+        assert_eq!(editor.edit_mode(), EditMode::Hex);
+
+        editor.toggle_edit_mode();
+        assert_eq!(editor.edit_mode(), EditMode::Ascii);
+
+        editor.toggle_edit_mode();
+        assert_eq!(editor.edit_mode(), EditMode::Hex);
+    }
+
+    #[test]
+    fn test_edit_mode_toggle_resets_nibble() {
+        let data = vec![0x00, 0x01, 0x02, 0x03];
+        let mut editor = EditorState::new(data);
+
+        // Edit high nibble to move to low nibble
+        editor.edit_nibble(0xA);
+        assert_eq!(editor.nibble(), NibblePosition::Low);
+
+        // Toggle should reset nibble to High
+        editor.toggle_edit_mode();
+        assert_eq!(editor.nibble(), NibblePosition::High);
+    }
+
+    #[test]
+    fn test_edit_ascii_printable() {
+        let data = vec![0x00, 0x01, 0x02, 0x03];
+        let mut editor = EditorState::new(data);
+
+        // Edit with 'A' (0x41)
+        assert!(editor.edit_ascii('A'));
+        assert_eq!(editor.working()[0], 0x41);
+        assert_eq!(editor.cursor(), 1); // Cursor should advance
+
+        // Edit with space (0x20) - lower bound of printable
+        assert!(editor.edit_ascii(' '));
+        assert_eq!(editor.working()[1], 0x20);
+        assert_eq!(editor.cursor(), 2);
+
+        // Edit with '~' (0x7E) - upper bound of printable
+        assert!(editor.edit_ascii('~'));
+        assert_eq!(editor.working()[2], 0x7E);
+        assert_eq!(editor.cursor(), 3);
+    }
+
+    #[test]
+    fn test_edit_ascii_rejects_non_printable() {
+        let data = vec![0x00, 0x01, 0x02, 0x03];
+        let mut editor = EditorState::new(data);
+
+        // Try tab (0x09) - should be rejected
+        assert!(!editor.edit_ascii('\t'));
+        assert_eq!(editor.working()[0], 0x00); // Unchanged
+        assert_eq!(editor.cursor(), 0); // Cursor should not advance
+
+        // Try newline (0x0A) - should be rejected
+        assert!(!editor.edit_ascii('\n'));
+        assert_eq!(editor.working()[0], 0x00);
+
+        // Try DEL (0x7F) - should be rejected
+        assert!(!editor.edit_ascii('\x7F'));
+        assert_eq!(editor.working()[0], 0x00);
+    }
+
+    #[test]
+    fn test_edit_ascii_undo() {
+        let data = vec![0x00, 0x01, 0x02, 0x03];
+        let mut editor = EditorState::new(data.clone());
+
+        editor.edit_ascii('A');
+        assert_eq!(editor.working()[0], 0x41);
+
+        editor.undo();
+        assert_eq!(editor.working()[0], 0x00);
+        assert!(!editor.is_modified());
+    }
+
+    #[test]
+    fn test_edit_ascii_at_end() {
+        let data = vec![0x00, 0x01];
+        let mut editor = EditorState::new(data);
+
+        // Move cursor to last byte
+        editor.set_cursor(1);
+
+        // Edit - should work but cursor stays at last position
+        assert!(editor.edit_ascii('Z'));
+        assert_eq!(editor.working()[1], b'Z');
+        assert_eq!(editor.cursor(), 1); // Cursor stays at last byte (can't advance past end)
+    }
+
+    #[test]
+    fn test_set_edit_mode() {
+        let data = vec![0x00, 0x01, 0x02, 0x03];
+        let mut editor = EditorState::new(data);
+
+        // Edit high nibble to move to low nibble
+        editor.edit_nibble(0xA);
+        assert_eq!(editor.nibble(), NibblePosition::Low);
+
+        // Set mode should reset nibble
+        editor.set_edit_mode(EditMode::Ascii);
+        assert_eq!(editor.edit_mode(), EditMode::Ascii);
+        assert_eq!(editor.nibble(), NibblePosition::High);
+
+        editor.set_edit_mode(EditMode::Hex);
+        assert_eq!(editor.edit_mode(), EditMode::Hex);
+        assert_eq!(editor.nibble(), NibblePosition::High);
     }
 }

@@ -1,6 +1,7 @@
 //! Main application state and egui integration
 
 use crate::editor::{EditorState, GoToOffsetState, SearchState};
+use crate::editor::buffer::EditMode;
 use crate::formats::{parse_file, FileSection, RiskLevel};
 use crate::settings::AppSettings;
 use crate::ui::{bookmarks, go_to_offset_dialog, hex_editor::{self, ContextMenuState}, image_preview, savepoints, search_dialog, settings_dialog::{self, SettingsDialogState}, shortcuts_dialog::{self, ShortcutsDialogState}, structure_tree};
@@ -173,11 +174,20 @@ pub struct BendApp {
     window_resize_timer: Option<Instant>,
 }
 
+/// Type of pending edit (hex nibble or ASCII character)
+#[derive(Clone, Copy)]
+pub enum PendingEditType {
+    /// Nibble edit (hex mode): nibble value 0-15
+    Nibble(u8),
+    /// ASCII edit: character to write
+    Ascii(char),
+}
+
 /// A pending edit awaiting user confirmation
 #[derive(Clone, Copy)]
 pub struct PendingEdit {
-    /// The nibble value to write (0-15)
-    pub nibble_value: u8,
+    /// The type of edit (nibble or ASCII)
+    pub edit_type: PendingEditType,
     /// The byte offset being edited
     pub offset: usize,
     /// Risk level of the section being edited
@@ -439,9 +449,16 @@ impl BendApp {
 
         // Handle user response
         if should_proceed {
-            // Apply the edit
+            // Apply the edit based on type
             if let Some(editor) = &mut self.editor {
-                let _ = editor.edit_nibble(pending.nibble_value);
+                match pending.edit_type {
+                    PendingEditType::Nibble(nibble_value) => {
+                        let _ = editor.edit_nibble(nibble_value);
+                    }
+                    PendingEditType::Ascii(ch) => {
+                        let _ = editor.edit_ascii(ch);
+                    }
+                }
             }
             if self.high_risk_dialog_dont_show {
                 self.suppress_high_risk_warnings = true;
@@ -819,6 +836,13 @@ impl BendApp {
                     ui.label(format!("{} bytes", editor.working().len()));
                     ui.separator();
                     ui.label(format!("Cursor: 0x{:08X}", editor.cursor()));
+                    ui.separator();
+                    // Edit mode indicator
+                    let mode_text = match editor.edit_mode() {
+                        EditMode::Hex => "HEX",
+                        EditMode::Ascii => "ASCII",
+                    };
+                    ui.label(format!("Mode: {}", mode_text));
                 }
                 if let Some(err) = &self.decode_error {
                     ui.separator();

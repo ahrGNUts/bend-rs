@@ -86,7 +86,9 @@ pub fn show(ctx: &egui::Context, state: &mut ShortcutsDialogState) {
                 // Hex Editing
                 ui.heading("Hex Editing");
                 shortcuts_table(ui, "hex_editing", &[
-                    ("0-9, A-F", "Edit hex value at cursor"),
+                    ("0-9, A-F", "Edit hex value at cursor (Hex mode)"),
+                    ("Any printable char", "Edit ASCII value at cursor (ASCII mode)"),
+                    ("Tab", "Toggle between Hex and ASCII editing mode"),
                     ("Right-click", "Context menu (copy, paste, bookmark)"),
                 ]);
 

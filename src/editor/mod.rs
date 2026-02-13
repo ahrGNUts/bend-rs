@@ -8,7 +8,7 @@ pub mod savepoints;
 pub mod search;
 
 pub use bookmarks::BookmarkManager;
-pub use buffer::{EditorState, NibblePosition};
+pub use buffer::{EditMode, EditorState, NibblePosition};
 pub use go_to_offset::GoToOffsetState;
 pub use savepoints::{SavePoint, SavePointManager};
 pub use search::SearchState;

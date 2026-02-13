@@ -1,7 +1,7 @@
 //! Hex editor UI component with virtual scrolling
 
 use crate::app::BendApp;
-use crate::editor::buffer::NibblePosition;
+use crate::editor::buffer::{EditMode, NibblePosition};
 use crate::formats::RiskLevel;
 use eframe::egui::{self, RichText, TextStyle};
 
@@ -46,12 +46,15 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
     let cursor_pos = editor.cursor();
     let cursor_nibble = editor.nibble();
     let selection = editor.selection();
+    let edit_mode = editor.edit_mode();
 
     // Get monospace font metrics
     let row_height = ui.text_style_height(&TextStyle::Monospace);
 
-    // Track clicked byte offset for deferred cursor update
+    // Track clicked byte offset for deferred cursor update (from hex column)
     let mut clicked_offset: Option<usize> = None;
+    // Track clicked byte offset from ASCII column (switches to ASCII mode)
+    let mut clicked_ascii_offset: Option<usize> = None;
     // Track whether shift was held during click
     let shift_held = ui.input(|i| i.modifiers.shift);
     // Track right-clicked byte for context menu
@@ -172,15 +175,26 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                             let rect = response.rect;
                             let half_width = rect.width() / 2.0;
 
-                            let (high_bg, low_bg) = match cursor_nibble {
-                                NibblePosition::High => (
-                                    egui::Color32::from_rgb(80, 80, 160),
+                            // In ASCII mode, hex cursor shows dim highlight for both nibbles
+                            // In Hex mode, show bright highlight for active nibble, dim for inactive
+                            let (high_bg, low_bg) = if edit_mode == EditMode::Ascii {
+                                // ASCII mode: dim highlight for entire hex byte
+                                (
                                     egui::Color32::from_rgb(40, 40, 80),
-                                ),
-                                NibblePosition::Low => (
                                     egui::Color32::from_rgb(40, 40, 80),
-                                    egui::Color32::from_rgb(80, 80, 160),
-                                ),
+                                )
+                            } else {
+                                // Hex mode: bright/dim based on nibble position
+                                match cursor_nibble {
+                                    NibblePosition::High => (
+                                        egui::Color32::from_rgb(80, 80, 160),
+                                        egui::Color32::from_rgb(40, 40, 80),
+                                    ),
+                                    NibblePosition::Low => (
+                                        egui::Color32::from_rgb(40, 40, 80),
+                                        egui::Color32::from_rgb(80, 80, 160),
+                                    ),
+                                }
                             };
 
                             // Draw background rectangles behind each nibble
@@ -256,23 +270,51 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
 
                     ui.add_space(HEX_ASCII_SPACING);
 
-                    // ASCII column
+                    // ASCII column - per-character rendering for click handling
+                    // Set zero spacing between characters so they render tightly together
+                    ui.spacing_mut().item_spacing.x = 0.0;
+
                     ui.label(
                         RichText::new("|").monospace().color(egui::Color32::DARK_GRAY),
                     );
 
-                    let ascii: String = row_bytes
-                        .iter()
-                        .map(|&b| {
-                            if b.is_ascii_graphic() || b == b' ' {
-                                b as char
-                            } else {
-                                '.'
-                            }
-                        })
-                        .collect();
+                    for (i, byte) in row_bytes.iter().enumerate() {
+                        let byte_offset = offset + i;
+                        let display_char = if byte.is_ascii_graphic() || *byte == b' ' {
+                            *byte as char
+                        } else {
+                            '.'
+                        };
 
-                    ui.label(RichText::new(ascii).monospace());
+                        let is_cursor = byte_offset == cursor_pos;
+                        let is_selected = selection
+                            .map(|(start, end)| byte_offset >= start && byte_offset < end)
+                            .unwrap_or(false);
+
+                        let mut rich_text = RichText::new(display_char.to_string()).monospace();
+
+                        // Apply highlighting based on cursor/selection/mode
+                        if is_cursor {
+                            // Cursor highlighting depends on edit mode
+                            if edit_mode == EditMode::Ascii {
+                                // Active mode cursor: bright highlight
+                                rich_text = rich_text.background_color(egui::Color32::from_rgb(80, 80, 160));
+                            } else {
+                                // Inactive mode cursor: dim highlight
+                                rich_text = rich_text.background_color(egui::Color32::from_rgb(40, 40, 80));
+                            }
+                        } else if is_selected {
+                            rich_text = rich_text.background_color(egui::Color32::from_rgb(40, 80, 40));
+                        }
+
+                        let response = ui.label(rich_text);
+                        if response.clicked() {
+                            clicked_ascii_offset = Some(byte_offset);
+                        }
+                        if response.secondary_clicked() {
+                            context_menu_offset = Some(byte_offset);
+                        }
+                    }
 
                     ui.label(
                         RichText::new("|").monospace().color(egui::Color32::DARK_GRAY),
@@ -292,9 +334,18 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
             }
         });
 
-    // Handle deferred click
+    // Handle deferred click from hex column (stays in hex mode)
     if let Some(offset) = clicked_offset {
         if let Some(editor) = &mut app.editor {
+            editor.set_edit_mode(EditMode::Hex);
+            editor.set_cursor_with_selection(offset, shift_held);
+        }
+    }
+
+    // Handle deferred click from ASCII column (switches to ASCII mode)
+    if let Some(offset) = clicked_ascii_offset {
+        if let Some(editor) = &mut app.editor {
+            editor.set_edit_mode(EditMode::Ascii);
             editor.set_cursor_with_selection(offset, shift_held);
         }
     }
@@ -303,9 +354,14 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
     let keyboard_result = handle_keyboard_input(ui, app, cursor_pos, cursor_protected);
 
     // Handle pending high-risk edit (after input borrow ends)
-    if let Some((nibble_value, offset, risk_level)) = keyboard_result.pending_high_risk_edit {
+    if let Some((edit_type, offset, risk_level)) = keyboard_result.pending_high_risk_edit {
+        // Convert local PendingEditType to app's PendingEditType
+        let app_edit_type = match edit_type {
+            PendingEditType::Nibble(n) => crate::app::PendingEditType::Nibble(n),
+            PendingEditType::Ascii(c) => crate::app::PendingEditType::Ascii(c),
+        };
         app.pending_high_risk_edit = Some(crate::app::PendingEdit {
-            nibble_value,
+            edit_type: app_edit_type,
             offset,
             risk_level,
         });
@@ -320,10 +376,19 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
     show_context_menu(ui, app);
 }
 
+/// Type of pending edit for high-risk confirmation
+#[derive(Clone, Copy)]
+enum PendingEditType {
+    /// Nibble edit (hex mode): nibble value 0-15
+    Nibble(u8),
+    /// ASCII edit: character to write
+    Ascii(char),
+}
+
 /// Result of keyboard input handling
 struct KeyboardResult {
-    /// Pending high-risk edit awaiting confirmation (nibble_value, offset, risk_level)
-    pending_high_risk_edit: Option<(u8, usize, RiskLevel)>,
+    /// Pending high-risk edit awaiting confirmation (edit_type, offset, risk_level)
+    pending_high_risk_edit: Option<(PendingEditType, usize, RiskLevel)>,
 }
 
 /// Handle keyboard input for navigation and editing
@@ -333,19 +398,29 @@ fn handle_keyboard_input(
     cursor_pos: usize,
     cursor_protected: bool,
 ) -> KeyboardResult {
-    let mut pending_high_risk_edit: Option<(u8, usize, RiskLevel)> = None;
+    let mut pending_high_risk_edit: Option<(PendingEditType, usize, RiskLevel)> = None;
+    let mut paste_text: Option<String> = None;
 
     // Pre-compute warning state before mutable borrow of editor
     let should_warn_for_cursor = app.should_warn_for_edit(cursor_pos);
     let cursor_risk_level = app.get_high_risk_level(cursor_pos);
 
-    ui.input(|i| {
+    // Cache edit mode for text input handling
+    let current_edit_mode = app.editor.as_ref().map(|e| e.edit_mode()).unwrap_or(EditMode::Hex);
+
+    ui.input_mut(|i| {
         let Some(editor) = &mut app.editor else {
             return;
         };
 
         let shift = i.modifiers.shift;
         let ctrl = i.modifiers.ctrl || i.modifiers.mac_cmd;
+
+        // Tab key toggles between Hex and ASCII edit mode
+        // Consume the event to prevent focus shifting to other UI elements
+        if i.consume_key(egui::Modifiers::NONE, egui::Key::Tab) {
+            editor.toggle_edit_mode();
+        }
 
         // Navigation with optional selection extension
         if i.key_pressed(egui::Key::ArrowLeft) {
@@ -422,28 +497,74 @@ fn handle_keyboard_input(
             let _ = editor.redo();
         }
 
-        // Hex input (0-9, A-F) - nibble-level editing
+        // Text input and paste - route based on edit mode
         // Skip if cursor is at a protected position
         if !cursor_protected {
             for event in &i.events {
-                if let egui::Event::Text(text) = event {
-                    for c in text.chars() {
-                        if let Some(nibble) = c.to_digit(16) {
-                            // Check if this edit should trigger a warning
-                            if should_warn_for_cursor {
-                                // Store pending edit for confirmation
-                                if let Some(risk) = cursor_risk_level {
-                                    pending_high_risk_edit = Some((nibble as u8, cursor_pos, risk));
+                match event {
+                    egui::Event::Text(text) => {
+                        for c in text.chars() {
+                            match current_edit_mode {
+                                EditMode::Hex => {
+                                    // Hex mode: accept 0-9, A-F for nibble editing
+                                    if let Some(nibble) = c.to_digit(16) {
+                                        if should_warn_for_cursor {
+                                            if let Some(risk) = cursor_risk_level {
+                                                pending_high_risk_edit = Some((PendingEditType::Nibble(nibble as u8), cursor_pos, risk));
+                                            }
+                                        } else {
+                                            let _ = editor.edit_nibble(nibble as u8);
+                                        }
+                                    }
                                 }
-                            } else {
-                                let _ = editor.edit_nibble(nibble as u8);
+                                EditMode::Ascii => {
+                                    // ASCII mode: accept printable ASCII (0x20-0x7E)
+                                    let code = c as u32;
+                                    if code >= 0x20 && code <= 0x7E {
+                                        if should_warn_for_cursor {
+                                            if let Some(risk) = cursor_risk_level {
+                                                pending_high_risk_edit = Some((PendingEditType::Ascii(c), cursor_pos, risk));
+                                            }
+                                        } else {
+                                            let _ = editor.edit_ascii(c);
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
+                    egui::Event::Paste(text) => {
+                        // Capture paste text for handling after the closure
+                        paste_text = Some(text.clone());
+                    }
+                    _ => {}
                 }
             }
         }
     });
+
+    // Handle paste outside the input closure
+    if let Some(text) = paste_text {
+        let bytes = match current_edit_mode {
+            EditMode::Hex => parse_hex_input(&text),
+            EditMode::Ascii => {
+                let b: Vec<u8> = text.bytes()
+                    .filter(|&b| b >= 0x20 && b <= 0x7E)
+                    .collect();
+                if b.is_empty() { None } else { Some(b) }
+            }
+        };
+        if let Some(bytes) = bytes {
+            if let Some(editor) = &mut app.editor {
+                for (i, byte) in bytes.iter().enumerate() {
+                    let offset = cursor_pos + i;
+                    if offset < editor.len() {
+                        editor.edit_byte(offset, *byte);
+                    }
+                }
+            }
+        }
+    }
 
     KeyboardResult {
         pending_high_risk_edit,
@@ -586,30 +707,34 @@ fn copy_as_ascii(ui: &mut egui::Ui, app: &BendApp, target_offset: usize) {
     ui.output_mut(|o| o.copied_text = ascii_string);
 }
 
-/// Paste hex string from clipboard
-fn paste_hex(ui: &mut egui::Ui, app: &mut BendApp, target_offset: usize) {
-    let clipboard_text = ui.input(|i| i.events.iter().find_map(|e| {
-        if let egui::Event::Paste(text) = e {
-            Some(text.clone())
-        } else {
-            None
-        }
-    }));
-
-    // Try to get text from clipboard via output
-    let text = clipboard_text.unwrap_or_else(|| {
-        // Fallback: read from platform clipboard if available
-        String::new()
-    });
-
-    if text.is_empty() {
+/// Paste bytes from clipboard (mode-dependent)
+/// - Hex mode: parse clipboard as hex bytes ("FF 00" or "FF00")
+/// - ASCII mode: interpret clipboard as raw text, write each character's byte value
+fn paste_hex(_ui: &mut egui::Ui, app: &mut BendApp, target_offset: usize) {
+    // Read from system clipboard
+    let Some(text) = read_clipboard() else {
         return;
-    }
+    };
 
-    // Try to parse as hex bytes
-    let bytes = parse_hex_input(&text);
+    let Some(editor) = &mut app.editor else { return };
 
-    if let (Some(editor), Some(bytes)) = (&mut app.editor, bytes) {
+    // Parse bytes based on current edit mode
+    let bytes: Option<Vec<u8>> = match editor.edit_mode() {
+        EditMode::Hex => {
+            // Hex mode: parse as hex bytes
+            parse_hex_input(&text)
+        }
+        EditMode::Ascii => {
+            // ASCII mode: interpret as raw text bytes
+            // Only include printable ASCII characters (0x20-0x7E)
+            let bytes: Vec<u8> = text.bytes()
+                .filter(|&b| b >= 0x20 && b <= 0x7E)
+                .collect();
+            if bytes.is_empty() { None } else { Some(bytes) }
+        }
+    };
+
+    if let Some(bytes) = bytes {
         for (i, byte) in bytes.iter().enumerate() {
             let offset = target_offset + i;
             if offset < editor.len() {
@@ -617,6 +742,14 @@ fn paste_hex(ui: &mut egui::Ui, app: &mut BendApp, target_offset: usize) {
             }
         }
     }
+}
+
+/// Read text from the system clipboard
+fn read_clipboard() -> Option<String> {
+    arboard::Clipboard::new()
+        .ok()
+        .and_then(|mut c| c.get_text().ok())
+        .filter(|s| !s.is_empty())
 }
 
 /// Parse hex input string into bytes (supports "FF FF FF" or "FFFFFF" formats)
