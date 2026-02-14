@@ -157,6 +157,32 @@ impl BookmarkManager {
         self.bookmarks.clear();
         self.id_to_index.clear();
     }
+
+    /// Adjust bookmark offsets after bytes were inserted at `offset`
+    ///
+    /// Bookmarks at or after `offset` are shifted right by `count`.
+    pub fn adjust_offsets_after_insert(&mut self, offset: usize, count: usize) {
+        for bookmark in &mut self.bookmarks {
+            if bookmark.offset >= offset {
+                bookmark.offset += count;
+            }
+        }
+    }
+
+    /// Adjust bookmark offsets after bytes were deleted starting at `offset`
+    ///
+    /// Bookmarks within the deleted range `[offset, offset+count)` are removed.
+    /// Bookmarks after the deleted range are shifted left by `count`.
+    pub fn adjust_offsets_after_delete(&mut self, offset: usize, count: usize) {
+        let delete_end = offset + count;
+        self.bookmarks.retain(|b| b.offset < offset || b.offset >= delete_end);
+        for bookmark in &mut self.bookmarks {
+            if bookmark.offset >= delete_end {
+                bookmark.offset -= count;
+            }
+        }
+        self.rebuild_index();
+    }
 }
 
 #[cfg(test)]
@@ -227,5 +253,50 @@ mod tests {
         assert!(manager.at_offset(200).is_none());
         assert!(manager.has_bookmark(100));
         assert!(!manager.has_bookmark(200));
+    }
+
+    #[test]
+    fn test_adjust_offsets_after_insert() {
+        let mut manager = BookmarkManager::new();
+        manager.add(100, "Before".to_string());
+        manager.add(200, "At".to_string());
+        manager.add(300, "After".to_string());
+
+        // Insert 10 bytes at offset 200
+        manager.adjust_offsets_after_insert(200, 10);
+
+        let bookmarks = manager.all();
+        assert_eq!(bookmarks[0].offset, 100); // Before: unchanged
+        assert_eq!(bookmarks[1].offset, 210); // At insert point: shifted +10
+        assert_eq!(bookmarks[2].offset, 310); // After: shifted +10
+    }
+
+    #[test]
+    fn test_adjust_offsets_after_delete() {
+        let mut manager = BookmarkManager::new();
+        manager.add(100, "Before".to_string());
+        manager.add(150, "In range".to_string());
+        manager.add(300, "After".to_string());
+
+        // Delete 100 bytes starting at offset 120 (range 120..220)
+        manager.adjust_offsets_after_delete(120, 100);
+
+        let bookmarks = manager.all();
+        assert_eq!(bookmarks.len(), 2); // Bookmark at 150 removed
+        assert_eq!(bookmarks[0].offset, 100); // Before: unchanged
+        assert_eq!(bookmarks[1].offset, 200); // After: shifted -100
+    }
+
+    #[test]
+    fn test_adjust_offsets_delete_at_boundary() {
+        let mut manager = BookmarkManager::new();
+        manager.add(10, "Start".to_string());
+        manager.add(14, "End in range".to_string());
+
+        // Delete 5 bytes at offset 10 (range 10..15)
+        manager.adjust_offsets_after_delete(10, 5);
+
+        let bookmarks = manager.all();
+        assert_eq!(bookmarks.len(), 0); // Both removed (both in range [10, 15))
     }
 }

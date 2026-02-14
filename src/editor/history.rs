@@ -24,6 +24,16 @@ pub enum EditOperation {
         old_values: Vec<u8>,
         new_values: Vec<u8>,
     },
+    /// Insert bytes at an offset (buffer grows)
+    InsertBytes {
+        offset: usize,
+        values: Vec<u8>,
+    },
+    /// Delete bytes at an offset (buffer shrinks)
+    DeleteBytes {
+        offset: usize,
+        values: Vec<u8>,
+    },
 }
 
 /// Try to coalesce a new operation with an existing one
@@ -76,6 +86,9 @@ fn try_coalesce(existing: &mut EditOperation, new: &EditOperation) -> bool {
             }
             false
         }
+
+        // InsertBytes and DeleteBytes never coalesce
+        EditOperation::InsertBytes { .. } | EditOperation::DeleteBytes { .. } => false,
 
         // Extend a range with an adjacent single-byte edit
         EditOperation::Range {
@@ -452,6 +465,46 @@ mod tests {
         });
 
         // Should be two separate operations
+        assert_eq!(history.undo_count(), 2);
+    }
+
+    #[test]
+    fn test_insert_bytes_no_coalesce() {
+        let mut history = History::new();
+
+        // Push an InsertBytes operation
+        history.push(EditOperation::InsertBytes {
+            offset: 0,
+            values: vec![0xAA],
+        });
+
+        // Push an adjacent Single edit — should NOT coalesce with InsertBytes
+        history.push(EditOperation::Single {
+            offset: 1,
+            old_value: 0x00,
+            new_value: 0xBB,
+        });
+
+        assert_eq!(history.undo_count(), 2);
+    }
+
+    #[test]
+    fn test_delete_bytes_no_coalesce() {
+        let mut history = History::new();
+
+        // Push a DeleteBytes operation
+        history.push(EditOperation::DeleteBytes {
+            offset: 0,
+            values: vec![0xAA],
+        });
+
+        // Push an adjacent Single edit — should NOT coalesce with DeleteBytes
+        history.push(EditOperation::Single {
+            offset: 0,
+            old_value: 0x00,
+            new_value: 0xBB,
+        });
+
         assert_eq!(history.undo_count(), 2);
     }
 }

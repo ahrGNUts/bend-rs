@@ -1,7 +1,7 @@
 //! Main application state and egui integration
 
 use crate::editor::{EditorState, GoToOffsetState, SearchState};
-use crate::editor::buffer::EditMode;
+use crate::editor::buffer::{EditMode, WriteMode};
 use crate::formats::{parse_file, FileSection, RiskLevel};
 use crate::settings::AppSettings;
 use crate::ui::{bookmarks, go_to_offset_dialog, hex_editor::{self, ContextMenuState}, image_preview, savepoints, search_dialog, settings_dialog::{self, SettingsDialogState}, shortcuts_dialog::{self, ShortcutsDialogState}, structure_tree};
@@ -453,10 +453,10 @@ impl BendApp {
             if let Some(editor) = &mut self.editor {
                 match pending.edit_type {
                     PendingEditType::Nibble(nibble_value) => {
-                        let _ = editor.edit_nibble(nibble_value);
+                        let _ = editor.edit_nibble_with_mode(nibble_value);
                     }
                     PendingEditType::Ascii(ch) => {
-                        let _ = editor.edit_ascii(ch);
+                        let _ = editor.edit_ascii_with_mode(ch);
                     }
                 }
             }
@@ -843,6 +843,13 @@ impl BendApp {
                         EditMode::Ascii => "ASCII",
                     };
                     ui.label(format!("Mode: {}", mode_text));
+                    ui.separator();
+                    // Write mode indicator (Insert/Overwrite)
+                    let write_mode_text = match editor.write_mode() {
+                        WriteMode::Insert => "INS",
+                        WriteMode::Overwrite => "OVR",
+                    };
+                    ui.label(write_mode_text);
                 }
                 if let Some(err) = &self.decode_error {
                     ui.separator();

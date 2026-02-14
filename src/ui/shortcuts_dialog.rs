@@ -89,6 +89,9 @@ pub fn show(ctx: &egui::Context, state: &mut ShortcutsDialogState) {
                     ("0-9, A-F", "Edit hex value at cursor (Hex mode)"),
                     ("Any printable char", "Edit ASCII value at cursor (ASCII mode)"),
                     ("Tab", "Toggle between Hex and ASCII editing mode"),
+                    ("Ctrl+I / Cmd+I", "Toggle Insert/Overwrite mode"),
+                    ("Backspace", "Delete byte before cursor (Insert) / Move left (Overwrite)"),
+                    ("Delete", "Delete byte at cursor (Insert mode)"),
                     ("Right-click", "Context menu (copy, paste, bookmark)"),
                 ]);
 

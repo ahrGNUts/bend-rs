@@ -210,6 +210,16 @@ impl SavePointManager {
     pub fn is_empty(&self) -> bool {
         self.save_points.is_empty()
     }
+
+    /// Clear all save points and reset diff base state
+    ///
+    /// Used when buffer length changes (insert/delete) since absolute-offset
+    /// diffs become invalid.
+    pub fn clear_all(&mut self, base_state: &[u8]) {
+        self.save_points.clear();
+        self.id_to_index.clear();
+        self.last_save_point_state = base_state.to_vec();
+    }
 }
 
 /// Compute the diff between two byte slices
