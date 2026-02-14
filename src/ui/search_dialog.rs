@@ -145,6 +145,7 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
                 if let Some(editor) = &mut app.editor {
                     editor.set_cursor(offset);
                 }
+                app.scroll_hex_to_offset(offset);
             }
         }
     }
@@ -155,6 +156,7 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
             if let Some(editor) = &mut app.editor {
                 editor.set_cursor(offset);
             }
+            app.scroll_hex_to_offset(offset);
         }
     }
 
@@ -164,6 +166,7 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
             if let Some(editor) = &mut app.editor {
                 editor.set_cursor(offset);
             }
+            app.scroll_hex_to_offset(offset);
         }
     }
 
