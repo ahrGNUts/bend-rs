@@ -85,9 +85,6 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
 
             // Action buttons
             ui.horizontal(|ui| {
-                if ui.button("Search").clicked() {
-                    do_search = true;
-                }
                 if ui.button("Next").clicked() {
                     do_next = true;
                 }
