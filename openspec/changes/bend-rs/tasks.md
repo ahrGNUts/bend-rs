@@ -187,6 +187,7 @@ Prerequisites: Sections 7-8 (format parsing to identify header regions)
 - [ ] 17.10 Switch from using placeholder app icon to databent base_converted.jpg
 - [x] 17.11 Implement an insert/overwrite mode when editing bytes and ascii
 - [x] 17.12 BUG: typing in the find and replace modal should capture the cursor and not cause input in the hex or ascii editors
+- [x] 17.13 BUG: shortcuts dialog title should be visible at all times and not grow vertically out of view of the user
 
 ## 18. Settings and Persistence (P3)
 - [x] 18.1 Design settings data structure (window size, recent files, preferences)

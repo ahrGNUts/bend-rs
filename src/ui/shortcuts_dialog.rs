@@ -29,13 +29,18 @@ pub fn show(ctx: &egui::Context, state: &mut ShortcutsDialogState) {
 
     let mut close_dialog = false;
 
+    let max_height = ctx.screen_rect().height() * 0.8;
+
     egui::Window::new("Keyboard Shortcuts")
         .collapsible(false)
         .resizable(true)
         .default_width(400.0)
+        .max_height(max_height)
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .show(ctx, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| {
+            egui::ScrollArea::vertical()
+                .auto_shrink(true)
+                .show(ui, |ui| {
                 // File Operations
                 ui.heading("File Operations");
                 shortcuts_table(ui, "file_ops", &[
