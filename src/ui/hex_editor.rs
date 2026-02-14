@@ -4,6 +4,26 @@ use crate::app::BendApp;
 use crate::editor::buffer::{EditMode, NibblePosition, WriteMode};
 use crate::formats::RiskLevel;
 use eframe::egui::{self, RichText, TextStyle};
+use std::sync::OnceLock;
+
+/// Pre-computed lookup table of 256 hex strings ("00" through "FF")
+fn hex_table() -> &'static [&'static str; 256] {
+    static TABLE: OnceLock<[&'static str; 256]> = OnceLock::new();
+    TABLE.get_or_init(|| {
+        // Leak a single allocation containing all 256 two-char hex strings
+        let strings: Vec<&'static str> = (0..256u16)
+            .map(|i| {
+                let s = format!("{:02X}", i);
+                &*Box::leak(s.into_boxed_str())
+            })
+            .collect();
+        let mut arr = [""; 256];
+        for (i, s) in strings.into_iter().enumerate() {
+            arr[i] = s;
+        }
+        arr
+    })
+}
 
 /// State for the context menu
 #[derive(Default)]
@@ -42,6 +62,250 @@ const CURSOR_BRIGHT_INSERT: egui::Color32 = egui::Color32::from_rgb(80, 160, 80)
 /// Cursor highlight colors — dim in insert mode (green tint)
 const CURSOR_DIM_INSERT: egui::Color32 = egui::Color32::from_rgb(40, 80, 40);
 
+/// Pre-computed highlight state for a single byte
+struct ByteHighlight {
+    is_cursor: bool,
+    is_selected: bool,
+    is_search_match: bool,
+    is_current_match: bool,
+    has_bookmark: bool,
+    is_protected: bool,
+    section_bg: Option<egui::Color32>,
+}
+
+/// Render a single hex byte with cursor/selection/section highlighting.
+/// Returns the response for click detection.
+fn render_hex_byte(
+    ui: &mut egui::Ui,
+    byte: u8,
+    highlight: &ByteHighlight,
+    cursor_nibble: NibblePosition,
+    edit_mode: EditMode,
+    write_mode: WriteMode,
+) -> egui::Response {
+    let hex = hex_table()[byte as usize];
+
+    if highlight.is_cursor {
+        let rich_text = RichText::new(hex).monospace();
+        let response = ui.label(rich_text);
+
+        // Draw nibble highlight backgrounds using painter
+        let rect = response.rect;
+        let half_width = rect.width() / 2.0;
+
+        let (bright, dim) = if write_mode == WriteMode::Insert {
+            (CURSOR_BRIGHT_INSERT, CURSOR_DIM_INSERT)
+        } else {
+            (CURSOR_BRIGHT_OVERWRITE, CURSOR_DIM_OVERWRITE)
+        };
+        let (high_bg, low_bg) = if edit_mode == EditMode::Ascii {
+            (dim, dim)
+        } else {
+            match cursor_nibble {
+                NibblePosition::High => (bright, dim),
+                NibblePosition::Low => (dim, bright),
+            }
+        };
+
+        let high_rect = egui::Rect::from_min_size(
+            rect.min,
+            egui::vec2(half_width, rect.height()),
+        );
+        let low_rect = egui::Rect::from_min_size(
+            egui::pos2(rect.min.x + half_width, rect.min.y),
+            egui::vec2(half_width, rect.height()),
+        );
+
+        ui.painter().rect_filled(high_rect, 0.0, high_bg);
+        ui.painter().rect_filled(low_rect, 0.0, low_bg);
+
+        // Re-paint text on top so it's visible over the backgrounds
+        ui.painter().text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            hex,
+            egui::TextStyle::Monospace.resolve(ui.style()),
+            egui::Color32::WHITE,
+        );
+
+        response
+    } else {
+        let mut rich_text = RichText::new(hex).monospace();
+
+        // Apply background color priority: selection > current_match > search_match > bookmark > protected > section
+        if highlight.is_selected {
+            rich_text = rich_text.background_color(egui::Color32::from_rgb(40, 80, 40));
+        } else if highlight.is_current_match {
+            rich_text = rich_text.background_color(egui::Color32::from_rgb(200, 120, 40));
+        } else if highlight.is_search_match {
+            rich_text = rich_text.background_color(egui::Color32::from_rgb(180, 180, 60));
+        } else if highlight.has_bookmark {
+            rich_text = rich_text.background_color(egui::Color32::from_rgb(60, 160, 180));
+        } else if highlight.is_protected {
+            rich_text = rich_text.background_color(egui::Color32::from_rgb(140, 50, 50));
+        } else if let Some(bg) = highlight.section_bg {
+            rich_text = rich_text.background_color(bg);
+        }
+
+        ui.label(rich_text)
+    }
+}
+
+/// Render a single ASCII character with cursor/selection highlighting.
+/// Returns the response for click detection.
+fn render_ascii_char(
+    ui: &mut egui::Ui,
+    byte: u8,
+    is_cursor: bool,
+    is_selected: bool,
+    edit_mode: EditMode,
+    write_mode: WriteMode,
+) -> egui::Response {
+    let display_char = if byte.is_ascii_graphic() || byte == b' ' {
+        byte as char
+    } else {
+        '.'
+    };
+
+    let mut rich_text = RichText::new(display_char.to_string()).monospace();
+
+    if is_cursor {
+        let (bright, dim) = if write_mode == WriteMode::Insert {
+            (CURSOR_BRIGHT_INSERT, CURSOR_DIM_INSERT)
+        } else {
+            (CURSOR_BRIGHT_OVERWRITE, CURSOR_DIM_OVERWRITE)
+        };
+        if edit_mode == EditMode::Ascii {
+            rich_text = rich_text.background_color(bright);
+        } else {
+            rich_text = rich_text.background_color(dim);
+        }
+    } else if is_selected {
+        rich_text = rich_text.background_color(egui::Color32::from_rgb(40, 80, 40));
+    }
+
+    ui.label(rich_text)
+}
+
+/// Handle navigation keys (arrows, page up/down, home/end) with optional selection extension.
+fn handle_navigation_keys(editor: &mut crate::editor::EditorState, i: &egui::InputState) {
+    let shift = i.modifiers.shift;
+
+    if i.key_pressed(egui::Key::ArrowLeft) {
+        if shift { editor.move_cursor_with_selection(-1); }
+        else { editor.clear_selection(); editor.move_cursor(-1); }
+    }
+    if i.key_pressed(egui::Key::ArrowRight) {
+        if shift { editor.move_cursor_with_selection(1); }
+        else { editor.clear_selection(); editor.move_cursor(1); }
+    }
+    if i.key_pressed(egui::Key::ArrowUp) {
+        if shift { editor.move_cursor_with_selection(-(BYTES_PER_ROW as isize)); }
+        else { editor.clear_selection(); editor.move_cursor(-(BYTES_PER_ROW as isize)); }
+    }
+    if i.key_pressed(egui::Key::ArrowDown) {
+        if shift { editor.move_cursor_with_selection(BYTES_PER_ROW as isize); }
+        else { editor.clear_selection(); editor.move_cursor(BYTES_PER_ROW as isize); }
+    }
+    if i.key_pressed(egui::Key::PageUp) {
+        if shift { editor.move_cursor_with_selection(-(BYTES_PER_ROW as isize * 16)); }
+        else { editor.clear_selection(); editor.move_cursor(-(BYTES_PER_ROW as isize * 16)); }
+    }
+    if i.key_pressed(egui::Key::PageDown) {
+        if shift { editor.move_cursor_with_selection(BYTES_PER_ROW as isize * 16); }
+        else { editor.clear_selection(); editor.move_cursor(BYTES_PER_ROW as isize * 16); }
+    }
+    if i.key_pressed(egui::Key::Home) {
+        if shift { editor.extend_selection_to(0); }
+        else { editor.clear_selection(); editor.set_cursor(0); }
+    }
+    if i.key_pressed(egui::Key::End) {
+        let last = editor.len().saturating_sub(1);
+        if shift { editor.extend_selection_to(last); }
+        else { editor.clear_selection(); editor.set_cursor(last); }
+    }
+}
+
+/// Handle edit input: text entry, backspace, delete, and paste.
+/// Returns (pending_high_risk_edit, paste_text).
+fn handle_edit_input(
+    editor: &mut crate::editor::EditorState,
+    i: &mut egui::InputState,
+    cursor_pos: usize,
+    cursor_protected: bool,
+    should_warn_for_cursor: bool,
+    cursor_risk_level: Option<RiskLevel>,
+    current_edit_mode: EditMode,
+) -> (Option<(PendingEditType, usize, RiskLevel)>, Option<String>) {
+    let mut pending_high_risk_edit: Option<(PendingEditType, usize, RiskLevel)> = None;
+    let mut paste_text: Option<String> = None;
+
+    if cursor_protected {
+        return (pending_high_risk_edit, paste_text);
+    }
+
+    // Backspace key
+    if i.key_pressed(egui::Key::Backspace) {
+        if should_warn_for_cursor && editor.write_mode() == WriteMode::Insert {
+            if let Some(risk) = cursor_risk_level {
+                pending_high_risk_edit = Some((PendingEditType::Backspace, cursor_pos, risk));
+            }
+        } else {
+            editor.handle_backspace();
+        }
+    }
+    // Delete key
+    if i.key_pressed(egui::Key::Delete) {
+        if should_warn_for_cursor && editor.write_mode() == WriteMode::Insert {
+            if let Some(risk) = cursor_risk_level {
+                pending_high_risk_edit = Some((PendingEditType::Delete, cursor_pos, risk));
+            }
+        } else {
+            editor.handle_delete();
+        }
+    }
+
+    for event in &i.events {
+        match event {
+            egui::Event::Text(text) => {
+                for c in text.chars() {
+                    match current_edit_mode {
+                        EditMode::Hex => {
+                            if let Some(nibble) = c.to_digit(16) {
+                                if should_warn_for_cursor {
+                                    if let Some(risk) = cursor_risk_level {
+                                        pending_high_risk_edit = Some((PendingEditType::Nibble(nibble as u8), cursor_pos, risk));
+                                    }
+                                } else {
+                                    let _ = editor.edit_nibble_with_mode(nibble as u8); // #[must_use] result intentionally ignored — cursor advance handled internally
+                                }
+                            }
+                        }
+                        EditMode::Ascii => {
+                            let code = c as u32;
+                            if (0x20..=0x7E).contains(&code) {
+                                if should_warn_for_cursor {
+                                    if let Some(risk) = cursor_risk_level {
+                                        pending_high_risk_edit = Some((PendingEditType::Ascii(c), cursor_pos, risk));
+                                    }
+                                } else {
+                                    let _ = editor.edit_ascii_with_mode(c); // #[must_use] result intentionally ignored — acceptance checked by range guard above
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            egui::Event::Paste(text) => {
+                paste_text = Some(text.clone());
+            }
+            _ => {}
+        }
+    }
+
+    (pending_high_risk_edit, paste_text)
+}
+
 /// Show the hex editor panel
 pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
     let Some(editor) = &app.editor else {
@@ -49,7 +313,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
     };
 
     let total_bytes = editor.len();
-    let total_rows = (total_bytes + BYTES_PER_ROW - 1) / BYTES_PER_ROW;
+    let total_rows = total_bytes.div_ceil(BYTES_PER_ROW);
 
     // Cache cursor and selection state for rendering
     let cursor_pos = editor.cursor();
@@ -96,12 +360,12 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
         app.search_state.is_within_match(offset, pattern_len)
     };
     let is_current_match = |offset: usize| -> bool {
-        current_match_offset.map_or(false, |m| offset >= m && offset < m + pattern_len)
+        current_match_offset.is_some_and(|m| offset >= m && offset < m + pattern_len)
     };
 
     // Check if an offset has a bookmark
     let has_bookmark = |offset: usize| -> bool {
-        app.editor.as_ref().map_or(false, |e| e.has_bookmark_at(offset))
+        app.editor.as_ref().is_some_and(|e| e.has_bookmark_at(offset))
     };
 
     // Check if an offset is protected (header protection enabled)
@@ -141,8 +405,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
             for row_idx in render_start..render_end {
                 let offset = row_idx * BYTES_PER_ROW;
                 let row_end = (offset + BYTES_PER_ROW).min(total_bytes);
-                // Copy the bytes to avoid borrow issues
-                let row_bytes: Vec<u8> = editor.bytes_in_range(offset, row_end).to_vec();
+                let row_bytes = editor.bytes_in_range(offset, row_end);
 
                 // Check if this is the row we need to scroll to
                 let should_scroll_to_this_row = scroll_to_row == Some(row_idx);
@@ -159,111 +422,29 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
 
                     // Hex bytes
                     for (i, byte) in row_bytes.iter().enumerate() {
-                        // Space after every 8 bytes
                         if i == 8 {
                             ui.add_space(HEX_GROUP_SPACING);
                         }
 
                         let byte_offset = offset + i;
-                        let is_cursor = byte_offset == cursor_pos;
-                        let is_selected = selection
-                            .map(|(start, end)| byte_offset >= start && byte_offset < end)
-                            .unwrap_or(false);
+                        let highlight = ByteHighlight {
+                            is_cursor: byte_offset == cursor_pos,
+                            is_selected: selection
+                                .map(|(start, end)| byte_offset >= start && byte_offset < end)
+                                .unwrap_or(false),
+                            is_search_match: is_search_match(byte_offset),
+                            is_current_match: is_current_match(byte_offset),
+                            has_bookmark: has_bookmark(byte_offset),
+                            is_protected: is_protected(byte_offset),
+                            section_bg: get_section_color(byte_offset),
+                        };
 
-                        // Get section color for background (if not cursor/selected)
-                        let section_bg = get_section_color(byte_offset);
-
-                        // For cursor position, show nibble highlight
-                        if is_cursor {
-                            // Render as a single label to maintain consistent spacing,
-                            // then use painter to draw nibble backgrounds
-                            let text = format!("{:02X}", byte);
-                            let rich_text = RichText::new(text).monospace();
-                            let response = ui.label(rich_text);
-
-                            // Draw nibble highlight backgrounds using painter
-                            let rect = response.rect;
-                            let half_width = rect.width() / 2.0;
-
-                            // In ASCII mode, hex cursor shows dim highlight for both nibbles
-                            // In Hex mode, show bright highlight for active nibble, dim for inactive
-                            // Insert mode uses green tint, overwrite mode uses blue tint
-                            let (bright, dim) = if write_mode == WriteMode::Insert {
-                                (CURSOR_BRIGHT_INSERT, CURSOR_DIM_INSERT)
-                            } else {
-                                (CURSOR_BRIGHT_OVERWRITE, CURSOR_DIM_OVERWRITE)
-                            };
-                            let (high_bg, low_bg) = if edit_mode == EditMode::Ascii {
-                                (dim, dim)
-                            } else {
-                                match cursor_nibble {
-                                    NibblePosition::High => (bright, dim),
-                                    NibblePosition::Low => (dim, bright),
-                                }
-                            };
-
-                            // Draw background rectangles behind each nibble
-                            let high_rect = egui::Rect::from_min_size(
-                                rect.min,
-                                egui::vec2(half_width, rect.height()),
-                            );
-                            let low_rect = egui::Rect::from_min_size(
-                                egui::pos2(rect.min.x + half_width, rect.min.y),
-                                egui::vec2(half_width, rect.height()),
-                            );
-
-                            // Paint backgrounds behind the text (using background layer)
-                            ui.painter().rect_filled(high_rect, 0.0, high_bg);
-                            ui.painter().rect_filled(low_rect, 0.0, low_bg);
-
-                            // Re-paint the text on top so it's visible over the backgrounds
-                            let text = format!("{:02X}", byte);
-                            ui.painter().text(
-                                rect.center(),
-                                egui::Align2::CENTER_CENTER,
-                                text,
-                                egui::TextStyle::Monospace.resolve(ui.style()),
-                                egui::Color32::WHITE,
-                            );
-
-                            if response.clicked() {
-                                clicked_offset = Some(byte_offset);
-                            }
-                            if response.secondary_clicked() {
-                                context_menu_offset = Some(byte_offset);
-                            }
-                        } else {
-                            let text = format!("{:02X}", byte);
-                            let mut rich_text = RichText::new(text).monospace();
-                            let byte_protected = is_protected(byte_offset);
-
-                            // Apply background color priority: selection > current_match > search_match > bookmark > protected > section
-                            if is_selected {
-                                rich_text = rich_text.background_color(egui::Color32::from_rgb(40, 80, 40));
-                            } else if is_current_match(byte_offset) {
-                                // Current match: bright orange highlight
-                                rich_text = rich_text.background_color(egui::Color32::from_rgb(200, 120, 40));
-                            } else if is_search_match(byte_offset) {
-                                // Other matches: yellow highlight
-                                rich_text = rich_text.background_color(egui::Color32::from_rgb(180, 180, 60));
-                            } else if has_bookmark(byte_offset) {
-                                // Bookmark: cyan highlight
-                                rich_text = rich_text.background_color(egui::Color32::from_rgb(60, 160, 180));
-                            } else if byte_protected {
-                                // Protected region: red-tinted background with strikethrough effect
-                                rich_text = rich_text.background_color(egui::Color32::from_rgb(140, 50, 50));
-                            } else if let Some(bg) = section_bg {
-                                rich_text = rich_text.background_color(bg);
-                            }
-
-                            // Make bytes clickable
-                            let response = ui.label(rich_text);
-                            if response.clicked() {
-                                clicked_offset = Some(byte_offset);
-                            }
-                            if response.secondary_clicked() {
-                                context_menu_offset = Some(byte_offset);
-                            }
+                        let response = render_hex_byte(ui, *byte, &highlight, cursor_nibble, edit_mode, write_mode);
+                        if response.clicked() {
+                            clicked_offset = Some(byte_offset);
+                        }
+                        if response.secondary_clicked() {
+                            context_menu_offset = Some(byte_offset);
                         }
                     }
 
@@ -285,38 +466,12 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
 
                     for (i, byte) in row_bytes.iter().enumerate() {
                         let byte_offset = offset + i;
-                        let display_char = if byte.is_ascii_graphic() || *byte == b' ' {
-                            *byte as char
-                        } else {
-                            '.'
-                        };
-
                         let is_cursor = byte_offset == cursor_pos;
                         let is_selected = selection
                             .map(|(start, end)| byte_offset >= start && byte_offset < end)
                             .unwrap_or(false);
 
-                        let mut rich_text = RichText::new(display_char.to_string()).monospace();
-
-                        // Apply highlighting based on cursor/selection/mode
-                        if is_cursor {
-                            // Cursor highlighting depends on edit mode
-                            // Insert mode uses green tint, overwrite mode uses blue tint
-                            let (bright, dim) = if write_mode == WriteMode::Insert {
-                                (CURSOR_BRIGHT_INSERT, CURSOR_DIM_INSERT)
-                            } else {
-                                (CURSOR_BRIGHT_OVERWRITE, CURSOR_DIM_OVERWRITE)
-                            };
-                            if edit_mode == EditMode::Ascii {
-                                rich_text = rich_text.background_color(bright);
-                            } else {
-                                rich_text = rich_text.background_color(dim);
-                            }
-                        } else if is_selected {
-                            rich_text = rich_text.background_color(egui::Color32::from_rgb(40, 80, 40));
-                        }
-
-                        let response = ui.label(rich_text);
+                        let response = render_ascii_char(ui, *byte, is_cursor, is_selected, edit_mode, write_mode);
                         if response.clicked() {
                             clicked_ascii_offset = Some(byte_offset);
                         }
@@ -371,7 +526,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
             PendingEditType::Backspace => crate::app::PendingEditType::Backspace,
             PendingEditType::Delete => crate::app::PendingEditType::Delete,
         };
-        app.pending_high_risk_edit = Some(crate::app::PendingEdit {
+        app.dialogs.pending_high_risk_edit = Some(crate::app::PendingEdit {
             edit_type: app_edit_type,
             offset,
             risk_level,
@@ -413,25 +568,22 @@ fn handle_keyboard_input(
     cursor_pos: usize,
     cursor_protected: bool,
 ) -> KeyboardResult {
-    let mut pending_high_risk_edit: Option<(PendingEditType, usize, RiskLevel)> = None;
-    let mut paste_text: Option<String> = None;
-
     // Pre-compute warning state before mutable borrow of editor
     let should_warn_for_cursor = app.should_warn_for_edit(cursor_pos);
     let cursor_risk_level = app.get_high_risk_level(cursor_pos);
 
-    // Cache edit mode and write mode for text input handling
+    // Cache edit mode for text input handling
     let current_edit_mode = app.editor.as_ref().map(|e| e.edit_mode()).unwrap_or(EditMode::Hex);
-    ui.input_mut(|i| {
+
+    let (pending_high_risk_edit, paste_text) = ui.input_mut(|i| {
         let Some(editor) = &mut app.editor else {
-            return;
+            return (None, None);
         };
 
-        let shift = i.modifiers.shift;
         let ctrl = i.modifiers.ctrl || i.modifiers.mac_cmd;
+        let shift = i.modifiers.shift;
 
         // Tab key toggles between Hex and ASCII edit mode
-        // Consume the event to prevent focus shifting to other UI elements
         if i.consume_key(egui::Modifiers::NONE, egui::Key::Tab) {
             editor.toggle_edit_mode();
         }
@@ -441,148 +593,19 @@ fn handle_keyboard_input(
             editor.toggle_write_mode();
         }
 
-        // Navigation with optional selection extension
-        if i.key_pressed(egui::Key::ArrowLeft) {
-            if shift {
-                editor.move_cursor_with_selection(-1);
-            } else {
-                editor.clear_selection();
-                editor.move_cursor(-1);
-            }
-        }
-        if i.key_pressed(egui::Key::ArrowRight) {
-            if shift {
-                editor.move_cursor_with_selection(1);
-            } else {
-                editor.clear_selection();
-                editor.move_cursor(1);
-            }
-        }
-        if i.key_pressed(egui::Key::ArrowUp) {
-            if shift {
-                editor.move_cursor_with_selection(-(BYTES_PER_ROW as isize));
-            } else {
-                editor.clear_selection();
-                editor.move_cursor(-(BYTES_PER_ROW as isize));
-            }
-        }
-        if i.key_pressed(egui::Key::ArrowDown) {
-            if shift {
-                editor.move_cursor_with_selection(BYTES_PER_ROW as isize);
-            } else {
-                editor.clear_selection();
-                editor.move_cursor(BYTES_PER_ROW as isize);
-            }
-        }
-        if i.key_pressed(egui::Key::PageUp) {
-            if shift {
-                editor.move_cursor_with_selection(-(BYTES_PER_ROW as isize * 16));
-            } else {
-                editor.clear_selection();
-                editor.move_cursor(-(BYTES_PER_ROW as isize * 16));
-            }
-        }
-        if i.key_pressed(egui::Key::PageDown) {
-            if shift {
-                editor.move_cursor_with_selection(BYTES_PER_ROW as isize * 16);
-            } else {
-                editor.clear_selection();
-                editor.move_cursor(BYTES_PER_ROW as isize * 16);
-            }
-        }
-        if i.key_pressed(egui::Key::Home) {
-            if shift {
-                editor.extend_selection_to(0);
-            } else {
-                editor.clear_selection();
-                editor.set_cursor(0);
-            }
-        }
-        if i.key_pressed(egui::Key::End) {
-            let last = editor.len().saturating_sub(1);
-            if shift {
-                editor.extend_selection_to(last);
-            } else {
-                editor.clear_selection();
-                editor.set_cursor(last);
-            }
-        }
+        // Navigation keys (arrows, page up/down, home/end)
+        handle_navigation_keys(editor, i);
 
         // Undo/Redo
         if ctrl && !shift && i.key_pressed(egui::Key::Z) {
-            let _ = editor.undo();
+            let _ = editor.undo(); // #[must_use] result intentionally ignored — UI doesn't need to distinguish no-op
         }
         if ctrl && shift && i.key_pressed(egui::Key::Z) {
-            let _ = editor.redo();
+            let _ = editor.redo(); // #[must_use] result intentionally ignored — UI doesn't need to distinguish no-op
         }
 
-        // Text input and paste - route based on edit mode
-        // Skip if cursor is at a protected position
-        if !cursor_protected {
-            // Backspace key: delete previous byte (insert) or move left (overwrite)
-            if i.key_pressed(egui::Key::Backspace) {
-                if should_warn_for_cursor && editor.write_mode() == WriteMode::Insert {
-                    // In insert mode, backspace deletes — show warning in high-risk regions
-                    // (In overwrite mode, backspace just moves cursor, so no warning needed)
-                    if let Some(risk) = cursor_risk_level {
-                        pending_high_risk_edit = Some((PendingEditType::Backspace, cursor_pos, risk));
-                    }
-                } else {
-                    editor.handle_backspace();
-                }
-            }
-            // Delete key: delete byte at cursor (insert mode only)
-            if i.key_pressed(egui::Key::Delete) {
-                if should_warn_for_cursor && editor.write_mode() == WriteMode::Insert {
-                    if let Some(risk) = cursor_risk_level {
-                        pending_high_risk_edit = Some((PendingEditType::Delete, cursor_pos, risk));
-                    }
-                } else {
-                    editor.handle_delete();
-                }
-            }
-
-            for event in &i.events {
-                match event {
-                    egui::Event::Text(text) => {
-                        for c in text.chars() {
-                            match current_edit_mode {
-                                EditMode::Hex => {
-                                    // Hex mode: accept 0-9, A-F for nibble editing
-                                    if let Some(nibble) = c.to_digit(16) {
-                                        if should_warn_for_cursor {
-                                            if let Some(risk) = cursor_risk_level {
-                                                pending_high_risk_edit = Some((PendingEditType::Nibble(nibble as u8), cursor_pos, risk));
-                                            }
-                                        } else {
-                                            let _ = editor.edit_nibble_with_mode(nibble as u8);
-                                        }
-                                    }
-                                }
-                                EditMode::Ascii => {
-                                    // ASCII mode: accept printable ASCII (0x20-0x7E)
-                                    let code = c as u32;
-                                    if code >= 0x20 && code <= 0x7E {
-                                        if should_warn_for_cursor {
-                                            if let Some(risk) = cursor_risk_level {
-                                                pending_high_risk_edit = Some((PendingEditType::Ascii(c), cursor_pos, risk));
-                                            }
-                                        } else {
-                                            let _ = editor.edit_ascii_with_mode(c);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    egui::Event::Paste(text) => {
-                        // Capture paste text for handling after the closure
-                        paste_text = Some(text.clone());
-                    }
-                    _ => {}
-                }
-            }
-        }
+        // Edit input (text entry, backspace, delete, paste)
+        handle_edit_input(editor, i, cursor_pos, cursor_protected, should_warn_for_cursor, cursor_risk_level, current_edit_mode)
     });
 
     // Handle paste outside the input closure
@@ -591,7 +614,7 @@ fn handle_keyboard_input(
             EditMode::Hex => parse_hex_input(&text),
             EditMode::Ascii => {
                 let b: Vec<u8> = text.bytes()
-                    .filter(|&b| b >= 0x20 && b <= 0x7E)
+                    .filter(|&b| (0x20..=0x7E).contains(&b))
                     .collect();
                 if b.is_empty() { None } else { Some(b) }
             }
@@ -723,11 +746,14 @@ fn copy_as_hex(ui: &mut egui::Ui, app: &BendApp, target_offset: usize) {
     let (start, end) = editor.selection().unwrap_or((target_offset, target_offset + 1));
     let bytes = editor.bytes_in_range(start, end);
 
-    let hex_string: String = bytes
-        .iter()
-        .map(|b| format!("{:02X}", b))
-        .collect::<Vec<_>>()
-        .join(" ");
+    let table = hex_table();
+    let mut hex_string = String::with_capacity(bytes.len() * 3);
+    for (i, &b) in bytes.iter().enumerate() {
+        if i > 0 {
+            hex_string.push(' ');
+        }
+        hex_string.push_str(table[b as usize]);
+    }
 
     ui.output_mut(|o| o.copied_text = hex_string);
 }
@@ -774,7 +800,7 @@ fn paste_hex(_ui: &mut egui::Ui, app: &mut BendApp, target_offset: usize) {
             // ASCII mode: interpret as raw text bytes
             // Only include printable ASCII characters (0x20-0x7E)
             let bytes: Vec<u8> = text.bytes()
-                .filter(|&b| b >= 0x20 && b <= 0x7E)
+                .filter(|&b| (0x20..=0x7E).contains(&b))
                 .collect();
             if bytes.is_empty() { None } else { Some(bytes) }
         }
@@ -814,7 +840,7 @@ fn parse_hex_input(input: &str) -> Option<Vec<u8>> {
         .filter(|c| c.is_ascii_hexdigit())
         .collect();
 
-    if clean.is_empty() || clean.len() % 2 != 0 {
+    if clean.is_empty() || !clean.len().is_multiple_of(2) {
         return None;
     }
 

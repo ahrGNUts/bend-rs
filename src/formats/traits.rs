@@ -89,13 +89,10 @@ impl FileSection {
         self
     }
 
-    /// Size of this section in bytes
-    pub fn size(&self) -> usize {
-        self.end.saturating_sub(self.start)
-    }
 }
 
 /// Trait for image format parsers
+#[allow(dead_code)]
 pub trait ImageFormat {
     /// Get the format name (e.g., "BMP", "JPEG")
     fn name(&self) -> &'static str;

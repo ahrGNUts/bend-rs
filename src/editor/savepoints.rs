@@ -22,7 +22,6 @@
 //! - Requires careful handling when deleting non-leaf save points
 
 use std::collections::HashMap;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 /// A single byte change in a diff
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -41,9 +40,6 @@ pub struct SavePoint {
     /// User-provided name for this save point
     pub name: String,
 
-    /// Unix timestamp when this save point was created
-    pub timestamp: u64,
-
     /// Incremental diff from the previous save point (or original file if first)
     /// This represents changes that were made AFTER the previous save point
     pub diff: Vec<ByteChange>,
@@ -52,17 +48,7 @@ pub struct SavePoint {
 impl SavePoint {
     /// Create a new save point with the given name and diff
     pub fn new(id: u64, name: String, diff: Vec<ByteChange>) -> Self {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-
-        Self {
-            id,
-            name,
-            timestamp,
-            diff,
-        }
+        Self { id, name, diff }
     }
 }
 
@@ -97,11 +83,6 @@ impl SavePointManager {
     /// Get all save points
     pub fn save_points(&self) -> &[SavePoint] {
         &self.save_points
-    }
-
-    /// Get a save point by ID
-    pub fn get(&self, id: u64) -> Option<&SavePoint> {
-        self.id_to_index.get(&id).map(|&i| &self.save_points[i])
     }
 
     /// Get a mutable reference to a save point by ID
@@ -206,11 +187,6 @@ impl SavePointManager {
         self.save_points.len()
     }
 
-    /// Check if there are no save points
-    pub fn is_empty(&self) -> bool {
-        self.save_points.is_empty()
-    }
-
     /// Clear all save points and reset diff base state
     ///
     /// Used when buffer length changes (insert/delete) since absolute-offset
@@ -254,12 +230,12 @@ mod tests {
 
         // Make some changes
         let modified = vec![0xAA, 0x01, 0xBB, 0x03];
-        let id = manager.create("First save".to_string(), &modified);
+        manager.create("First save".to_string(), &modified);
 
         assert_eq!(manager.len(), 1);
-        let sp = manager.get(id).unwrap();
-        assert_eq!(sp.name, "First save");
-        assert_eq!(sp.diff.len(), 2); // Two bytes changed
+        let sps = manager.save_points();
+        assert_eq!(sps[0].name, "First save");
+        assert_eq!(sps[0].diff.len(), 2); // Two bytes changed
     }
 
     #[test]
@@ -292,8 +268,8 @@ mod tests {
         let id = manager.create("Original name".to_string(), &original);
         assert!(manager.rename(id, "New name".to_string()));
 
-        let sp = manager.get(id).unwrap();
-        assert_eq!(sp.name, "New name");
+        let sps = manager.save_points();
+        assert_eq!(sps[0].name, "New name");
     }
 
     #[test]
@@ -315,7 +291,7 @@ mod tests {
         // Now id1 is the leaf
         assert!(manager.can_delete(id1));
         assert!(manager.delete(id1));
-        assert!(manager.is_empty());
+        assert_eq!(manager.len(), 0);
     }
 
     #[test]

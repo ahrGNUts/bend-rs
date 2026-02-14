@@ -25,7 +25,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
 
     // Get cursor position before borrowing mutably
     let cursor_pos = editor.cursor();
-    let bookmarks: Vec<_> = editor.bookmarks().all().iter().cloned().collect();
+    let bookmarks: Vec<_> = editor.bookmarks().all().to_vec();
 
     // Add bookmark button
     ui.horizontal(|ui| {
@@ -174,7 +174,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
             }
             BookmarkAction::FinishRename(id, name) => {
                 if let Some(editor) = &mut app.editor {
-                    let _ = editor.bookmarks_mut().rename(id, name);
+                    let _ = editor.bookmarks_mut().rename(id, name); // #[must_use] result intentionally ignored — bookmark existence already verified by UI
                 }
                 state.renaming = None;
                 state.rename_text.clear();
@@ -189,7 +189,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
             }
             BookmarkAction::FinishAnnotation(id, annotation) => {
                 if let Some(editor) = &mut app.editor {
-                    let _ = editor.bookmarks_mut().set_annotation(id, annotation);
+                    let _ = editor.bookmarks_mut().set_annotation(id, annotation); // #[must_use] result intentionally ignored — bookmark existence already verified by UI
                 }
                 state.editing_annotation = None;
                 state.annotation_text.clear();
@@ -200,7 +200,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
             }
             BookmarkAction::Delete(id) => {
                 if let Some(editor) = &mut app.editor {
-                    let _ = editor.remove_bookmark(id);
+                    let _ = editor.remove_bookmark(id); // #[must_use] result intentionally ignored — bookmark existence already verified by UI
                 }
             }
         }

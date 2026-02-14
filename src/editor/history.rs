@@ -200,28 +200,22 @@ impl History {
     pub fn can_redo(&self) -> bool {
         !self.redo_stack.is_empty()
     }
-
-    /// Get the number of operations in the undo stack
-    pub fn undo_count(&self) -> usize {
-        self.undo_stack.len()
-    }
-
-    /// Get the number of operations in the redo stack
-    pub fn redo_count(&self) -> usize {
-        self.redo_stack.len()
-    }
-
-    /// Clear all history
-    pub fn clear(&mut self) {
-        self.undo_stack.clear();
-        self.redo_stack.clear();
-    }
 }
 
 impl Default for History {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Count available undo operations by consuming them
+#[cfg(test)]
+fn count_undos(history: &mut History) -> usize {
+    let mut count = 0;
+    while history.undo().is_some() {
+        count += 1;
+    }
+    count
 }
 
 #[cfg(test)]
@@ -306,7 +300,7 @@ mod tests {
             history.last_push_time = None;
         }
 
-        assert_eq!(history.undo_count(), MAX_HISTORY_SIZE);
+        assert_eq!(count_undos(&mut history), MAX_HISTORY_SIZE);
     }
 
     #[test]
@@ -328,9 +322,6 @@ mod tests {
         });
 
         // Should be coalesced into one Range operation
-        assert_eq!(history.undo_count(), 1);
-
-        // Verify it's a Range with both bytes
         if let Some(EditOperation::Range {
             offset,
             old_values,
@@ -343,6 +334,7 @@ mod tests {
         } else {
             panic!("Expected Range operation");
         }
+        assert!(!history.can_undo()); // Was coalesced into one
     }
 
     #[test]
@@ -363,9 +355,6 @@ mod tests {
             new_value: 0xBB,
         });
 
-        // Should be coalesced into one operation
-        assert_eq!(history.undo_count(), 1);
-
         // Verify it keeps original old_value and final new_value
         if let Some(EditOperation::Single {
             offset,
@@ -379,6 +368,7 @@ mod tests {
         } else {
             panic!("Expected Single operation");
         }
+        assert!(!history.can_undo()); // Was coalesced into one
     }
 
     #[test]
@@ -405,8 +395,6 @@ mod tests {
         });
 
         // Should still be one operation
-        assert_eq!(history.undo_count(), 1);
-
         if let Some(EditOperation::Range {
             offset,
             old_values,
@@ -419,6 +407,7 @@ mod tests {
         } else {
             panic!("Expected Range operation");
         }
+        assert!(!history.can_undo()); // Was coalesced into one
     }
 
     #[test]
@@ -440,7 +429,7 @@ mod tests {
         });
 
         // Should be two separate operations
-        assert_eq!(history.undo_count(), 2);
+        assert_eq!(count_undos(&mut history), 2);
     }
 
     #[test]
@@ -465,7 +454,7 @@ mod tests {
         });
 
         // Should be two separate operations
-        assert_eq!(history.undo_count(), 2);
+        assert_eq!(count_undos(&mut history), 2);
     }
 
     #[test]
@@ -485,7 +474,7 @@ mod tests {
             new_value: 0xBB,
         });
 
-        assert_eq!(history.undo_count(), 2);
+        assert_eq!(count_undos(&mut history), 2);
     }
 
     #[test]
@@ -505,6 +494,6 @@ mod tests {
             new_value: 0xBB,
         });
 
-        assert_eq!(history.undo_count(), 2);
+        assert_eq!(count_undos(&mut history), 2);
     }
 }

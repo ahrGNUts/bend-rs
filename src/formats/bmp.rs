@@ -12,14 +12,6 @@ use super::traits::{FileSection, ImageFormat, RiskLevel};
 pub struct BmpParser;
 
 impl BmpParser {
-    /// Read a little-endian u16 from data
-    fn read_u16(data: &[u8], offset: usize) -> Option<u16> {
-        if offset + 2 > data.len() {
-            return None;
-        }
-        Some(u16::from_le_bytes([data[offset], data[offset + 1]]))
-    }
-
     /// Read a little-endian u32 from data
     fn read_u32(data: &[u8], offset: usize) -> Option<u32> {
         if offset + 4 > data.len() {

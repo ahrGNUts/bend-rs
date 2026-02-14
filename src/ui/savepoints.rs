@@ -130,10 +130,10 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut SavePointsPanelSta
 
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             // Delete button (only for leaf)
-                            if can_delete.get(idx).copied().unwrap_or(false) {
-                                if ui.button("🗑").on_hover_text("Delete").clicked() {
-                                    action_delete = Some(*id);
-                                }
+                            if can_delete.get(idx).copied().unwrap_or(false)
+                                && ui.button("🗑").on_hover_text("Delete").clicked()
+                            {
+                                action_delete = Some(*id);
                             }
 
                             // Rename button
@@ -157,14 +157,14 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut SavePointsPanelSta
     if let Some(id) = action_restore {
         if let Some(editor) = &mut app.editor {
             if editor.restore_save_point(id) {
-                app.preview_dirty = true;
+                app.preview.dirty = true;
             }
         }
     }
 
     if let Some(id) = action_delete {
         if let Some(editor) = &mut app.editor {
-            let _ = editor.delete_save_point(id);
+            let _ = editor.delete_save_point(id); // #[must_use] result intentionally ignored — deletability already checked by UI
         }
     }
 
@@ -175,7 +175,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut SavePointsPanelSta
 
     if let Some((id, new_name)) = action_finish_rename {
         if let Some(editor) = &mut app.editor {
-            let _ = editor.rename_save_point(id, new_name);
+            let _ = editor.rename_save_point(id, new_name); // #[must_use] result intentionally ignored — save point existence already verified by UI
         }
     }
 }

@@ -2,13 +2,14 @@
 
 pub mod bookmarks;
 pub mod buffer;
+mod cursor;
 pub mod go_to_offset;
 mod history;
+mod modes;
 pub mod savepoints;
 pub mod search;
+mod selection;
 
-pub use bookmarks::BookmarkManager;
-pub use buffer::{EditMode, EditorState, NibblePosition, WriteMode};
+pub use buffer::EditorState;
 pub use go_to_offset::GoToOffsetState;
-pub use savepoints::{SavePoint, SavePointManager};
 pub use search::SearchState;

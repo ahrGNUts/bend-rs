@@ -3,18 +3,13 @@
 use std::collections::HashSet;
 
 /// Search mode - either hex pattern or ASCII string
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum SearchMode {
     /// Hex pattern search (e.g., "FF D8 FF" or "FF ?? FF" with wildcards)
+    #[default]
     Hex,
     /// ASCII string search
     Ascii,
-}
-
-impl Default for SearchMode {
-    fn default() -> Self {
-        SearchMode::Hex
-    }
 }
 
 /// Parsed search pattern element
@@ -27,6 +22,7 @@ pub enum PatternElement {
 }
 
 /// Search state and results
+#[derive(Default)]
 pub struct SearchState {
     /// The current search query string
     pub query: String,
@@ -46,30 +42,11 @@ pub struct SearchState {
     pub replace_with: String,
     /// Last search error message
     pub error: Option<String>,
-}
-
-impl Default for SearchState {
-    fn default() -> Self {
-        Self {
-            query: String::new(),
-            mode: SearchMode::default(),
-            case_sensitive: false,
-            matches: Vec::new(),
-            highlighted_offsets: HashSet::new(),
-            current_match: None,
-            dialog_open: false,
-            replace_with: String::new(),
-            error: None,
-        }
-    }
+    /// Cached pattern length (computed in execute_search/clear_results)
+    cached_pattern_len: usize,
 }
 
 impl SearchState {
-    /// Create a new search state
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     /// Open the search dialog
     pub fn open_dialog(&mut self) {
         self.dialog_open = true;
@@ -78,12 +55,6 @@ impl SearchState {
     /// Close the search dialog
     pub fn close_dialog(&mut self) {
         self.dialog_open = false;
-    }
-
-    /// Check if an offset is the start of a match
-    pub fn is_match(&self, offset: usize) -> bool {
-        // Use binary search since matches are sorted
-        self.matches.binary_search(&offset).is_ok()
     }
 
     /// Check if an offset is within a match (considering pattern length)
@@ -102,16 +73,9 @@ impl SearchState {
         }
     }
 
-    /// Get the current pattern length based on query and mode
+    /// Get the cached pattern length (set by execute_search/clear_results)
     pub fn pattern_length(&self) -> usize {
-        match self.mode {
-            SearchMode::Hex => {
-                parse_hex_pattern(&self.query)
-                    .map(|p| p.len())
-                    .unwrap_or(0)
-            }
-            SearchMode::Ascii => self.query.len(),
-        }
+        self.cached_pattern_len
     }
 
     /// Move to the next match
@@ -148,30 +112,13 @@ impl SearchState {
         self.current_match.and_then(|i| self.matches.get(i).copied())
     }
 
-    /// Find the nearest match at or after the given offset
-    pub fn find_nearest_match(&mut self, offset: usize) {
-        if self.matches.is_empty() {
-            self.current_match = None;
-            return;
-        }
-
-        // Find the first match at or after offset
-        for (i, &m) in self.matches.iter().enumerate() {
-            if m >= offset {
-                self.current_match = Some(i);
-                return;
-            }
-        }
-        // Wrap around to first match
-        self.current_match = Some(0);
-    }
-
     /// Clear search results
     pub fn clear_results(&mut self) {
         self.matches.clear();
         self.highlighted_offsets.clear();
         self.current_match = None;
         self.error = None;
+        self.cached_pattern_len = 0;
     }
 }
 
@@ -280,10 +227,12 @@ pub fn search_ascii(data: &[u8], query: &str, case_sensitive: bool) -> Vec<usize
         return Vec::new();
     }
 
-    let query_bytes: Vec<u8> = if case_sensitive {
-        query.as_bytes().to_vec()
+    let lowered;
+    let query_bytes: &[u8] = if case_sensitive {
+        query.as_bytes()
     } else {
-        query.to_lowercase().as_bytes().to_vec()
+        lowered = query.to_lowercase();
+        lowered.as_bytes()
     };
 
     let mut matches = Vec::new();
@@ -339,7 +288,8 @@ pub fn execute_search(state: &mut SearchState, data: &[u8]) {
         }
     };
 
-    // Build the highlighted offsets set for O(1) lookup during rendering
+    // Cache the pattern length and build highlighted offsets
+    state.cached_pattern_len = pattern_len;
     state.rebuild_highlighted_offsets(pattern_len);
 
     // Set current match to first one if any found
@@ -433,7 +383,7 @@ mod tests {
 
     #[test]
     fn test_search_state_navigation() {
-        let mut state = SearchState::new();
+        let mut state = SearchState::default();
         state.matches = vec![10, 20, 30];
 
         assert_eq!(state.current_match, None);

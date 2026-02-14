@@ -75,6 +75,38 @@ const WINDOW_RESIZE_THRESHOLD: f32 = 1.0;
 /// Debounce delay for window resize saves (milliseconds)
 const WINDOW_RESIZE_DEBOUNCE_MS: u64 = 500;
 
+/// State for close confirmation and high-risk edit warning dialogs
+#[derive(Default)]
+pub struct DialogState {
+    /// Whether the close confirmation dialog is showing
+    pub show_close: bool,
+    /// Pending close action (true = confirmed close)
+    pub pending_close: bool,
+    /// Whether high-risk edit warnings are suppressed for this session
+    pub suppress_high_risk_warnings: bool,
+    /// Pending high-risk edit waiting for user confirmation
+    pub pending_high_risk_edit: Option<PendingEdit>,
+    /// Checkbox state for "don't warn again" in high-risk dialog
+    pub high_risk_dont_show: bool,
+}
+
+/// State for image preview rendering and comparison
+#[derive(Default)]
+pub struct PreviewState {
+    /// Texture handle for the rendered image preview
+    pub texture: Option<egui::TextureHandle>,
+    /// Texture handle for the original image (comparison mode)
+    pub original_texture: Option<egui::TextureHandle>,
+    /// Whether the preview needs to be re-rendered
+    pub dirty: bool,
+    /// Last decode error message (if any)
+    pub decode_error: Option<String>,
+    /// Whether comparison mode is enabled (side-by-side original and current)
+    pub comparison_mode: bool,
+    /// Timestamp of last edit (for debouncing preview updates)
+    pub last_edit_time: Option<Instant>,
+}
+
 /// Main application state for bend-rs
 ///
 /// ## Architecture: Dual-Buffer Design
@@ -90,6 +122,7 @@ const WINDOW_RESIZE_DEBOUNCE_MS: u64 = 500;
 /// 2. Comparison view always has the pristine original
 /// 3. Save points can diff against a stable base
 /// 4. Export writes the working buffer to a new file
+#[derive(Default)]
 pub struct BendApp {
     /// Editor state containing buffers, history, and file metadata
     pub editor: Option<EditorState>,
@@ -97,26 +130,11 @@ pub struct BendApp {
     /// Path to currently loaded file (for display purposes)
     pub current_file: Option<PathBuf>,
 
-    /// Texture handle for the rendered image preview
-    pub preview_texture: Option<egui::TextureHandle>,
+    /// Image preview state (textures, dirty flag, comparison mode)
+    pub preview: PreviewState,
 
-    /// Texture handle for the original image (comparison mode)
-    pub original_texture: Option<egui::TextureHandle>,
-
-    /// Whether the preview needs to be re-rendered
-    pub preview_dirty: bool,
-
-    /// Last decode error message (if any)
-    pub decode_error: Option<String>,
-
-    /// Whether the close confirmation dialog is showing
-    show_close_dialog: bool,
-
-    /// Pending close action (true = confirmed close)
-    pending_close: bool,
-
-    /// Timestamp of last edit (for debouncing preview updates)
-    last_edit_time: Option<Instant>,
+    /// Dialog state (close confirmation, high-risk warnings)
+    pub dialogs: DialogState,
 
     /// State for the save points panel
     savepoints_state: savepoints::SavePointsPanelState,
@@ -124,9 +142,6 @@ pub struct BendApp {
     /// Cached parsed file sections for structure visualization
     /// Re-parsed when file is loaded or structure potentially changed
     pub cached_sections: Option<Vec<FileSection>>,
-
-    /// Whether comparison mode is enabled (side-by-side original and current)
-    pub comparison_mode: bool,
 
     /// Search and replace state
     pub search_state: SearchState,
@@ -139,15 +154,6 @@ pub struct BendApp {
 
     /// Whether header protection is enabled (blocks edits to high-risk sections)
     pub header_protection: bool,
-
-    /// Whether high-risk edit warnings are suppressed for this session
-    pub suppress_high_risk_warnings: bool,
-
-    /// Pending high-risk edit waiting for user confirmation
-    pub pending_high_risk_edit: Option<PendingEdit>,
-
-    /// Checkbox state for "don't warn again" in high-risk dialog
-    high_risk_dialog_dont_show: bool,
 
     /// Context menu state for hex editor
     pub context_menu_state: ContextMenuState,
@@ -212,40 +218,6 @@ struct InputActions {
     refresh_preview: bool,
 }
 
-impl Default for BendApp {
-    fn default() -> Self {
-        Self {
-            editor: None,
-            current_file: None,
-            preview_texture: None,
-            original_texture: None,
-            preview_dirty: false,
-            decode_error: None,
-            show_close_dialog: false,
-            pending_close: false,
-            last_edit_time: None,
-            savepoints_state: savepoints::SavePointsPanelState::default(),
-            cached_sections: None,
-            comparison_mode: false,
-            search_state: SearchState::default(),
-            go_to_offset_state: GoToOffsetState::default(),
-            bookmarks_state: bookmarks::BookmarksPanelState::default(),
-            header_protection: false,
-            suppress_high_risk_warnings: false,
-            pending_high_risk_edit: None,
-            high_risk_dialog_dont_show: false,
-            context_menu_state: ContextMenuState::default(),
-            shortcuts_dialog_state: ShortcutsDialogState::default(),
-            settings_dialog_state: SettingsDialogState::default(),
-            settings: AppSettings::default(),
-            pending_open_path: None,
-            pending_hex_scroll: None,
-            last_window_size: None,
-            window_resize_timer: None,
-        }
-    }
-}
-
 impl BendApp {
     pub fn new(_cc: &eframe::CreationContext<'_>, settings: AppSettings) -> Self {
         // Apply settings to initial state
@@ -254,7 +226,10 @@ impl BendApp {
 
         Self {
             header_protection,
-            suppress_high_risk_warnings: suppress_warnings,
+            dialogs: DialogState {
+                suppress_high_risk_warnings: suppress_warnings,
+                ..Default::default()
+            },
             settings,
             ..Default::default()
         }
@@ -262,8 +237,8 @@ impl BendApp {
 
     /// Mark the preview as needing update (with debounce timestamp)
     pub fn mark_preview_dirty(&mut self) {
-        self.preview_dirty = true;
-        self.last_edit_time = Some(Instant::now());
+        self.preview.dirty = true;
+        self.preview.last_edit_time = Some(Instant::now());
     }
 
     /// Request the hex editor to scroll to show the given byte offset
@@ -273,7 +248,7 @@ impl BendApp {
 
     /// Check if there are unsaved changes
     pub fn has_unsaved_changes(&self) -> bool {
-        self.editor.as_ref().map_or(false, |e| e.is_modified())
+        self.editor.as_ref().is_some_and(|e| e.is_modified())
     }
 
     /// Export the working buffer to a new file
@@ -323,18 +298,18 @@ impl BendApp {
                 self.cached_sections = parse_file(&bytes);
                 self.editor = Some(EditorState::new(bytes));
                 self.current_file = Some(path.clone());
-                self.preview_dirty = true;
-                self.decode_error = None;
+                self.preview.dirty = true;
+                self.preview.decode_error = None;
                 // Clear existing textures - they'll be recreated on next frame
-                self.preview_texture = None;
-                self.original_texture = None;
+                self.preview.texture = None;
+                self.preview.original_texture = None;
                 // Add to recent files and save settings
                 self.settings.add_recent_file(path);
                 self.settings.save();
             }
             Err(e) => {
                 log::error!("Failed to load file: {}", e);
-                self.decode_error = Some(format!("Failed to load file: {}", e));
+                self.preview.decode_error = Some(format!("Failed to load file: {}", e));
             }
         }
     }
@@ -385,7 +360,7 @@ impl BendApp {
 
     /// Check if a warning should be shown for editing at this offset
     pub fn should_warn_for_edit(&self, offset: usize) -> bool {
-        if self.suppress_high_risk_warnings {
+        if self.dialogs.suppress_high_risk_warnings {
             return false;
         }
         self.get_high_risk_level(offset).is_some()
@@ -393,7 +368,7 @@ impl BendApp {
 
     /// Show the high-risk edit warning dialog and handle user response
     fn show_high_risk_warning_dialog(&mut self, ctx: &egui::Context) {
-        let Some(pending) = self.pending_high_risk_edit else {
+        let Some(pending) = self.dialogs.pending_high_risk_edit else {
             return;
         };
 
@@ -435,7 +410,7 @@ impl BendApp {
                     ui.add_space(10.0);
 
                     // Don't show again checkbox
-                    ui.checkbox(&mut self.high_risk_dialog_dont_show, "Don't warn me again this session");
+                    ui.checkbox(&mut self.dialogs.high_risk_dont_show, "Don't warn me again this session");
 
                     ui.add_space(10.0);
 
@@ -470,14 +445,14 @@ impl BendApp {
                     }
                 }
             }
-            if self.high_risk_dialog_dont_show {
-                self.suppress_high_risk_warnings = true;
+            if self.dialogs.high_risk_dont_show {
+                self.dialogs.suppress_high_risk_warnings = true;
             }
-            self.high_risk_dialog_dont_show = false;
-            self.pending_high_risk_edit = None;
+            self.dialogs.high_risk_dont_show = false;
+            self.dialogs.pending_high_risk_edit = None;
         } else if should_cancel {
-            self.high_risk_dialog_dont_show = false;
-            self.pending_high_risk_edit = None;
+            self.dialogs.high_risk_dont_show = false;
+            self.dialogs.pending_high_risk_edit = None;
         }
     }
 
@@ -596,7 +571,7 @@ impl BendApp {
 
     /// Show the close confirmation dialog
     fn show_close_dialog(&mut self, ctx: &egui::Context) {
-        if !self.show_close_dialog {
+        if !self.dialogs.show_close {
             return;
         }
 
@@ -610,14 +585,14 @@ impl BendApp {
                 ui.horizontal(|ui| {
                     if ui.button("Export First").clicked() {
                         self.export_file();
-                        self.show_close_dialog = false;
+                        self.dialogs.show_close = false;
                     }
                     if ui.button("Discard & Exit").clicked() {
-                        self.pending_close = true;
-                        self.show_close_dialog = false;
+                        self.dialogs.pending_close = true;
+                        self.dialogs.show_close = false;
                     }
                     if ui.button("Cancel").clicked() {
-                        self.show_close_dialog = false;
+                        self.dialogs.show_close = false;
                     }
                 });
             });
@@ -678,7 +653,7 @@ impl BendApp {
                     ui.separator();
                     if ui.button("Exit").clicked() {
                         if self.has_unsaved_changes() {
-                            self.show_close_dialog = true;
+                            self.dialogs.show_close = true;
                         } else {
                             self.settings.save();
                             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -708,9 +683,9 @@ impl BendApp {
                     }
                     ui.separator();
                     // Re-enable warnings option (only shown when warnings are suppressed)
-                    if self.suppress_high_risk_warnings {
+                    if self.dialogs.suppress_high_risk_warnings {
                         if ui.button("Re-enable High-Risk Warnings").clicked() {
-                            self.suppress_high_risk_warnings = false;
+                            self.dialogs.suppress_high_risk_warnings = false;
                             ui.close_menu();
                         }
                     } else {
@@ -741,8 +716,8 @@ impl BendApp {
         egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 let has_file = self.editor.is_some();
-                let can_undo = self.editor.as_ref().map_or(false, |e| e.can_undo());
-                let can_redo = self.editor.as_ref().map_or(false, |e| e.can_redo());
+                let can_undo = self.editor.as_ref().is_some_and(|e| e.can_undo());
+                let can_redo = self.editor.as_ref().is_some_and(|e| e.can_redo());
 
                 // File operations
                 if ui.button("Open").clicked() {
@@ -775,10 +750,10 @@ impl BendApp {
                 ui.separator();
 
                 // View toggles
-                if ui.add_enabled(has_file, egui::SelectableLabel::new(self.comparison_mode, "Compare"))
+                if ui.add_enabled(has_file, egui::SelectableLabel::new(self.preview.comparison_mode, "Compare"))
                     .clicked()
                 {
-                    self.comparison_mode = !self.comparison_mode;
+                    self.preview.comparison_mode = !self.preview.comparison_mode;
                 }
                 if ui.add_enabled(has_file, egui::SelectableLabel::new(self.header_protection, "Protect"))
                     .on_hover_text("Protect header regions from editing")
@@ -861,7 +836,7 @@ impl BendApp {
                     };
                     ui.label(write_mode_text);
                 }
-                if let Some(err) = &self.decode_error {
+                if let Some(err) = &self.preview.decode_error {
                     ui.separator();
                     ui.colored_label(egui::Color32::YELLOW, err);
                 }
@@ -953,12 +928,12 @@ impl BendApp {
     /// Update the image preview texture from the working buffer
     /// Uses debouncing to prevent excessive re-renders during rapid editing
     pub fn update_preview(&mut self, ctx: &egui::Context) {
-        if !self.preview_dirty {
+        if !self.preview.dirty {
             return;
         }
 
         // Debounce: wait for edits to settle before re-rendering
-        if let Some(edit_time) = self.last_edit_time {
+        if let Some(edit_time) = self.preview.last_edit_time {
             let elapsed = edit_time.elapsed();
             let debounce_duration = std::time::Duration::from_millis(PREVIEW_DEBOUNCE_MS);
             if elapsed < debounce_duration {
@@ -982,22 +957,22 @@ impl BendApp {
 
                 let color_image = egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
 
-                self.preview_texture = Some(ctx.load_texture(
+                self.preview.texture = Some(ctx.load_texture(
                     "preview",
                     color_image,
                     egui::TextureOptions::LINEAR,
                 ));
-                self.decode_error = None;
+                self.preview.decode_error = None;
             }
             Err(e) => {
                 log::warn!("Failed to decode image: {}", e);
-                self.decode_error = Some(format!("Decode error: {}", e));
+                self.preview.decode_error = Some(format!("Decode error: {}", e));
                 // Keep the old texture as "last valid state"
             }
         }
 
         // Also update original texture if not yet loaded
-        if self.original_texture.is_none() {
+        if self.preview.original_texture.is_none() {
             if let Ok(img) = image::load_from_memory(editor.original()) {
                 let rgba = img.to_rgba8();
                 let size = [rgba.width() as usize, rgba.height() as usize];
@@ -1005,7 +980,7 @@ impl BendApp {
 
                 let color_image = egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
 
-                self.original_texture = Some(ctx.load_texture(
+                self.preview.original_texture = Some(ctx.load_texture(
                     "original",
                     color_image,
                     egui::TextureOptions::LINEAR,
@@ -1013,14 +988,14 @@ impl BendApp {
             }
         }
 
-        self.preview_dirty = false;
+        self.preview.dirty = false;
     }
 }
 
 impl eframe::App for BendApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Handle close confirmation
-        if self.pending_close {
+        if self.dialogs.pending_close {
             self.settings.save();
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
@@ -1228,7 +1203,7 @@ mod tests {
         let mut app = create_test_app_with_sections(sections);
 
         // Warnings not suppressed by default
-        assert!(!app.suppress_high_risk_warnings);
+        assert!(!app.dialogs.suppress_high_risk_warnings);
 
         // Safe and Caution should not trigger warnings
         assert!(!app.should_warn_for_edit(5));
@@ -1245,7 +1220,7 @@ mod tests {
         assert_eq!(app.get_high_risk_level(35), Some(RiskLevel::Critical));
 
         // Suppress warnings
-        app.suppress_high_risk_warnings = true;
+        app.dialogs.suppress_high_risk_warnings = true;
 
         // No warnings when suppressed
         assert!(!app.should_warn_for_edit(25));

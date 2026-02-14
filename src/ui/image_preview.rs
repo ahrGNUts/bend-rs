@@ -7,12 +7,12 @@ use eframe::egui;
 pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
     // Comparison mode toggle at the top
     ui.horizontal(|ui| {
-        ui.checkbox(&mut app.comparison_mode, "Compare with Original");
+        ui.checkbox(&mut app.preview.comparison_mode, "Compare with Original");
     });
 
     ui.add_space(4.0);
 
-    if app.comparison_mode {
+    if app.preview.comparison_mode {
         // Side-by-side comparison view
         show_comparison_view(ui, app);
     } else {
@@ -36,7 +36,7 @@ fn show_comparison_view(ui: &mut egui::Ui, app: &BendApp) {
         // Left: Original image
         ui.vertical(|ui| {
             ui.heading("Original");
-            show_texture_scaled(ui, app.original_texture.as_ref(), scale, max_image_size);
+            show_texture_scaled(ui, app.preview.original_texture.as_ref(), scale, max_image_size);
         });
 
         ui.separator();
@@ -45,7 +45,7 @@ fn show_comparison_view(ui: &mut egui::Ui, app: &BendApp) {
         ui.vertical(|ui| {
             ui.heading("Current");
             // Show decode error indicator if present
-            if app.decode_error.is_some() {
+            if app.preview.decode_error.is_some() {
                 ui.horizontal(|ui| {
                     ui.colored_label(
                         egui::Color32::YELLOW,
@@ -53,7 +53,7 @@ fn show_comparison_view(ui: &mut egui::Ui, app: &BendApp) {
                     );
                 });
             }
-            show_texture_scaled(ui, app.preview_texture.as_ref(), scale, max_image_size);
+            show_texture_scaled(ui, app.preview.texture.as_ref(), scale, max_image_size);
         });
     });
 }
@@ -64,13 +64,13 @@ fn calculate_unified_scale(app: &BendApp, max_size: egui::Vec2) -> f32 {
 
     // Get the texture that determines our scale
     // Use the largest dimensions from either texture
-    if let Some(tex) = &app.original_texture {
+    if let Some(tex) = &app.preview.original_texture {
         let tex_size = tex.size_vec2();
         let tex_scale = (max_size.x / tex_size.x).min(max_size.y / tex_size.y);
         scale = scale.min(tex_scale);
     }
 
-    if let Some(tex) = &app.preview_texture {
+    if let Some(tex) = &app.preview.texture {
         let tex_size = tex.size_vec2();
         let tex_scale = (max_size.x / tex_size.x).min(max_size.y / tex_size.y);
         scale = scale.min(tex_scale);
@@ -125,9 +125,9 @@ fn show_texture_scaled(
 
 /// Show a single image preview (current working buffer)
 fn show_single_preview(ui: &mut egui::Ui, app: &BendApp) {
-    if let Some(texture) = &app.preview_texture {
+    if let Some(texture) = &app.preview.texture {
         // Show decode error indicator if present
-        if app.decode_error.is_some() {
+        if app.preview.decode_error.is_some() {
             ui.horizontal(|ui| {
                 ui.colored_label(
                     egui::Color32::YELLOW,
@@ -172,7 +172,7 @@ fn show_single_preview(ui: &mut egui::Ui, app: &BendApp) {
     } else {
         // No preview available
         ui.centered_and_justified(|ui| {
-            if app.decode_error.is_some() {
+            if app.preview.decode_error.is_some() {
                 ui.vertical_centered(|ui| {
                     // Broken image indicator
                     ui.label(
@@ -181,7 +181,7 @@ fn show_single_preview(ui: &mut egui::Ui, app: &BendApp) {
                             .color(egui::Color32::GRAY),
                     );
                     ui.label("Unable to decode image");
-                    if let Some(err) = &app.decode_error {
+                    if let Some(err) = &app.preview.decode_error {
                         ui.label(egui::RichText::new(err).small().color(egui::Color32::GRAY));
                     }
                 });

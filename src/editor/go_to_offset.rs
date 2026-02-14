@@ -12,11 +12,6 @@ pub struct GoToOffsetState {
 }
 
 impl GoToOffsetState {
-    /// Create a new Go to offset state
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     /// Open the dialog, clearing previous input
     pub fn open_dialog(&mut self) {
         self.dialog_open = true;
@@ -92,7 +87,7 @@ mod tests {
 
     #[test]
     fn test_dialog_state() {
-        let mut state = GoToOffsetState::new();
+        let mut state = GoToOffsetState::default();
 
         // Initially closed
         assert!(!state.dialog_open);

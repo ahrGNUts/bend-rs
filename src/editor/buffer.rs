@@ -21,75 +21,50 @@ use super::bookmarks::BookmarkManager;
 use super::history::{EditOperation, History};
 use super::savepoints::{SavePoint, SavePointManager};
 
-/// Which nibble (half-byte) is currently being edited
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum NibblePosition {
-    /// High nibble (first hex digit, bits 7-4)
-    High,
-    /// Low nibble (second hex digit, bits 3-0)
-    Low,
-}
-
-/// Whether typing inserts new bytes or overwrites existing ones
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub enum WriteMode {
-    /// Overwrite mode: typing replaces existing bytes in-place
-    #[default]
-    Overwrite,
-    /// Insert mode: typing inserts new bytes, shifting subsequent bytes right
-    Insert,
-}
-
-/// Which editing mode is active (hex nibble vs ASCII character)
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub enum EditMode {
-    /// Hex editing: two keystrokes per byte (nibble-level)
-    #[default]
-    Hex,
-    /// ASCII editing: one keystroke per byte (character-level)
-    Ascii,
-}
+// Re-export types that were originally defined here for API stability
+pub use super::cursor::NibblePosition;
+pub use super::modes::{EditMode, WriteMode};
 
 /// Editor state containing buffers and edit history
 pub struct EditorState {
     /// Original bytes loaded from file (immutable after load)
-    original: Vec<u8>,
+    pub(super) original: Vec<u8>,
 
     /// Working buffer where all edits are applied
-    working: Vec<u8>,
+    pub(super) working: Vec<u8>,
 
     /// Edit history for undo/redo
-    history: History,
+    pub(super) history: History,
 
     /// Save point manager for named snapshots
-    save_points: SavePointManager,
+    pub(super) save_points: SavePointManager,
 
     /// Bookmark manager for annotated locations
-    bookmarks: BookmarkManager,
+    pub(super) bookmarks: BookmarkManager,
 
     /// Current cursor position in the buffer
-    cursor: usize,
+    pub(super) cursor: usize,
 
     /// Which nibble is being edited at the cursor
-    nibble: NibblePosition,
+    pub(super) nibble: NibblePosition,
 
     /// Selection range (start, end) - None if no selection
-    selection: Option<(usize, usize)>,
+    pub(super) selection: Option<(usize, usize)>,
 
     /// Selection anchor point - where selection started (for Shift+click/arrow)
-    selection_anchor: Option<usize>,
+    pub(super) selection_anchor: Option<usize>,
 
     /// Whether the working buffer has unsaved changes
-    modified: bool,
+    pub(super) modified: bool,
 
     /// Current editing mode (hex nibble vs ASCII character)
-    edit_mode: EditMode,
+    pub(super) edit_mode: EditMode,
 
     /// Current write mode (insert vs overwrite)
-    write_mode: WriteMode,
+    pub(super) write_mode: WriteMode,
 
     /// Whether buffer length changed since last check (for UI cache invalidation)
-    length_changed: bool,
+    pub(super) length_changed: bool,
 }
 
 impl EditorState {
@@ -123,74 +98,6 @@ impl EditorState {
         &self.working
     }
 
-    /// Get the current cursor position
-    pub fn cursor(&self) -> usize {
-        self.cursor
-    }
-
-    /// Set the cursor position, clamping to valid range
-    /// Also resets nibble position to High
-    pub fn set_cursor(&mut self, pos: usize) {
-        self.cursor = pos.min(self.working.len().saturating_sub(1));
-        self.nibble = NibblePosition::High;
-    }
-
-    /// Move cursor by offset, clamping to valid range
-    /// Also resets nibble position to High
-    pub fn move_cursor(&mut self, offset: isize) {
-        let new_pos = if offset < 0 {
-            self.cursor.saturating_sub((-offset) as usize)
-        } else {
-            self.cursor.saturating_add(offset as usize)
-        };
-        self.set_cursor(new_pos);
-    }
-
-    /// Get the current nibble position
-    pub fn nibble(&self) -> NibblePosition {
-        self.nibble
-    }
-
-    /// Get the current edit mode
-    pub fn edit_mode(&self) -> EditMode {
-        self.edit_mode
-    }
-
-    /// Set the edit mode
-    pub fn set_edit_mode(&mut self, mode: EditMode) {
-        self.edit_mode = mode;
-        // Reset nibble to High when switching modes
-        self.nibble = NibblePosition::High;
-    }
-
-    /// Toggle between Hex and ASCII editing modes
-    pub fn toggle_edit_mode(&mut self) {
-        self.edit_mode = match self.edit_mode {
-            EditMode::Hex => EditMode::Ascii,
-            EditMode::Ascii => EditMode::Hex,
-        };
-        // Reset nibble to High when switching modes
-        self.nibble = NibblePosition::High;
-    }
-
-    /// Get the current write mode
-    pub fn write_mode(&self) -> WriteMode {
-        self.write_mode
-    }
-
-    /// Set the write mode
-    pub fn set_write_mode(&mut self, mode: WriteMode) {
-        self.write_mode = mode;
-    }
-
-    /// Toggle between Insert and Overwrite write modes
-    pub fn toggle_write_mode(&mut self) {
-        self.write_mode = match self.write_mode {
-            WriteMode::Overwrite => WriteMode::Insert,
-            WriteMode::Insert => WriteMode::Overwrite,
-        };
-    }
-
     /// Check and reset the length_changed flag (returns true if length changed since last call)
     pub fn take_length_changed(&mut self) -> bool {
         let changed = self.length_changed;
@@ -205,7 +112,7 @@ impl EditorState {
     pub fn edit_ascii(&mut self, ch: char) -> bool {
         // Only accept printable ASCII characters (space through tilde)
         let byte_value = ch as u32;
-        if byte_value < 0x20 || byte_value > 0x7E {
+        if !(0x20..=0x7E).contains(&byte_value) {
             return false;
         }
 
@@ -277,78 +184,6 @@ impl EditorState {
         }
     }
 
-    /// Get the current selection range
-    pub fn selection(&self) -> Option<(usize, usize)> {
-        self.selection
-    }
-
-    /// Set selection range
-    pub fn set_selection(&mut self, start: usize, end: usize) {
-        let start = start.min(self.working.len());
-        let end = end.min(self.working.len());
-        self.selection = Some((start.min(end), start.max(end)));
-    }
-
-    /// Clear selection
-    pub fn clear_selection(&mut self) {
-        self.selection = None;
-        self.selection_anchor = None;
-    }
-
-    /// Start a new selection at the current cursor position
-    pub fn start_selection(&mut self) {
-        self.selection_anchor = Some(self.cursor);
-        self.selection = Some((self.cursor, self.cursor + 1));
-    }
-
-    /// Extend selection from anchor to the given position
-    /// If no anchor exists, sets anchor at current cursor before extending
-    pub fn extend_selection_to(&mut self, pos: usize) {
-        let pos = pos.min(self.working.len().saturating_sub(1));
-
-        let anchor = self.selection_anchor.unwrap_or(self.cursor);
-
-        let (start, end) = if pos >= anchor {
-            (anchor, pos + 1)
-        } else {
-            (pos, anchor + 1)
-        };
-
-        self.selection = Some((start, end.min(self.working.len())));
-        self.selection_anchor = Some(anchor);
-        self.cursor = pos;
-        self.nibble = NibblePosition::High;
-    }
-
-    /// Move cursor by offset while extending selection (for Shift+arrow)
-    pub fn move_cursor_with_selection(&mut self, offset: isize) {
-        // If no anchor, set it at current position first
-        if self.selection_anchor.is_none() {
-            self.selection_anchor = Some(self.cursor);
-        }
-
-        // Calculate new cursor position
-        let new_pos = if offset < 0 {
-            self.cursor.saturating_sub((-offset) as usize)
-        } else {
-            self.cursor
-                .saturating_add(offset as usize)
-                .min(self.working.len().saturating_sub(1))
-        };
-
-        self.extend_selection_to(new_pos);
-    }
-
-    /// Set cursor with optional selection extension (for Shift+click)
-    pub fn set_cursor_with_selection(&mut self, pos: usize, extend: bool) {
-        if extend {
-            self.extend_selection_to(pos);
-        } else {
-            self.clear_selection();
-            self.set_cursor(pos);
-        }
-    }
-
     /// Check if buffer has been modified
     pub fn is_modified(&self) -> bool {
         self.modified
@@ -375,137 +210,6 @@ impl EditorState {
         // Apply the edit
         self.working[offset] = new_value;
         self.modified = true;
-    }
-
-    /// Edit multiple bytes starting at offset
-    pub fn edit_bytes(&mut self, offset: usize, new_values: &[u8]) {
-        if offset >= self.working.len() {
-            return;
-        }
-
-        let end = (offset + new_values.len()).min(self.working.len());
-        let old_values: Vec<u8> = self.working[offset..end].to_vec();
-        let actual_new: Vec<u8> = new_values[..end - offset].to_vec();
-
-        if old_values == actual_new {
-            return;
-        }
-
-        // Record the edit for undo
-        self.history.push(EditOperation::Range {
-            offset,
-            old_values,
-            new_values: actual_new.clone(),
-        });
-
-        // Apply the edit
-        self.working[offset..end].copy_from_slice(&actual_new);
-        self.modified = true;
-    }
-
-    // ========== Mode-Aware Editing ==========
-
-    /// Edit a nibble respecting the current write mode
-    ///
-    /// In Overwrite mode, delegates to `edit_nibble()`.
-    /// In Insert mode:
-    /// - High nibble: inserts a new byte with `nibble << 4`, sets nibble to Low
-    /// - Low nibble: overwrites the low nibble of the just-inserted byte, advances cursor
-    #[must_use = "returns whether the cursor advanced to the next byte"]
-    pub fn edit_nibble_with_mode(&mut self, nibble_value: u8) -> bool {
-        if nibble_value > 15 {
-            return false;
-        }
-        match self.write_mode {
-            WriteMode::Overwrite => self.edit_nibble(nibble_value),
-            WriteMode::Insert => {
-                match self.nibble {
-                    NibblePosition::High => {
-                        // Insert a new byte with the high nibble set
-                        let value = nibble_value << 4;
-                        self.insert_byte(self.cursor, value);
-                        // Stay on this byte, move to low nibble
-                        self.nibble = NibblePosition::Low;
-                        false
-                    }
-                    NibblePosition::Low => {
-                        // Overwrite the low nibble of the just-inserted byte
-                        if self.cursor < self.working.len() {
-                            let current = self.working[self.cursor];
-                            let new_value = (current & 0xF0) | nibble_value;
-                            if current != new_value {
-                                self.history.push(EditOperation::Single {
-                                    offset: self.cursor,
-                                    old_value: current,
-                                    new_value,
-                                });
-                                self.working[self.cursor] = new_value;
-                                self.modified = true;
-                            }
-                        }
-                        self.nibble = NibblePosition::High;
-                        // Advance cursor to next byte
-                        if self.cursor + 1 < self.working.len() {
-                            self.cursor += 1;
-                        }
-                        true
-                    }
-                }
-            }
-        }
-    }
-
-    /// Edit an ASCII character respecting the current write mode
-    ///
-    /// In Overwrite mode, delegates to `edit_ascii()`.
-    /// In Insert mode, inserts a new byte and advances cursor.
-    #[must_use = "returns whether the character was accepted"]
-    pub fn edit_ascii_with_mode(&mut self, ch: char) -> bool {
-        let byte_value = ch as u32;
-        if byte_value < 0x20 || byte_value > 0x7E {
-            return false;
-        }
-        match self.write_mode {
-            WriteMode::Overwrite => self.edit_ascii(ch),
-            WriteMode::Insert => {
-                let value = byte_value as u8;
-                self.insert_byte(self.cursor, value);
-                // Advance cursor past the inserted byte
-                if self.cursor + 1 < self.working.len() {
-                    self.cursor += 1;
-                }
-                true
-            }
-        }
-    }
-
-    /// Handle Backspace key
-    ///
-    /// In Overwrite mode: moves cursor left.
-    /// In Insert mode: moves cursor left, then deletes byte at cursor.
-    pub fn handle_backspace(&mut self) {
-        match self.write_mode {
-            WriteMode::Overwrite => {
-                self.move_cursor(-1);
-            }
-            WriteMode::Insert => {
-                if self.cursor > 0 {
-                    self.cursor -= 1;
-                    self.nibble = NibblePosition::High;
-                    self.delete_byte(self.cursor);
-                }
-            }
-        }
-    }
-
-    /// Handle Delete key
-    ///
-    /// In Overwrite mode: no action.
-    /// In Insert mode: deletes byte at cursor.
-    pub fn handle_delete(&mut self) {
-        if self.write_mode == WriteMode::Insert {
-            self.delete_byte(self.cursor);
-        }
     }
 
     // ========== Insert/Delete Operations ==========
@@ -568,25 +272,6 @@ impl EditorState {
         }
         self.on_length_changed(offset, 1, false);
         Some(value)
-    }
-
-    /// Delete a range of bytes starting at offset
-    pub fn delete_bytes_range(&mut self, offset: usize, count: usize) {
-        if offset >= self.working.len() || count == 0 {
-            return;
-        }
-        let end = (offset + count).min(self.working.len());
-        let actual_count = end - offset;
-        let values: Vec<u8> = self.working.drain(offset..end).collect();
-        self.history.push(EditOperation::DeleteBytes {
-            offset,
-            values,
-        });
-        self.modified = true;
-        if !self.working.is_empty() {
-            self.cursor = self.cursor.min(self.working.len() - 1);
-        }
-        self.on_length_changed(offset, actual_count, false);
     }
 
     /// Undo the last edit operation
@@ -686,11 +371,6 @@ impl EditorState {
         self.history.can_redo()
     }
 
-    /// Get the byte at the cursor position
-    pub fn byte_at_cursor(&self) -> Option<u8> {
-        self.working.get(self.cursor).copied()
-    }
-
     /// Get a slice of bytes for display
     pub fn bytes_in_range(&self, start: usize, end: usize) -> &[u8] {
         let start = start.min(self.working.len());
@@ -701,11 +381,6 @@ impl EditorState {
     /// Total number of bytes
     pub fn len(&self) -> usize {
         self.working.len()
-    }
-
-    /// Check if buffer is empty
-    pub fn is_empty(&self) -> bool {
-        self.working.is_empty()
     }
 
     // ========== Save Points ==========
@@ -732,20 +407,18 @@ impl EditorState {
             return false;
         };
 
-        // Record the restoration as a range edit for undo support
-        let old_values = self.working.clone();
-        let new_values = restored.clone();
+        // Swap working with restored, getting old values without cloning
+        let old_values = std::mem::replace(&mut self.working, restored);
 
         // Only record if there's actually a change
-        if old_values != new_values {
+        if old_values != self.working {
             self.history.push(super::history::EditOperation::Range {
                 offset: 0,
                 old_values,
-                new_values: new_values.clone(),
+                new_values: self.working.clone(),
             });
         }
 
-        self.working = restored;
         self.modified = self.working != self.original;
         true
     }
@@ -845,28 +518,6 @@ mod tests {
     }
 
     #[test]
-    fn test_cursor_movement() {
-        let data = vec![0x00, 0x01, 0x02, 0x03];
-        let mut editor = EditorState::new(data);
-
-        assert_eq!(editor.cursor(), 0);
-
-        editor.set_cursor(2);
-        assert_eq!(editor.cursor(), 2);
-
-        editor.move_cursor(1);
-        assert_eq!(editor.cursor(), 3);
-
-        // Should clamp at max
-        editor.move_cursor(10);
-        assert_eq!(editor.cursor(), 3);
-
-        // Should clamp at 0
-        editor.move_cursor(-10);
-        assert_eq!(editor.cursor(), 0);
-    }
-
-    #[test]
     fn test_nibble_editing() {
         let data = vec![0x00, 0x01, 0x02, 0x03];
         let mut editor = EditorState::new(data);
@@ -910,107 +561,6 @@ mod tests {
 
         // No more undo available since both edits were coalesced
         assert!(!editor.can_undo());
-    }
-
-    #[test]
-    fn test_selection_with_shift_arrow() {
-        let data = vec![0x00, 0x01, 0x02, 0x03, 0x04, 0x05];
-        let mut editor = EditorState::new(data);
-
-        // Start at position 2
-        editor.set_cursor(2);
-        assert_eq!(editor.cursor(), 2);
-        assert!(editor.selection().is_none());
-
-        // Shift+right should select from 2 to 3
-        editor.move_cursor_with_selection(1);
-        assert_eq!(editor.cursor(), 3);
-        assert_eq!(editor.selection(), Some((2, 4))); // bytes 2, 3 selected
-
-        // Continue extending right
-        editor.move_cursor_with_selection(1);
-        assert_eq!(editor.cursor(), 4);
-        assert_eq!(editor.selection(), Some((2, 5))); // bytes 2, 3, 4 selected
-
-        // Shift+left should shrink selection
-        editor.move_cursor_with_selection(-1);
-        assert_eq!(editor.cursor(), 3);
-        assert_eq!(editor.selection(), Some((2, 4))); // bytes 2, 3 selected
-    }
-
-    #[test]
-    fn test_selection_backwards() {
-        let data = vec![0x00, 0x01, 0x02, 0x03, 0x04, 0x05];
-        let mut editor = EditorState::new(data);
-
-        // Start at position 4
-        editor.set_cursor(4);
-
-        // Shift+left should select from 4 backwards
-        editor.move_cursor_with_selection(-1);
-        assert_eq!(editor.cursor(), 3);
-        assert_eq!(editor.selection(), Some((3, 5))); // bytes 3, 4 selected
-
-        // Continue extending left
-        editor.move_cursor_with_selection(-1);
-        assert_eq!(editor.cursor(), 2);
-        assert_eq!(editor.selection(), Some((2, 5))); // bytes 2, 3, 4 selected
-    }
-
-    #[test]
-    fn test_set_cursor_with_selection() {
-        let data = vec![0x00, 0x01, 0x02, 0x03, 0x04, 0x05];
-        let mut editor = EditorState::new(data);
-
-        // Start at position 1
-        editor.set_cursor(1);
-
-        // Shift+click at position 4 (extend = true)
-        editor.set_cursor_with_selection(4, true);
-        assert_eq!(editor.cursor(), 4);
-        assert_eq!(editor.selection(), Some((1, 5))); // bytes 1, 2, 3, 4 selected
-
-        // Regular click at position 2 (extend = false)
-        editor.set_cursor_with_selection(2, false);
-        assert_eq!(editor.cursor(), 2);
-        assert!(editor.selection().is_none()); // selection cleared
-    }
-
-    #[test]
-    fn test_selection_with_extend_to() {
-        let data = vec![0x00, 0x01, 0x02, 0x03, 0x04, 0x05];
-        let mut editor = EditorState::new(data);
-
-        // Start at position 2
-        editor.set_cursor(2);
-
-        // Extend to position 5 (like Shift+End)
-        editor.extend_selection_to(5);
-        assert_eq!(editor.cursor(), 5);
-        assert_eq!(editor.selection(), Some((2, 6))); // bytes 2-5 selected
-
-        // Extend back to position 0 (like Shift+Home)
-        editor.extend_selection_to(0);
-        assert_eq!(editor.cursor(), 0);
-        assert_eq!(editor.selection(), Some((0, 3))); // bytes 0, 1, 2 selected (anchor at 2)
-    }
-
-    #[test]
-    fn test_clear_selection_clears_anchor() {
-        let data = vec![0x00, 0x01, 0x02, 0x03];
-        let mut editor = EditorState::new(data);
-
-        editor.set_cursor(1);
-        editor.move_cursor_with_selection(1);
-        assert!(editor.selection().is_some());
-
-        editor.clear_selection();
-        assert!(editor.selection().is_none());
-
-        // After clearing, new selection should start fresh
-        editor.move_cursor_with_selection(1);
-        // New anchor should be at current cursor (2), selecting to 3
-        assert_eq!(editor.selection(), Some((2, 4)));
     }
 
     #[test]
@@ -1072,43 +622,6 @@ mod tests {
         // Now sp1 is the leaf
         assert!(editor.delete_save_point(sp1));
         assert_eq!(editor.save_point_count(), 0);
-    }
-
-    #[test]
-    fn test_edit_mode_default() {
-        let data = vec![0x00, 0x01, 0x02, 0x03];
-        let editor = EditorState::new(data);
-
-        // Default should be Hex mode
-        assert_eq!(editor.edit_mode(), EditMode::Hex);
-    }
-
-    #[test]
-    fn test_edit_mode_toggle() {
-        let data = vec![0x00, 0x01, 0x02, 0x03];
-        let mut editor = EditorState::new(data);
-
-        assert_eq!(editor.edit_mode(), EditMode::Hex);
-
-        editor.toggle_edit_mode();
-        assert_eq!(editor.edit_mode(), EditMode::Ascii);
-
-        editor.toggle_edit_mode();
-        assert_eq!(editor.edit_mode(), EditMode::Hex);
-    }
-
-    #[test]
-    fn test_edit_mode_toggle_resets_nibble() {
-        let data = vec![0x00, 0x01, 0x02, 0x03];
-        let mut editor = EditorState::new(data);
-
-        // Edit high nibble to move to low nibble
-        editor.edit_nibble(0xA);
-        assert_eq!(editor.nibble(), NibblePosition::Low);
-
-        // Toggle should reset nibble to High
-        editor.toggle_edit_mode();
-        assert_eq!(editor.nibble(), NibblePosition::High);
     }
 
     #[test]
@@ -1178,46 +691,6 @@ mod tests {
         assert_eq!(editor.cursor(), 1); // Cursor stays at last byte (can't advance past end)
     }
 
-    #[test]
-    fn test_set_edit_mode() {
-        let data = vec![0x00, 0x01, 0x02, 0x03];
-        let mut editor = EditorState::new(data);
-
-        // Edit high nibble to move to low nibble
-        editor.edit_nibble(0xA);
-        assert_eq!(editor.nibble(), NibblePosition::Low);
-
-        // Set mode should reset nibble
-        editor.set_edit_mode(EditMode::Ascii);
-        assert_eq!(editor.edit_mode(), EditMode::Ascii);
-        assert_eq!(editor.nibble(), NibblePosition::High);
-
-        editor.set_edit_mode(EditMode::Hex);
-        assert_eq!(editor.edit_mode(), EditMode::Hex);
-        assert_eq!(editor.nibble(), NibblePosition::High);
-    }
-
-    // ========== WriteMode Tests ==========
-
-    #[test]
-    fn test_write_mode_default() {
-        let data = vec![0x00, 0x01, 0x02, 0x03];
-        let editor = EditorState::new(data);
-        assert_eq!(editor.write_mode(), WriteMode::Overwrite);
-    }
-
-    #[test]
-    fn test_write_mode_toggle() {
-        let data = vec![0x00, 0x01, 0x02, 0x03];
-        let mut editor = EditorState::new(data);
-
-        editor.toggle_write_mode();
-        assert_eq!(editor.write_mode(), WriteMode::Insert);
-
-        editor.toggle_write_mode();
-        assert_eq!(editor.write_mode(), WriteMode::Overwrite);
-    }
-
     // ========== Insert/Delete Tests ==========
 
     #[test]
@@ -1278,16 +751,6 @@ mod tests {
 
         let deleted = editor.delete_byte(10);
         assert_eq!(deleted, None);
-        assert_eq!(editor.len(), 3);
-    }
-
-    #[test]
-    fn test_delete_bytes_range() {
-        let data = vec![0x00, 0x01, 0x02, 0x03, 0x04];
-        let mut editor = EditorState::new(data);
-
-        editor.delete_bytes_range(1, 2);
-        assert_eq!(editor.working(), &[0x00, 0x03, 0x04]);
         assert_eq!(editor.len(), 3);
     }
 
@@ -1358,157 +821,6 @@ mod tests {
         // Delete should also set the flag
         editor.delete_byte(0);
         assert!(editor.take_length_changed());
-    }
-
-    // ========== Mode-Aware Editing Tests ==========
-
-    #[test]
-    fn test_edit_nibble_with_mode_overwrite() {
-        let data = vec![0x00, 0x01, 0x02, 0x03];
-        let mut editor = EditorState::new(data);
-
-        // In overwrite mode, should behave like edit_nibble
-        let advanced = editor.edit_nibble_with_mode(0xA);
-        assert!(!advanced);
-        assert_eq!(editor.working()[0], 0xA0);
-        assert_eq!(editor.nibble(), NibblePosition::Low);
-
-        let advanced = editor.edit_nibble_with_mode(0xB);
-        assert!(advanced);
-        assert_eq!(editor.working()[0], 0xAB);
-        assert_eq!(editor.cursor(), 1);
-    }
-
-    #[test]
-    fn test_edit_nibble_with_mode_insert() {
-        let data = vec![0x00, 0x01, 0x02, 0x03];
-        let mut editor = EditorState::new(data);
-        editor.set_write_mode(WriteMode::Insert);
-
-        // High nibble: inserts a new byte
-        let advanced = editor.edit_nibble_with_mode(0xA);
-        assert!(!advanced);
-        assert_eq!(editor.len(), 5); // Byte inserted
-        assert_eq!(editor.working()[0], 0xA0); // High nibble set
-        assert_eq!(editor.nibble(), NibblePosition::Low);
-        assert_eq!(editor.cursor(), 0); // Still on the inserted byte
-
-        // Low nibble: overwrites low nibble of inserted byte
-        let advanced = editor.edit_nibble_with_mode(0xB);
-        assert!(advanced);
-        assert_eq!(editor.working()[0], 0xAB); // Full byte
-        assert_eq!(editor.cursor(), 1); // Advanced past inserted byte
-        assert_eq!(editor.nibble(), NibblePosition::High);
-
-        // Original bytes shifted right
-        assert_eq!(editor.working(), &[0xAB, 0x00, 0x01, 0x02, 0x03]);
-    }
-
-    #[test]
-    fn test_edit_nibble_insert_undo() {
-        let data = vec![0x00, 0x01, 0x02, 0x03];
-        let mut editor = EditorState::new(data.clone());
-        editor.set_write_mode(WriteMode::Insert);
-
-        // Insert 0xAB: two operations (InsertBytes + Single overwrite)
-        editor.edit_nibble_with_mode(0xA);
-        editor.edit_nibble_with_mode(0xB);
-        assert_eq!(editor.working(), &[0xAB, 0x00, 0x01, 0x02, 0x03]);
-
-        // Undo low nibble overwrite
-        editor.undo();
-        assert_eq!(editor.working()[0], 0xA0); // Back to just high nibble
-
-        // Undo the insert
-        editor.undo();
-        assert_eq!(editor.working(), &data); // Back to original
-    }
-
-    #[test]
-    fn test_edit_ascii_with_mode_overwrite() {
-        let data = vec![0x00, 0x01, 0x02, 0x03];
-        let mut editor = EditorState::new(data);
-
-        // Overwrite mode: should behave like edit_ascii
-        assert!(editor.edit_ascii_with_mode('A'));
-        assert_eq!(editor.working()[0], 0x41);
-        assert_eq!(editor.cursor(), 1);
-    }
-
-    #[test]
-    fn test_edit_ascii_with_mode_insert() {
-        let data = vec![0x00, 0x01, 0x02, 0x03];
-        let mut editor = EditorState::new(data);
-        editor.set_write_mode(WriteMode::Insert);
-
-        assert!(editor.edit_ascii_with_mode('H'));
-        assert_eq!(editor.len(), 5);
-        assert_eq!(editor.working()[0], b'H');
-        assert_eq!(editor.cursor(), 1);
-        // Original bytes shifted right
-        assert_eq!(editor.working(), &[b'H', 0x00, 0x01, 0x02, 0x03]);
-    }
-
-    #[test]
-    fn test_handle_backspace_overwrite() {
-        let data = vec![0x00, 0x01, 0x02, 0x03];
-        let mut editor = EditorState::new(data.clone());
-
-        editor.set_cursor(2);
-        editor.handle_backspace();
-        // Overwrite mode: just moves cursor left
-        assert_eq!(editor.cursor(), 1);
-        assert_eq!(editor.working(), &data); // No modification
-    }
-
-    #[test]
-    fn test_handle_backspace_insert() {
-        let data = vec![0x00, 0x01, 0x02, 0x03];
-        let mut editor = EditorState::new(data);
-        editor.set_write_mode(WriteMode::Insert);
-
-        editor.set_cursor(2);
-        editor.handle_backspace();
-        // Insert mode: moves cursor left and deletes byte
-        assert_eq!(editor.cursor(), 1);
-        assert_eq!(editor.working(), &[0x00, 0x02, 0x03]);
-    }
-
-    #[test]
-    fn test_handle_backspace_insert_at_start() {
-        let data = vec![0x00, 0x01, 0x02];
-        let mut editor = EditorState::new(data.clone());
-        editor.set_write_mode(WriteMode::Insert);
-
-        editor.set_cursor(0);
-        editor.handle_backspace();
-        // At start, nothing should happen
-        assert_eq!(editor.cursor(), 0);
-        assert_eq!(editor.working(), &data);
-    }
-
-    #[test]
-    fn test_handle_delete_overwrite() {
-        let data = vec![0x00, 0x01, 0x02, 0x03];
-        let mut editor = EditorState::new(data.clone());
-
-        editor.set_cursor(1);
-        editor.handle_delete();
-        // Overwrite mode: no action
-        assert_eq!(editor.working(), &data);
-    }
-
-    #[test]
-    fn test_handle_delete_insert() {
-        let data = vec![0x00, 0x01, 0x02, 0x03];
-        let mut editor = EditorState::new(data);
-        editor.set_write_mode(WriteMode::Insert);
-
-        editor.set_cursor(1);
-        editor.handle_delete();
-        // Insert mode: deletes byte at cursor
-        assert_eq!(editor.working(), &[0x00, 0x02, 0x03]);
-        assert_eq!(editor.cursor(), 1);
     }
 
     // ========== Bookmark Offset Adjustment Tests ==========

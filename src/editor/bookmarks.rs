@@ -28,6 +28,7 @@ impl Bookmark {
 }
 
 /// Manager for bookmarks in the current file
+#[derive(Default)]
 pub struct BookmarkManager {
     /// All bookmarks, sorted by offset
     bookmarks: Vec<Bookmark>,
@@ -35,16 +36,6 @@ pub struct BookmarkManager {
     id_to_index: HashMap<u64, usize>,
     /// Next ID to assign
     next_id: u64,
-}
-
-impl Default for BookmarkManager {
-    fn default() -> Self {
-        Self {
-            bookmarks: Vec::new(),
-            id_to_index: HashMap::new(),
-            next_id: 0,
-        }
-    }
 }
 
 impl BookmarkManager {
@@ -59,13 +50,15 @@ impl BookmarkManager {
         self.next_id += 1;
 
         let bookmark = Bookmark::new(id, offset, name);
-        self.bookmarks.push(bookmark);
 
-        // Keep bookmarks sorted by offset
-        self.bookmarks.sort_by_key(|b| b.offset);
+        // Binary search for sorted insertion position — O(log n) instead of full sort
+        let pos = self.bookmarks.partition_point(|b| b.offset < offset);
+        self.bookmarks.insert(pos, bookmark);
 
-        // Rebuild the index map after sorting
-        self.rebuild_index();
+        // Rebuild indices for items at and after the insertion point
+        for (index, bm) in self.bookmarks.iter().enumerate().skip(pos) {
+            self.id_to_index.insert(bm.id, index);
+        }
 
         id
     }
@@ -89,11 +82,6 @@ impl BookmarkManager {
         } else {
             false
         }
-    }
-
-    /// Get a bookmark by ID
-    pub fn get(&self, id: u64) -> Option<&Bookmark> {
-        self.id_to_index.get(&id).map(|&i| &self.bookmarks[i])
     }
 
     /// Get a mutable reference to a bookmark by ID
@@ -132,30 +120,15 @@ impl BookmarkManager {
         }
     }
 
-    /// Check if there's a bookmark at the given offset
+    /// Check if there's a bookmark at the given offset (binary search on sorted vec)
     pub fn at_offset(&self, offset: usize) -> Option<&Bookmark> {
-        self.bookmarks.iter().find(|b| b.offset == offset)
+        let idx = self.bookmarks.partition_point(|b| b.offset < offset);
+        self.bookmarks.get(idx).filter(|b| b.offset == offset)
     }
 
     /// Check if offset has a bookmark
     pub fn has_bookmark(&self, offset: usize) -> bool {
         self.at_offset(offset).is_some()
-    }
-
-    /// Get the number of bookmarks
-    pub fn len(&self) -> usize {
-        self.bookmarks.len()
-    }
-
-    /// Check if there are no bookmarks
-    pub fn is_empty(&self) -> bool {
-        self.bookmarks.is_empty()
-    }
-
-    /// Clear all bookmarks
-    pub fn clear(&mut self) {
-        self.bookmarks.clear();
-        self.id_to_index.clear();
     }
 
     /// Adjust bookmark offsets after bytes were inserted at `offset`
@@ -192,13 +165,12 @@ mod tests {
     #[test]
     fn test_add_bookmark() {
         let mut manager = BookmarkManager::new();
-        let id = manager.add(100, "Test".to_string());
+        manager.add(100, "Test".to_string());
 
-        assert_eq!(manager.len(), 1);
-
-        let bookmark = manager.get(id).unwrap();
-        assert_eq!(bookmark.offset, 100);
-        assert_eq!(bookmark.name, "Test");
+        let bookmarks = manager.all();
+        assert_eq!(bookmarks.len(), 1);
+        assert_eq!(bookmarks[0].offset, 100);
+        assert_eq!(bookmarks[0].name, "Test");
     }
 
     #[test]
@@ -218,12 +190,12 @@ mod tests {
     fn test_remove_bookmark() {
         let mut manager = BookmarkManager::new();
         let id1 = manager.add(100, "First".to_string());
-        let id2 = manager.add(200, "Second".to_string());
+        manager.add(200, "Second".to_string());
 
         assert!(manager.remove(id1));
-        assert_eq!(manager.len(), 1);
-        assert!(manager.get(id1).is_none());
-        assert!(manager.get(id2).is_some());
+        assert_eq!(manager.all().len(), 1);
+        assert!(!manager.has_bookmark(100));
+        assert!(manager.has_bookmark(200));
     }
 
     #[test]
@@ -232,7 +204,7 @@ mod tests {
         let id = manager.add(100, "Old Name".to_string());
 
         assert!(manager.rename(id, "New Name".to_string()));
-        assert_eq!(manager.get(id).unwrap().name, "New Name");
+        assert_eq!(manager.at_offset(100).unwrap().name, "New Name");
     }
 
     #[test]
@@ -241,7 +213,7 @@ mod tests {
         let id = manager.add(100, "Test".to_string());
 
         assert!(manager.set_annotation(id, "This is a note".to_string()));
-        assert_eq!(manager.get(id).unwrap().annotation, "This is a note");
+        assert_eq!(manager.at_offset(100).unwrap().annotation, "This is a note");
     }
 
     #[test]

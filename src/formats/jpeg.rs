@@ -78,14 +78,12 @@ impl ImageFormat for JpegParser {
         }
 
         let mut sections = Vec::new();
-        let mut pos = 0;
-
         // SOI marker
         sections.push(
             FileSection::new("SOI (Start of Image)", 0, 2, RiskLevel::Critical)
                 .with_description("JPEG magic bytes FF D8"),
         );
-        pos = 2;
+        let mut pos = 2;
 
         // Parse markers until we hit the entropy-coded data or EOF
         while pos < data.len() {
