@@ -181,6 +181,10 @@ pub enum PendingEditType {
     Nibble(u8),
     /// ASCII edit: character to write
     Ascii(char),
+    /// Backspace key (insert mode delete-previous)
+    Backspace,
+    /// Delete key (insert mode delete-at-cursor)
+    Delete,
 }
 
 /// A pending edit awaiting user confirmation
@@ -457,6 +461,12 @@ impl BendApp {
                     }
                     PendingEditType::Ascii(ch) => {
                         let _ = editor.edit_ascii_with_mode(ch);
+                    }
+                    PendingEditType::Backspace => {
+                        editor.handle_backspace();
+                    }
+                    PendingEditType::Delete => {
+                        editor.handle_delete();
                     }
                 }
             }

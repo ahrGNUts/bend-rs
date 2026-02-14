@@ -33,6 +33,15 @@ const HEX_BYTE_WIDTH: f32 = 24.0;
 /// Number of rows to scroll above target when jumping to an offset
 const SCROLL_BUFFER_ROWS: usize = 5;
 
+/// Cursor highlight colors — bright (active nibble / active mode)
+const CURSOR_BRIGHT_OVERWRITE: egui::Color32 = egui::Color32::from_rgb(80, 80, 160);
+/// Cursor highlight colors — dim (inactive nibble / inactive mode)
+const CURSOR_DIM_OVERWRITE: egui::Color32 = egui::Color32::from_rgb(40, 40, 80);
+/// Cursor highlight colors — bright in insert mode (green tint)
+const CURSOR_BRIGHT_INSERT: egui::Color32 = egui::Color32::from_rgb(80, 160, 80);
+/// Cursor highlight colors — dim in insert mode (green tint)
+const CURSOR_DIM_INSERT: egui::Color32 = egui::Color32::from_rgb(40, 80, 40);
+
 /// Show the hex editor panel
 pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
     let Some(editor) = &app.editor else {
@@ -179,21 +188,14 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                             // In ASCII mode, hex cursor shows dim highlight for both nibbles
                             // In Hex mode, show bright highlight for active nibble, dim for inactive
                             // Insert mode uses green tint, overwrite mode uses blue tint
+                            let (bright, dim) = if write_mode == WriteMode::Insert {
+                                (CURSOR_BRIGHT_INSERT, CURSOR_DIM_INSERT)
+                            } else {
+                                (CURSOR_BRIGHT_OVERWRITE, CURSOR_DIM_OVERWRITE)
+                            };
                             let (high_bg, low_bg) = if edit_mode == EditMode::Ascii {
-                                // ASCII mode: dim highlight for entire hex byte
-                                let dim = if write_mode == WriteMode::Insert {
-                                    egui::Color32::from_rgb(40, 80, 40)
-                                } else {
-                                    egui::Color32::from_rgb(40, 40, 80)
-                                };
                                 (dim, dim)
                             } else {
-                                // Hex mode: bright/dim based on nibble position
-                                let (bright, dim) = if write_mode == WriteMode::Insert {
-                                    (egui::Color32::from_rgb(80, 160, 80), egui::Color32::from_rgb(40, 80, 40))
-                                } else {
-                                    (egui::Color32::from_rgb(80, 80, 160), egui::Color32::from_rgb(40, 40, 80))
-                                };
                                 match cursor_nibble {
                                     NibblePosition::High => (bright, dim),
                                     NibblePosition::Low => (dim, bright),
@@ -300,21 +302,14 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                         if is_cursor {
                             // Cursor highlighting depends on edit mode
                             // Insert mode uses green tint, overwrite mode uses blue tint
+                            let (bright, dim) = if write_mode == WriteMode::Insert {
+                                (CURSOR_BRIGHT_INSERT, CURSOR_DIM_INSERT)
+                            } else {
+                                (CURSOR_BRIGHT_OVERWRITE, CURSOR_DIM_OVERWRITE)
+                            };
                             if edit_mode == EditMode::Ascii {
-                                // Active mode cursor: bright highlight
-                                let bright = if write_mode == WriteMode::Insert {
-                                    egui::Color32::from_rgb(80, 160, 80)
-                                } else {
-                                    egui::Color32::from_rgb(80, 80, 160)
-                                };
                                 rich_text = rich_text.background_color(bright);
                             } else {
-                                // Inactive mode cursor: dim highlight
-                                let dim = if write_mode == WriteMode::Insert {
-                                    egui::Color32::from_rgb(40, 80, 40)
-                                } else {
-                                    egui::Color32::from_rgb(40, 40, 80)
-                                };
                                 rich_text = rich_text.background_color(dim);
                             }
                         } else if is_selected {
@@ -373,6 +368,8 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
         let app_edit_type = match edit_type {
             PendingEditType::Nibble(n) => crate::app::PendingEditType::Nibble(n),
             PendingEditType::Ascii(c) => crate::app::PendingEditType::Ascii(c),
+            PendingEditType::Backspace => crate::app::PendingEditType::Backspace,
+            PendingEditType::Delete => crate::app::PendingEditType::Delete,
         };
         app.pending_high_risk_edit = Some(crate::app::PendingEdit {
             edit_type: app_edit_type,
@@ -397,6 +394,10 @@ enum PendingEditType {
     Nibble(u8),
     /// ASCII edit: character to write
     Ascii(char),
+    /// Backspace key (insert mode delete-previous)
+    Backspace,
+    /// Delete key (insert mode delete-at-cursor)
+    Delete,
 }
 
 /// Result of keyboard input handling
@@ -421,8 +422,6 @@ fn handle_keyboard_input(
 
     // Cache edit mode and write mode for text input handling
     let current_edit_mode = app.editor.as_ref().map(|e| e.edit_mode()).unwrap_or(EditMode::Hex);
-    let current_write_mode = app.editor.as_ref().map(|e| e.write_mode()).unwrap_or(WriteMode::Overwrite);
-
     ui.input_mut(|i| {
         let Some(editor) = &mut app.editor else {
             return;
@@ -522,11 +521,25 @@ fn handle_keyboard_input(
         if !cursor_protected {
             // Backspace key: delete previous byte (insert) or move left (overwrite)
             if i.key_pressed(egui::Key::Backspace) {
-                editor.handle_backspace();
+                if should_warn_for_cursor && editor.write_mode() == WriteMode::Insert {
+                    // In insert mode, backspace deletes — show warning in high-risk regions
+                    // (In overwrite mode, backspace just moves cursor, so no warning needed)
+                    if let Some(risk) = cursor_risk_level {
+                        pending_high_risk_edit = Some((PendingEditType::Backspace, cursor_pos, risk));
+                    }
+                } else {
+                    editor.handle_backspace();
+                }
             }
             // Delete key: delete byte at cursor (insert mode only)
             if i.key_pressed(egui::Key::Delete) {
-                editor.handle_delete();
+                if should_warn_for_cursor && editor.write_mode() == WriteMode::Insert {
+                    if let Some(risk) = cursor_risk_level {
+                        pending_high_risk_edit = Some((PendingEditType::Delete, cursor_pos, risk));
+                    }
+                } else {
+                    editor.handle_delete();
+                }
             }
 
             for event in &i.events {
@@ -585,18 +598,7 @@ fn handle_keyboard_input(
         };
         if let Some(bytes) = bytes {
             if let Some(editor) = &mut app.editor {
-                if current_write_mode == WriteMode::Insert {
-                    // Insert mode: insert all bytes at cursor position
-                    editor.insert_bytes(cursor_pos, &bytes);
-                } else {
-                    // Overwrite mode: overwrite bytes starting at cursor
-                    for (i, byte) in bytes.iter().enumerate() {
-                        let offset = cursor_pos + i;
-                        if offset < editor.len() {
-                            editor.edit_byte(offset, *byte);
-                        }
-                    }
-                }
+                apply_paste_bytes(editor, cursor_pos, &bytes);
             }
         }
     }
@@ -779,16 +781,19 @@ fn paste_hex(_ui: &mut egui::Ui, app: &mut BendApp, target_offset: usize) {
     };
 
     if let Some(bytes) = bytes {
-        if editor.write_mode() == WriteMode::Insert {
-            // Insert mode: insert all bytes at target offset
-            editor.insert_bytes(target_offset, &bytes);
-        } else {
-            // Overwrite mode: overwrite bytes starting at target
-            for (i, byte) in bytes.iter().enumerate() {
-                let offset = target_offset + i;
-                if offset < editor.len() {
-                    editor.edit_byte(offset, *byte);
-                }
+        apply_paste_bytes(editor, target_offset, &bytes);
+    }
+}
+
+/// Apply parsed bytes at the given offset, respecting write mode
+fn apply_paste_bytes(editor: &mut crate::editor::EditorState, offset: usize, bytes: &[u8]) {
+    if editor.write_mode() == WriteMode::Insert {
+        editor.insert_bytes(offset, bytes);
+    } else {
+        for (i, byte) in bytes.iter().enumerate() {
+            let target = offset + i;
+            if target < editor.len() {
+                editor.edit_byte(target, *byte);
             }
         }
     }
@@ -809,7 +814,7 @@ fn parse_hex_input(input: &str) -> Option<Vec<u8>> {
         .filter(|c| c.is_ascii_hexdigit())
         .collect();
 
-    if clean.len() % 2 != 0 {
+    if clean.is_empty() || clean.len() % 2 != 0 {
         return None;
     }
 

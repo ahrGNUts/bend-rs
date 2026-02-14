@@ -123,11 +123,6 @@ impl EditorState {
         &self.working
     }
 
-    /// Get a mutable reference to the working buffer
-    pub fn working_mut(&mut self) -> &mut Vec<u8> {
-        &mut self.working
-    }
-
     /// Get the current cursor position
     pub fn cursor(&self) -> usize {
         self.cursor
@@ -547,10 +542,7 @@ impl EditorState {
             return;
         }
         let offset = offset.min(self.working.len());
-        // Splice the bytes in
-        let tail = self.working.split_off(offset);
-        self.working.extend_from_slice(values);
-        self.working.extend(tail);
+        self.working.splice(offset..offset, values.iter().copied());
         self.history.push(EditOperation::InsertBytes {
             offset,
             values: values.to_vec(),
@@ -627,9 +619,7 @@ impl EditorState {
                 EditOperation::DeleteBytes { offset, ref values } => {
                     // Undo delete: re-insert the deleted bytes
                     let count = values.len();
-                    let tail = self.working.split_off(offset);
-                    self.working.extend_from_slice(values);
-                    self.working.extend(tail);
+                    self.working.splice(offset..offset, values.iter().copied());
                     self.bookmarks.adjust_offsets_after_insert(offset, count);
                     self.save_points.clear_all(&self.original);
                     self.length_changed = true;
@@ -662,9 +652,7 @@ impl EditorState {
                 EditOperation::InsertBytes { offset, ref values } => {
                     // Redo insert: splice bytes back in
                     let count = values.len();
-                    let tail = self.working.split_off(offset);
-                    self.working.extend_from_slice(values);
-                    self.working.extend(tail);
+                    self.working.splice(offset..offset, values.iter().copied());
                     self.bookmarks.adjust_offsets_after_insert(offset, count);
                     self.save_points.clear_all(&self.original);
                     self.length_changed = true;
@@ -1558,6 +1546,30 @@ mod tests {
         assert_eq!(bookmarks.len(), 2); // One removed
         assert_eq!(bookmarks[0].offset, 1); // Before: unchanged
         assert_eq!(bookmarks[1].offset, 3); // After: shifted -1
+    }
+
+    #[test]
+    fn test_insert_byte_on_empty_buffer() {
+        let mut editor = EditorState::new(vec![]);
+
+        editor.insert_byte(0, 0xAA);
+        assert_eq!(editor.working(), &[0xAA]);
+        assert_eq!(editor.len(), 1);
+
+        // Undo should return to empty
+        assert!(editor.undo());
+        assert_eq!(editor.working(), &[] as &[u8]);
+        assert_eq!(editor.len(), 0);
+    }
+
+    #[test]
+    fn test_delete_byte_on_empty_buffer() {
+        let mut editor = EditorState::new(vec![]);
+
+        // Should be a no-op
+        let deleted = editor.delete_byte(0);
+        assert_eq!(deleted, None);
+        assert_eq!(editor.len(), 0);
     }
 
     #[test]
