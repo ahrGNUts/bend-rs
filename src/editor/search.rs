@@ -44,12 +44,15 @@ pub struct SearchState {
     pub error: Option<String>,
     /// Cached pattern length (computed in execute_search/clear_results)
     cached_pattern_len: usize,
+    /// Whether the dialog was just opened (for auto-focus on first frame)
+    pub just_opened: bool,
 }
 
 impl SearchState {
     /// Open the search dialog
     pub fn open_dialog(&mut self) {
         self.dialog_open = true;
+        self.just_opened = true;
     }
 
     /// Close the search dialog

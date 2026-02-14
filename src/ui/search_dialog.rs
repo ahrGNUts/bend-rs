@@ -42,6 +42,11 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
                         })
                         .desired_width(250.0),
                 );
+                // Auto-focus the find field when dialog opens
+                if app.search_state.just_opened {
+                    response.request_focus();
+                    app.search_state.just_opened = false;
+                }
                 // Search on Enter
                 if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     do_search = true;

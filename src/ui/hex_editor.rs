@@ -568,6 +568,13 @@ fn handle_keyboard_input(
     cursor_pos: usize,
     cursor_protected: bool,
 ) -> KeyboardResult {
+    // Don't process hex editor input when a text-input dialog is open
+    if app.search_state.dialog_open || app.go_to_offset_state.dialog_open {
+        return KeyboardResult {
+            pending_high_risk_edit: None,
+        };
+    }
+
     // Pre-compute warning state before mutable borrow of editor
     let should_warn_for_cursor = app.should_warn_for_edit(cursor_pos);
     let cursor_risk_level = app.get_high_risk_level(cursor_pos);
