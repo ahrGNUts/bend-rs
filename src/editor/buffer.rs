@@ -189,6 +189,30 @@ impl EditorState {
         self.modified
     }
 
+    /// Replace a range of bytes as a single undoable operation
+    pub fn replace_bytes(&mut self, offset: usize, new_values: &[u8]) {
+        let end = (offset + new_values.len()).min(self.working.len());
+        let actual_len = end - offset;
+        if actual_len == 0 {
+            return;
+        }
+
+        let old_values = self.working[offset..end].to_vec();
+        let new_values = new_values[..actual_len].to_vec();
+
+        if old_values == new_values {
+            return; // No change
+        }
+
+        self.working[offset..end].copy_from_slice(&new_values);
+        self.history.push(EditOperation::Range {
+            offset,
+            old_values,
+            new_values,
+        });
+        self.modified = true;
+    }
+
     /// Edit a single byte at the given offset
     pub fn edit_byte(&mut self, offset: usize, new_value: u8) {
         if offset >= self.working.len() {
@@ -882,6 +906,48 @@ mod tests {
         let deleted = editor.delete_byte(0);
         assert_eq!(deleted, None);
         assert_eq!(editor.len(), 0);
+    }
+
+    // ========== Replace Bytes Tests ==========
+
+    #[test]
+    fn test_replace_bytes() {
+        let data = vec![0x00, 0x01, 0x02, 0x03, 0x04];
+        let mut editor = EditorState::new(data);
+
+        editor.replace_bytes(1, &[0xAA, 0xBB]);
+        assert_eq!(editor.working(), &[0x00, 0xAA, 0xBB, 0x03, 0x04]);
+        assert!(editor.is_modified());
+
+        // Single undo should revert the entire replacement
+        assert!(editor.undo());
+        assert_eq!(editor.working(), &[0x00, 0x01, 0x02, 0x03, 0x04]);
+        assert!(!editor.is_modified());
+
+        // Redo should re-apply the entire replacement
+        assert!(editor.redo());
+        assert_eq!(editor.working(), &[0x00, 0xAA, 0xBB, 0x03, 0x04]);
+    }
+
+    #[test]
+    fn test_replace_bytes_no_change() {
+        let data = vec![0x00, 0x01, 0x02, 0x03];
+        let mut editor = EditorState::new(data);
+
+        // Replacing with same values should be a no-op
+        editor.replace_bytes(1, &[0x01, 0x02]);
+        assert!(!editor.is_modified());
+        assert!(!editor.can_undo());
+    }
+
+    #[test]
+    fn test_replace_bytes_at_end() {
+        let data = vec![0x00, 0x01, 0x02];
+        let mut editor = EditorState::new(data);
+
+        // Replace that would extend past buffer should be clamped
+        editor.replace_bytes(2, &[0xAA, 0xBB, 0xCC]);
+        assert_eq!(editor.working(), &[0x00, 0x01, 0xAA]);
     }
 
     #[test]

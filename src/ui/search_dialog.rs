@@ -236,13 +236,8 @@ fn replace_current(app: &mut BendApp) -> Result<(), String> {
 
     let editor = app.editor.as_mut().ok_or("No file loaded")?;
 
-    // Apply the replacement as a single edit operation
-    for (i, &byte) in replacement.iter().enumerate() {
-        let offset = current_offset + i;
-        if offset < editor.len() {
-            editor.edit_byte(offset, byte);
-        }
-    }
+    // Apply the replacement as a single undoable operation
+    editor.replace_bytes(current_offset, &replacement);
 
     Ok(())
 }
@@ -272,17 +267,10 @@ fn replace_all(app: &mut BendApp) -> Result<usize, String> {
     let editor = app.editor.as_mut().ok_or("No file loaded")?;
     let count = app.search_state.matches.len();
 
-    // Apply all replacements
+    // Apply all replacements as individual Range operations (one per match)
     // Since we require replacement to be same length, positions don't shift
-    // Note: We can borrow app.search_state.matches while editor is mutably borrowed
-    // because they are separate fields (split borrowing)
     for &match_offset in &app.search_state.matches {
-        for (i, &byte) in replacement.iter().enumerate() {
-            let offset = match_offset + i;
-            if offset < editor.len() {
-                editor.edit_byte(offset, byte);
-            }
-        }
+        editor.replace_bytes(match_offset, &replacement);
     }
 
     Ok(count)
