@@ -52,6 +52,8 @@ pub struct SearchState {
     last_searched_mode: SearchMode,
     /// Case sensitivity that produced the current matches
     last_searched_case_sensitive: bool,
+    /// Editor generation when search was last executed
+    searched_at_generation: u64,
 }
 
 impl SearchState {
@@ -93,6 +95,16 @@ impl SearchState {
         self.query != self.last_searched_query
             || self.mode != self.last_searched_mode
             || self.case_sensitive != self.last_searched_case_sensitive
+    }
+
+    /// Check if match results may be stale due to buffer edits since the search
+    pub fn matches_may_be_stale(&self, current_generation: u64) -> bool {
+        !self.matches.is_empty() && self.searched_at_generation != current_generation
+    }
+
+    /// Record the editor generation at search time
+    pub fn set_searched_generation(&mut self, generation: u64) {
+        self.searched_at_generation = generation;
     }
 
     /// Move to the next match

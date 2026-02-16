@@ -65,6 +65,9 @@ pub struct EditorState {
 
     /// Whether buffer length changed since last check (for UI cache invalidation)
     pub(super) length_changed: bool,
+
+    /// Monotonically increasing counter, bumped on every edit/undo/redo
+    edit_generation: u64,
 }
 
 impl EditorState {
@@ -85,6 +88,7 @@ impl EditorState {
             edit_mode: EditMode::default(),
             write_mode: WriteMode::default(),
             length_changed: false,
+            edit_generation: 0,
         }
     }
 
@@ -96,6 +100,11 @@ impl EditorState {
     /// Get a reference to the working (edited) bytes
     pub fn working(&self) -> &[u8] {
         &self.working
+    }
+
+    /// Get the current edit generation counter (incremented on every edit/undo/redo)
+    pub fn edit_generation(&self) -> u64 {
+        self.edit_generation
     }
 
     /// Check and reset the length_changed flag (returns true if length changed since last call)
@@ -132,6 +141,7 @@ impl EditorState {
             });
             self.working[self.cursor] = new_value;
             self.modified = true;
+            self.edit_generation += 1;
         }
 
         // Advance cursor to next byte
@@ -165,6 +175,7 @@ impl EditorState {
             });
             self.working[self.cursor] = new_value;
             self.modified = true;
+            self.edit_generation += 1;
         }
 
         // Toggle nibble position
@@ -211,6 +222,7 @@ impl EditorState {
             new_values,
         });
         self.modified = true;
+        self.edit_generation += 1;
     }
 
     /// Edit a single byte at the given offset
@@ -234,6 +246,7 @@ impl EditorState {
         // Apply the edit
         self.working[offset] = new_value;
         self.modified = true;
+        self.edit_generation += 1;
     }
 
     // ========== Insert/Delete Operations ==========
@@ -261,6 +274,7 @@ impl EditorState {
             values: vec![value],
         });
         self.modified = true;
+        self.edit_generation += 1;
         self.on_length_changed(offset, 1, true);
     }
 
@@ -276,6 +290,7 @@ impl EditorState {
             values: values.to_vec(),
         });
         self.modified = true;
+        self.edit_generation += 1;
         self.on_length_changed(offset, values.len(), true);
     }
 
@@ -290,6 +305,7 @@ impl EditorState {
             values: vec![value],
         });
         self.modified = true;
+        self.edit_generation += 1;
         // Clamp cursor if it now points past the end
         if !self.working.is_empty() {
             self.cursor = self.cursor.min(self.working.len() - 1);
@@ -336,6 +352,7 @@ impl EditorState {
             }
             // Check if we're back to original state
             self.modified = self.working != self.original;
+            self.edit_generation += 1;
             true
         } else {
             false
@@ -379,6 +396,7 @@ impl EditorState {
                 }
             }
             self.modified = self.working != self.original;
+            self.edit_generation += 1;
             true
         } else {
             false

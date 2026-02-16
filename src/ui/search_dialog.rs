@@ -152,13 +152,30 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
     // Handle actions after UI is done (to avoid borrow issues)
     if do_search {
         if let Some(editor) = &app.editor {
+            let gen = editor.edit_generation();
             execute_search(&mut app.search_state, editor.working());
+            app.search_state.set_searched_generation(gen);
             // Navigate to first match if found
             if let Some(offset) = app.search_state.current_match_offset() {
                 if let Some(editor) = &mut app.editor {
                     editor.set_cursor(offset);
                 }
                 app.scroll_hex_to_offset(offset);
+            }
+        }
+    }
+
+    // Auto-re-search if buffer was edited since last search (stale matches)
+    if (do_next || do_prev) && !do_search {
+        if let Some(editor) = &app.editor {
+            if app.search_state.matches_may_be_stale(editor.edit_generation()) {
+                let gen = editor.edit_generation();
+                execute_search(&mut app.search_state, editor.working());
+                app.search_state.set_searched_generation(gen);
+                if app.search_state.matches.is_empty() {
+                    do_next = false;
+                    do_prev = false;
+                }
             }
         }
     }
@@ -190,7 +207,9 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
         } else {
             // Re-execute search to update matches after replacement
             if let Some(editor) = &app.editor {
+                let gen = editor.edit_generation();
                 execute_search(&mut app.search_state, editor.working());
+                app.search_state.set_searched_generation(gen);
             }
             // Restore match position (clamped to new matches length)
             if !app.search_state.matches.is_empty() {
@@ -211,7 +230,9 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
             Ok(_count) => {
                 // Re-execute search (should find nothing now)
                 if let Some(editor) = &app.editor {
+                    let gen = editor.edit_generation();
                     execute_search(&mut app.search_state, editor.working());
+                    app.search_state.set_searched_generation(gen);
                 }
             }
             Err(e) => {
