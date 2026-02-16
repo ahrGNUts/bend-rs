@@ -55,9 +55,10 @@ impl SearchState {
         self.just_opened = true;
     }
 
-    /// Close the search dialog
+    /// Close the search dialog and clear results/highlights
     pub fn close_dialog(&mut self) {
         self.dialog_open = false;
+        self.clear_results();
     }
 
     /// Check if an offset is within a match (considering pattern length)
