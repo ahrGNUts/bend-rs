@@ -182,12 +182,24 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
     }
 
     if do_replace_one {
+        let prev_index = app.search_state.current_match.unwrap_or(0);
         if let Err(e) = replace_current(app) {
             app.search_state.error = Some(e);
         } else {
             // Re-execute search to update matches after replacement
             if let Some(editor) = &app.editor {
                 execute_search(&mut app.search_state, editor.working());
+            }
+            // Restore match position (clamped to new matches length)
+            if !app.search_state.matches.is_empty() {
+                let clamped = prev_index.min(app.search_state.matches.len() - 1);
+                app.search_state.current_match = Some(clamped);
+                if let Some(offset) = app.search_state.current_match_offset() {
+                    if let Some(editor) = &mut app.editor {
+                        editor.set_cursor(offset);
+                    }
+                    app.scroll_hex_to_offset(offset);
+                }
             }
         }
     }
