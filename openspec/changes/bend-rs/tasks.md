@@ -197,7 +197,7 @@ Prerequisites: Sections 7-8 (format parsing to identify header regions)
 - [x] 17.20 BUG: After replace, current_match resets to index 0 instead of staying near replaced position
 - [x] 17.21 BUG: Enter navigates stale matches after query/mode/case change (regression from 17.15)
 - [x] 17.22 BUG: Search results not invalidated when buffer changes via manual edits
-- [ ] 17.23 BUG: Shift+Enter on first search causes double-scroll (both do_search and do_prev fire)
+- [x] 17.23 BUG: Shift+Enter on first search causes double-scroll (both do_search and do_prev fire)
 
 ## 18. Settings and Persistence (P3)
 - [x] 18.1 Design settings data structure (window size, recent files, preferences)

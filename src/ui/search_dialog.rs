@@ -16,6 +16,7 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
     let mut do_replace_all = false;
     let mut do_next = false;
     let mut do_prev = false;
+    let mut navigate_to_last_after_search = false;
 
     egui::Window::new("Search & Replace")
         .collapsible(false)
@@ -56,7 +57,7 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
                     if needs_search {
                         do_search = true;
                         if shift_held {
-                            do_prev = true;
+                            navigate_to_last_after_search = true;
                         }
                     } else if shift_held {
                         do_prev = true;
@@ -155,7 +156,11 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
             let gen = editor.edit_generation();
             execute_search(&mut app.search_state, editor.working());
             app.search_state.set_searched_generation(gen);
-            // Navigate to first match if found
+            // Navigate to last match if Shift+Enter was used on first search
+            if navigate_to_last_after_search && !app.search_state.matches.is_empty() {
+                app.search_state.current_match = Some(app.search_state.matches.len() - 1);
+            }
+            // Scroll to current match if found
             if let Some(offset) = app.search_state.current_match_offset() {
                 if let Some(editor) = &mut app.editor {
                     editor.set_cursor(offset);
