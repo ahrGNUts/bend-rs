@@ -47,9 +47,20 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
                     response.request_focus();
                     app.search_state.just_opened = false;
                 }
-                // Search on Enter
+                // Enter = next match, Shift+Enter = previous match
+                // If no matches yet, run the search first
                 if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    do_search = true;
+                    let shift_held = ui.input(|i| i.modifiers.shift);
+                    if app.search_state.matches.is_empty() {
+                        do_search = true;
+                        if shift_held {
+                            do_prev = true;
+                        }
+                    } else if shift_held {
+                        do_prev = true;
+                    } else {
+                        do_next = true;
+                    }
                 }
             });
 

@@ -189,6 +189,7 @@ Prerequisites: Sections 7-8 (format parsing to identify header regions)
 - [x] 17.12 BUG: typing in the find and replace modal should capture the cursor and not cause input in the hex or ascii editors
 - [x] 17.13 BUG: shortcuts dialog title should be visible at all times and not grow vertically out of view of the user
 - [x] 17.14 BUG: clicking next/previous buttons in find & replace dialog should scroll to the matching string or byte
+- [x] 17.15 ENHANCEMENT: Enter/Shift+Enter in search dialog for next/previous match navigation
 
 ## 18. Settings and Persistence (P3)
 - [x] 18.1 Design settings data structure (window size, recent files, preferences)
