@@ -354,10 +354,10 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
     };
 
     // Check if an offset is within a search match
-    let pattern_len = app.search_state.pattern_length();
     let current_match_offset = app.search_state.current_match_offset();
+    let pattern_len = app.search_state.pattern_length();
     let is_search_match = |offset: usize| -> bool {
-        app.search_state.is_within_match(offset, pattern_len)
+        app.search_state.is_within_match(offset)
     };
     let is_current_match = |offset: usize| -> bool {
         current_match_offset.is_some_and(|m| offset >= m && offset < m + pattern_len)

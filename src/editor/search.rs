@@ -62,7 +62,7 @@ impl SearchState {
 
     /// Check if an offset is within a match (considering pattern length)
     /// Uses pre-computed HashSet for O(1) lookup
-    pub fn is_within_match(&self, offset: usize, _pattern_len: usize) -> bool {
+    pub fn is_within_match(&self, offset: usize) -> bool {
         self.highlighted_offsets.contains(&offset)
     }
 
