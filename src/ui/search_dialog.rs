@@ -225,8 +225,8 @@ fn replace_current(app: &mut BendApp) -> Result<(), String> {
 
     let replacement = get_replacement_bytes(app)?;
 
-    // Validate replacement length matches pattern for hex mode
-    if app.search_state.mode == SearchMode::Hex && replacement.len() != pattern_len {
+    // Validate replacement length matches pattern (fixed-size buffer requires same length)
+    if replacement.len() != pattern_len {
         return Err(format!(
             "Replace pattern length ({}) must match search pattern length ({})",
             replacement.len(),
@@ -255,8 +255,8 @@ fn replace_all(app: &mut BendApp) -> Result<usize, String> {
 
     let replacement = get_replacement_bytes(app)?;
 
-    // Validate replacement length matches pattern for hex mode
-    if app.search_state.mode == SearchMode::Hex && replacement.len() != pattern_len {
+    // Validate replacement length matches pattern (fixed-size buffer requires same length)
+    if replacement.len() != pattern_len {
         return Err(format!(
             "Replace pattern length ({}) must match search pattern length ({})",
             replacement.len(),
