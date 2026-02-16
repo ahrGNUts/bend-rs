@@ -46,6 +46,12 @@ pub struct SearchState {
     cached_pattern_len: usize,
     /// Whether the dialog was just opened (for auto-focus on first frame)
     pub just_opened: bool,
+    /// Query that produced the current matches (for stale detection)
+    last_searched_query: String,
+    /// Mode that produced the current matches
+    last_searched_mode: SearchMode,
+    /// Case sensitivity that produced the current matches
+    last_searched_case_sensitive: bool,
 }
 
 impl SearchState {
@@ -80,6 +86,13 @@ impl SearchState {
     /// Get the cached pattern length (set by execute_search/clear_results)
     pub fn pattern_length(&self) -> usize {
         self.cached_pattern_len
+    }
+
+    /// Check if the query/mode/case settings have changed since the last search
+    pub fn query_changed_since_search(&self) -> bool {
+        self.query != self.last_searched_query
+            || self.mode != self.last_searched_mode
+            || self.case_sensitive != self.last_searched_case_sensitive
     }
 
     /// Move to the next match
@@ -296,6 +309,11 @@ pub fn execute_search(state: &mut SearchState, data: &[u8]) {
     state.cached_pattern_len = pattern_len;
     state.rebuild_highlighted_offsets(pattern_len);
 
+    // Record what produced these matches (for stale detection)
+    state.last_searched_query = state.query.clone();
+    state.last_searched_mode = state.mode.clone();
+    state.last_searched_case_sensitive = state.case_sensitive;
+
     // Set current match to first one if any found
     if !state.matches.is_empty() {
         state.current_match = Some(0);
@@ -419,5 +437,37 @@ mod tests {
     #[test]
     fn test_parse_hex_replace_rejects_wildcards() {
         assert!(parse_hex_replace("FF ?? FF").is_err());
+    }
+
+    #[test]
+    fn test_query_changed_since_search() {
+        let data = b"hello world hello";
+        let mut state = SearchState::default();
+        state.mode = SearchMode::Ascii;
+        state.query = "hello".to_string();
+
+        // Before any search, query_changed should be true (query differs from empty default)
+        assert!(state.query_changed_since_search());
+
+        // After search, query_changed should be false
+        execute_search(&mut state, data);
+        assert!(!state.query_changed_since_search());
+        assert_eq!(state.matches.len(), 2);
+
+        // Change query — should detect change
+        state.query = "world".to_string();
+        assert!(state.query_changed_since_search());
+
+        // Change mode — should detect change
+        state.query = "hello".to_string();
+        assert!(!state.query_changed_since_search());
+        state.mode = SearchMode::Hex;
+        assert!(state.query_changed_since_search());
+
+        // Change case sensitivity — should detect change
+        state.mode = SearchMode::Ascii;
+        assert!(!state.query_changed_since_search());
+        state.case_sensitive = true;
+        assert!(state.query_changed_since_search());
     }
 }
