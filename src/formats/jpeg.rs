@@ -54,7 +54,7 @@ impl JpegParser {
             0xC4 => RiskLevel::High,            // Huffman tables (before SOF range)
             0xC0..=0xCF => RiskLevel::Critical, // SOF markers
             0xDA => RiskLevel::High,            // SOS
-            0xE0..=0xEF => RiskLevel::Caution,  // APP markers
+            0xE0..=0xEF => RiskLevel::High,     // APP markers (JFIF, EXIF, etc.)
             0xFE => RiskLevel::Safe,            // Comments
             0xDD => RiskLevel::Caution,         // DRI
             _ => RiskLevel::Caution,
