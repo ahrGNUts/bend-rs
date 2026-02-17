@@ -1,0 +1,8 @@
+# Bend - Databending Studio
+This application was inspired by a .NET Framework application someone posted on Reddit many years ago. That application was a good start to a glitch image studio, but it had some limitations and rough edges. Databending is inherently destructive so the process can be a little risky, but I'm hoping this will be useful to some once it's more polished.
+
+The application aims to help streamline the glitch image creation process by creating some safeguards while playing with image data. In the old days, glitching images would require making lots of copies of image files and opening each in a hex editor when you wanted to start making changes to it. If you forgot to make a copy at a certain point or got too daring with your edits, you might lose something you liked. This application allows you to create save points for the image data you're working with so you can bend with confidence. It also tracks your edits so it's easier to undo breaking changes. You can see how your edits have changed your open image by reloading the Preview pane. You can see a full list of keyboard shortcuts in the application's Help > Keyboard Shortcuts menu.
+
+This is nowhere near the only tool out there for glitching stuff, but I wanted to take a crack at this anyway. I'm still testing and polishing this, so some things may change before I release prebuilt binaries. This readme will be better organized by then as well.
+
+Happy glitching!
