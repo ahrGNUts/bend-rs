@@ -64,6 +64,8 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
                     } else {
                         do_next = true;
                     }
+                    // Keep focus in the Find field after Enter
+                    response.request_focus();
                 }
             });
 
