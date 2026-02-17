@@ -132,7 +132,7 @@ fn render_hex_byte(
     } else {
         let mut rich_text = RichText::new(hex).monospace();
 
-        // Apply background color priority: selection > current_match > search_match > bookmark > protected > section
+        // Apply background color priority: selection > current_match > search_match > bookmark > section
         if highlight.is_selected {
             rich_text = rich_text.background_color(egui::Color32::from_rgb(40, 80, 40));
         } else if highlight.is_current_match {
@@ -141,10 +141,12 @@ fn render_hex_byte(
             rich_text = rich_text.background_color(egui::Color32::from_rgb(180, 180, 60));
         } else if highlight.has_bookmark {
             rich_text = rich_text.background_color(egui::Color32::from_rgb(60, 160, 180));
-        } else if highlight.is_protected {
-            rich_text = rich_text.background_color(egui::Color32::from_rgb(140, 50, 50));
         } else if let Some(bg) = highlight.section_bg {
             rich_text = rich_text.background_color(bg);
+        }
+
+        if highlight.is_protected {
+            rich_text = rich_text.strikethrough();
         }
 
         ui.label(rich_text)
