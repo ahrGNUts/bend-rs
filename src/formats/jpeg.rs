@@ -171,7 +171,7 @@ impl ImageFormat for JpegParser {
                                 "Entropy-Coded Data",
                                 entropy_start,
                                 entropy_end,
-                                RiskLevel::High,
+                                RiskLevel::Caution,
                             )
                             .with_description(
                                 "Compressed image data - editing here creates glitch effects but often corrupts the image",
