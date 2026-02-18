@@ -199,6 +199,7 @@ Prerequisites: Sections 7-8 (format parsing to identify header regions)
 - [x] 17.22 BUG: Search results not invalidated when buffer changes via manual edits
 - [x] 17.23 BUG: Shift+Enter on first search causes double-scroll (both do_search and do_prev fire)
 - [x] 17.24 ENHANCEMENT: Use strikethrough instead of opaque red background for protected bytes
+- [x] 17.25 BUG: vertical scrolling should be enabled for far left panel when contents extend beyond window height
 
 ## 18. Settings and Persistence (P3)
 - [x] 18.1 Design settings data structure (window size, recent files, preferences)

@@ -108,49 +108,45 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut SavePointsPanelSta
         ui.label(RichText::new("No save points yet").italics());
         ui.label("Create a save point to capture the current state.");
     } else {
-        egui::ScrollArea::vertical()
-            .auto_shrink([false, true])
-            .show(ui, |ui| {
-                for (idx, (id, name)) in save_points.iter().enumerate() {
-                    ui.horizontal(|ui| {
-                        // Name (editable or label)
-                        if state.editing_id == Some(*id) {
-                            let response = ui.text_edit_singleline(&mut state.edit_buffer);
-                            if response.lost_focus() || ui.input(|i| i.key_pressed(egui::Key::Enter))
-                            {
-                                action_finish_rename = Some((*id, state.edit_buffer.clone()));
-                                state.editing_id = None;
-                            }
-                            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                                state.editing_id = None;
-                            }
-                        } else {
-                            ui.label(name);
-                        }
-
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            // Delete button (only for leaf)
-                            if can_delete.get(idx).copied().unwrap_or(false)
-                                && ui.button("🗑").on_hover_text("Delete").clicked()
-                            {
-                                action_delete = Some(*id);
-                            }
-
-                            // Rename button
-                            if ui.button("✏").on_hover_text("Rename").clicked() {
-                                action_start_rename = Some((*id, name.clone()));
-                            }
-
-                            // Restore button
-                            if ui.button("↩").on_hover_text("Restore").clicked() {
-                                action_restore = Some(*id);
-                            }
-                        });
-                    });
-
-                    ui.separator();
+        for (idx, (id, name)) in save_points.iter().enumerate() {
+            ui.horizontal(|ui| {
+                // Name (editable or label)
+                if state.editing_id == Some(*id) {
+                    let response = ui.text_edit_singleline(&mut state.edit_buffer);
+                    if response.lost_focus() || ui.input(|i| i.key_pressed(egui::Key::Enter))
+                    {
+                        action_finish_rename = Some((*id, state.edit_buffer.clone()));
+                        state.editing_id = None;
+                    }
+                    if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                        state.editing_id = None;
+                    }
+                } else {
+                    ui.label(name);
                 }
+
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    // Delete button (only for leaf)
+                    if can_delete.get(idx).copied().unwrap_or(false)
+                        && ui.button("🗑").on_hover_text("Delete").clicked()
+                    {
+                        action_delete = Some(*id);
+                    }
+
+                    // Rename button
+                    if ui.button("✏").on_hover_text("Rename").clicked() {
+                        action_start_rename = Some((*id, name.clone()));
+                    }
+
+                    // Restore button
+                    if ui.button("↩").on_hover_text("Restore").clicked() {
+                        action_restore = Some(*id);
+                    }
+                });
             });
+
+            ui.separator();
+        }
     }
 
     // Perform deferred actions

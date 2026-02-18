@@ -52,10 +52,9 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
     // List bookmarks
     let mut action: Option<BookmarkAction> = None;
 
-    egui::ScrollArea::vertical().show(ui, |ui| {
-        for bookmark in bookmarks {
-            ui.push_id(bookmark.id, |ui| {
-                ui.group(|ui| {
+    for bookmark in bookmarks {
+        ui.push_id(bookmark.id, |ui| {
+            ui.group(|ui| {
                     // Bookmark name (editable if renaming)
                     if state.renaming == Some(bookmark.id) {
                         ui.horizontal(|ui| {
@@ -152,12 +151,11 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
                             }
                         }
                     });
-                });
             });
+        });
 
-            ui.add_space(4.0);
-        }
-    });
+        ui.add_space(4.0);
+    }
 
     // Process actions
     if let Some(action) = action {

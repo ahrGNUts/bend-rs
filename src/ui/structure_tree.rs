@@ -131,13 +131,9 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
         ui.separator();
 
         // Show sections
-        egui::ScrollArea::vertical()
-            .auto_shrink([false, true])
-            .show(ui, |ui| {
-                for section in sections {
-                    show_section(ui, section, &mut clicked_offset, current_cursor);
-                }
-            });
+        for section in sections {
+            show_section(ui, section, &mut clicked_offset, current_cursor);
+        }
     }
 
     // Handle navigation - borrow of cached_sections has ended

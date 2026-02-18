@@ -871,37 +871,39 @@ impl BendApp {
 
         egui::SidePanel::left("structure_panel")
             .resizable(true)
-            .default_width(250.0)
+            .default_width(255.0)
             .min_width(150.0)
             .show(ctx, |ui| {
-                // File structure section
-                egui::CollapsingHeader::new("File Structure")
-                    .default_open(true)
-                    .show(ui, |ui| {
-                        structure_tree::show(ui, self);
-                    });
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    // File structure section
+                    egui::CollapsingHeader::new("File Structure")
+                        .default_open(true)
+                        .show(ui, |ui| {
+                            structure_tree::show(ui, self);
+                        });
 
-                ui.add_space(10.0);
+                    ui.add_space(10.0);
 
-                // Save points section
-                egui::CollapsingHeader::new("Save Points")
-                    .default_open(true)
-                    .show(ui, |ui| {
-                        let mut state = std::mem::take(&mut self.savepoints_state);
-                        savepoints::show(ui, self, &mut state);
-                        self.savepoints_state = state;
-                    });
+                    // Save points section
+                    egui::CollapsingHeader::new("Save Points")
+                        .default_open(true)
+                        .show(ui, |ui| {
+                            let mut state = std::mem::take(&mut self.savepoints_state);
+                            savepoints::show(ui, self, &mut state);
+                            self.savepoints_state = state;
+                        });
 
-                ui.add_space(10.0);
+                    ui.add_space(10.0);
 
-                // Bookmarks section
-                egui::CollapsingHeader::new("Bookmarks")
-                    .default_open(true)
-                    .show(ui, |ui| {
-                        let mut state = std::mem::take(&mut self.bookmarks_state);
-                        bookmarks::show(ui, self, &mut state);
-                        self.bookmarks_state = state;
-                    });
+                    // Bookmarks section
+                    egui::CollapsingHeader::new("Bookmarks")
+                        .default_open(true)
+                        .show(ui, |ui| {
+                            let mut state = std::mem::take(&mut self.bookmarks_state);
+                            bookmarks::show(ui, self, &mut state);
+                            self.bookmarks_state = state;
+                        });
+                });
             });
     }
 
