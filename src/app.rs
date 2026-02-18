@@ -663,7 +663,26 @@ impl BendApp {
                 });
                 ui.menu_button("Edit", |ui| {
                     let has_file = self.editor.is_some();
+                    let can_undo = self.editor.as_ref().is_some_and(|e| e.can_undo());
+                    let can_redo = self.editor.as_ref().is_some_and(|e| e.can_redo());
+                    let undo_shortcut = format!("{}Z", modifier_key());
+                    let redo_shortcut = format!("{}Shift+Z", modifier_key());
                     let refresh_shortcut = format!("{}R", modifier_key());
+
+                    if menu_item_with_shortcut(ui, "Undo", &undo_shortcut, can_undo) {
+                        if let Some(editor) = &mut self.editor {
+                            let _ = editor.undo();
+                        }
+                        ui.close_menu();
+                    }
+                    if menu_item_with_shortcut(ui, "Redo", &redo_shortcut, can_redo) {
+                        if let Some(editor) = &mut self.editor {
+                            let _ = editor.redo();
+                        }
+                        ui.close_menu();
+                    }
+                    ui.separator();
+
                     if menu_item_with_shortcut(ui, "Find & Replace...", &find_shortcut, has_file) {
                         self.search_state.open_dialog();
                         ui.close_menu();
