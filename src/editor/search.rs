@@ -21,6 +21,15 @@ pub enum PatternElement {
     Wildcard,
 }
 
+/// A message from a search/replace operation — either an error or informational
+#[derive(Debug, Clone, PartialEq)]
+pub enum SearchMessage {
+    /// A real error (parse failure, protection violation, etc.)
+    Error(String),
+    /// An informational message (e.g. "Replaced 1 of 2, 1 skipped")
+    Info(String),
+}
+
 /// Search state and results
 #[derive(Default)]
 pub struct SearchState {
@@ -40,8 +49,8 @@ pub struct SearchState {
     pub dialog_open: bool,
     /// Replace text
     pub replace_with: String,
-    /// Last search error message
-    pub error: Option<String>,
+    /// Last search/replace message (error or informational)
+    pub message: Option<SearchMessage>,
     /// Cached pattern length (computed in execute_search/clear_results)
     cached_pattern_len: usize,
     /// Whether the dialog was just opened (for auto-focus on first frame)
@@ -146,7 +155,7 @@ impl SearchState {
         self.matches.clear();
         self.highlighted_offsets.clear();
         self.current_match = None;
-        self.error = None;
+        self.message = None;
         self.cached_pattern_len = 0;
     }
 }
@@ -305,7 +314,7 @@ pub fn execute_search(state: &mut SearchState, data: &[u8]) {
                     len
                 }
                 Err(e) => {
-                    state.error = Some(e);
+                    state.message = Some(SearchMessage::Error(e));
                     return;
                 }
             }
@@ -481,5 +490,31 @@ mod tests {
         assert!(!state.query_changed_since_search());
         state.case_sensitive = true;
         assert!(state.query_changed_since_search());
+    }
+
+    #[test]
+    fn test_invalid_hex_query_sets_error_message() {
+        let data = b"hello";
+        let mut state = SearchState::default();
+        state.mode = SearchMode::Hex;
+        state.query = "GG".to_string();
+
+        execute_search(&mut state, data);
+
+        match &state.message {
+            Some(SearchMessage::Error(text)) => {
+                assert!(text.contains("Invalid"));
+            }
+            other => panic!("Expected SearchMessage::Error, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_clear_results_clears_message() {
+        let mut state = SearchState::default();
+        state.message = Some(SearchMessage::Info("test".to_string()));
+
+        state.clear_results();
+        assert!(state.message.is_none());
     }
 }

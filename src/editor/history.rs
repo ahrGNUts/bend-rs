@@ -34,6 +34,8 @@ pub enum EditOperation {
         offset: usize,
         values: Vec<u8>,
     },
+    /// A group of operations treated as a single atomic undo/redo unit
+    Group(Vec<EditOperation>),
 }
 
 /// Try to coalesce a new operation with an existing one
@@ -87,8 +89,10 @@ fn try_coalesce(existing: &mut EditOperation, new: &EditOperation) -> bool {
             false
         }
 
-        // InsertBytes and DeleteBytes never coalesce
-        EditOperation::InsertBytes { .. } | EditOperation::DeleteBytes { .. } => false,
+        // InsertBytes, DeleteBytes, and Group never coalesce
+        EditOperation::InsertBytes { .. }
+        | EditOperation::DeleteBytes { .. }
+        | EditOperation::Group(_) => false,
 
         // Extend a range with an adjacent single-byte edit
         EditOperation::Range {
@@ -491,6 +495,52 @@ mod tests {
         history.push(EditOperation::Single {
             offset: 0,
             old_value: 0x00,
+            new_value: 0xBB,
+        });
+
+        assert_eq!(count_undos(&mut history), 2);
+    }
+
+    #[test]
+    fn test_group_no_coalesce_with_previous_single() {
+        let mut history = History::new();
+
+        // Push a Single edit
+        history.push(EditOperation::Single {
+            offset: 0,
+            old_value: 0x00,
+            new_value: 0xAA,
+        });
+
+        // Push a Group — should NOT coalesce with the Single
+        history.push(EditOperation::Group(vec![
+            EditOperation::Range {
+                offset: 1,
+                old_values: vec![0x01],
+                new_values: vec![0xBB],
+            },
+        ]));
+
+        assert_eq!(count_undos(&mut history), 2);
+    }
+
+    #[test]
+    fn test_single_no_coalesce_with_preceding_group() {
+        let mut history = History::new();
+
+        // Push a Group
+        history.push(EditOperation::Group(vec![
+            EditOperation::Range {
+                offset: 0,
+                old_values: vec![0x00],
+                new_values: vec![0xAA],
+            },
+        ]));
+
+        // Push an adjacent Single — should NOT coalesce with Group
+        history.push(EditOperation::Single {
+            offset: 1,
+            old_value: 0x01,
             new_value: 0xBB,
         });
 

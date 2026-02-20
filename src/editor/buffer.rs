@@ -225,6 +225,35 @@ impl EditorState {
         self.edit_generation += 1;
     }
 
+    /// Replace bytes at multiple offsets as a single atomic undo/redo operation
+    pub fn replace_all_bytes(&mut self, offsets: &[usize], new_values: &[u8]) {
+        let mut sub_ops = Vec::new();
+        for &offset in offsets {
+            let end = (offset + new_values.len()).min(self.working.len());
+            let actual_len = end - offset;
+            if actual_len == 0 {
+                continue;
+            }
+            let old_values = self.working[offset..end].to_vec();
+            let new_vals = new_values[..actual_len].to_vec();
+            if old_values == new_vals {
+                continue;
+            }
+            self.working[offset..end].copy_from_slice(&new_vals);
+            sub_ops.push(EditOperation::Range {
+                offset,
+                old_values,
+                new_values: new_vals,
+            });
+        }
+        if sub_ops.is_empty() {
+            return;
+        }
+        self.history.push(EditOperation::Group(sub_ops));
+        self.modified = true;
+        self.edit_generation += 1;
+    }
+
     /// Edit a single byte at the given offset
     pub fn edit_byte(&mut self, offset: usize, new_value: u8) {
         if offset >= self.working.len() {
@@ -349,6 +378,32 @@ impl EditorState {
                     self.save_points.clear_all(&self.original);
                     self.length_changed = true;
                 }
+                EditOperation::Group(ref ops) => {
+                    // Undo all sub-operations in reverse order
+                    for sub_op in ops.iter().rev() {
+                        match sub_op {
+                            EditOperation::Single {
+                                offset, old_value, ..
+                            } => {
+                                self.working[*offset] = *old_value;
+                            }
+                            EditOperation::Range {
+                                offset, old_values, ..
+                            } => {
+                                let end = offset + old_values.len();
+                                self.working[*offset..end].copy_from_slice(old_values);
+                            }
+                            EditOperation::InsertBytes { .. }
+                            | EditOperation::DeleteBytes { .. }
+                            | EditOperation::Group(_) => {
+                                debug_assert!(
+                                    false,
+                                    "Unexpected sub-operation type in Group undo"
+                                );
+                            }
+                        }
+                    }
+                }
             }
             // Check if we're back to original state
             self.modified = self.working != self.original;
@@ -392,6 +447,32 @@ impl EditorState {
                     self.length_changed = true;
                     if !self.working.is_empty() {
                         self.cursor = self.cursor.min(self.working.len() - 1);
+                    }
+                }
+                EditOperation::Group(ref ops) => {
+                    // Redo all sub-operations in forward order
+                    for sub_op in ops {
+                        match sub_op {
+                            EditOperation::Single {
+                                offset, new_value, ..
+                            } => {
+                                self.working[*offset] = *new_value;
+                            }
+                            EditOperation::Range {
+                                offset, new_values, ..
+                            } => {
+                                let end = offset + new_values.len();
+                                self.working[*offset..end].copy_from_slice(new_values);
+                            }
+                            EditOperation::InsertBytes { .. }
+                            | EditOperation::DeleteBytes { .. }
+                            | EditOperation::Group(_) => {
+                                debug_assert!(
+                                    false,
+                                    "Unexpected sub-operation type in Group redo"
+                                );
+                            }
+                        }
                     }
                 }
             }
@@ -981,5 +1062,67 @@ mod tests {
         // Insert should clear save points
         editor.insert_byte(0, 0xAA);
         assert_eq!(editor.save_point_count(), 0);
+    }
+
+    // ========== Replace All Bytes (Atomic) Tests ==========
+
+    #[test]
+    fn test_replace_all_bytes_atomic_undo() {
+        let data = vec![0xAA, 0x00, 0xAA, 0x00, 0xAA];
+        let mut editor = EditorState::new(data.clone());
+
+        // Replace AA at offsets 0, 2, 4 with BB
+        editor.replace_all_bytes(&[0, 2, 4], &[0xBB]);
+        assert_eq!(editor.working(), &[0xBB, 0x00, 0xBB, 0x00, 0xBB]);
+        assert!(editor.is_modified());
+
+        // Single undo should revert ALL replacements
+        assert!(editor.undo());
+        assert_eq!(editor.working(), &data);
+        assert!(!editor.is_modified());
+
+        // No more undo — it was a single operation
+        assert!(!editor.can_undo());
+
+        // Redo should re-apply all replacements
+        assert!(editor.redo());
+        assert_eq!(editor.working(), &[0xBB, 0x00, 0xBB, 0x00, 0xBB]);
+        assert!(editor.is_modified());
+    }
+
+    #[test]
+    fn test_replace_all_bytes_skips_unchanged() {
+        let data = vec![0xAA, 0x00, 0xAA, 0x00];
+        let mut editor = EditorState::new(data);
+
+        // Offset 0 and 2 have AA, replacing with AA is a no-op
+        editor.replace_all_bytes(&[0, 2], &[0xAA]);
+        assert!(!editor.is_modified());
+        assert!(!editor.can_undo());
+    }
+
+    #[test]
+    fn test_replace_all_bytes_empty_offsets() {
+        let data = vec![0x00, 0x01, 0x02];
+        let mut editor = EditorState::new(data);
+
+        // No offsets — should be a no-op
+        editor.replace_all_bytes(&[], &[0xFF]);
+        assert!(!editor.is_modified());
+        assert!(!editor.can_undo());
+    }
+
+    #[test]
+    fn test_replace_all_bytes_multi_byte() {
+        let data = vec![0xAA, 0xBB, 0x00, 0xAA, 0xBB, 0x00];
+        let mut editor = EditorState::new(data.clone());
+
+        // Replace 2-byte pattern at offsets 0 and 3
+        editor.replace_all_bytes(&[0, 3], &[0xCC, 0xDD]);
+        assert_eq!(editor.working(), &[0xCC, 0xDD, 0x00, 0xCC, 0xDD, 0x00]);
+
+        // Single undo reverts all
+        assert!(editor.undo());
+        assert_eq!(editor.working(), &data);
     }
 }

@@ -1,7 +1,7 @@
 //! Search and replace dialog UI component
 
 use crate::app::BendApp;
-use crate::editor::search::{execute_search, parse_hex_replace, SearchMode};
+use crate::editor::search::{execute_search, parse_hex_replace, SearchMessage, SearchMode};
 use eframe::egui;
 
 /// Show the search dialog (modal window)
@@ -130,8 +130,15 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
             ui.add_space(8.0);
 
             // Results status
-            if let Some(error) = &app.search_state.error {
-                ui.colored_label(egui::Color32::RED, error);
+            if let Some(msg) = &app.search_state.message {
+                match msg {
+                    SearchMessage::Error(text) => {
+                        ui.colored_label(egui::Color32::RED, text);
+                    }
+                    SearchMessage::Info(text) => {
+                        ui.colored_label(egui::Color32::YELLOW, text);
+                    }
+                }
             } else if !app.search_state.query.is_empty() {
                 let match_count = app.search_state.matches.len();
                 if match_count == 0 {
@@ -210,7 +217,7 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
     if do_replace_one {
         let prev_index = app.search_state.current_match.unwrap_or(0);
         if let Err(e) = replace_current(app) {
-            app.search_state.error = Some(e);
+            app.search_state.message = Some(SearchMessage::Error(e));
         } else {
             // Re-execute search to update matches after replacement
             if let Some(editor) = &app.editor {
@@ -236,8 +243,8 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
         match replace_all(app) {
             Ok(_count) => {
                 // Save informational message (e.g. "N skipped in protected regions")
-                // before re-search, which clears error via clear_results()
-                let info_message = app.search_state.error.take();
+                // before re-search, which clears message via clear_results()
+                let info_message = app.search_state.message.take();
 
                 // Re-execute search to update remaining matches
                 if let Some(editor) = &app.editor {
@@ -247,12 +254,12 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
                 }
 
                 // Restore informational message if re-search didn't produce a new error
-                if app.search_state.error.is_none() {
-                    app.search_state.error = info_message;
+                if app.search_state.message.is_none() {
+                    app.search_state.message = info_message;
                 }
             }
             Err(e) => {
-                app.search_state.error = Some(e);
+                app.search_state.message = Some(SearchMessage::Error(e));
             }
         }
     }
@@ -339,22 +346,20 @@ fn replace_all(app: &mut BendApp) -> Result<usize, String> {
 
     let editor = app.editor.as_mut().ok_or("No file loaded")?;
 
-    // Apply replacements only to unprotected matches
+    // Apply all replacements as a single atomic undo/redo operation
     // Since we require replacement to be same length, positions don't shift
-    for &match_offset in &replaceable {
-        editor.replace_bytes(match_offset, &replacement);
-    }
+    editor.replace_all_bytes(&replaceable, &replacement);
 
     let replaced_count = replaceable.len();
     let skipped_count = protected.len();
 
     if skipped_count > 0 {
-        app.search_state.error = Some(format!(
+        app.search_state.message = Some(SearchMessage::Info(format!(
             "Replaced {} of {} matches ({} skipped in protected regions)",
             replaced_count,
             replaced_count + skipped_count,
             skipped_count
-        ));
+        )));
     }
 
     Ok(replaced_count)
@@ -372,7 +377,7 @@ fn get_replacement_bytes(app: &BendApp) -> Result<Vec<u8>, String> {
 mod tests {
     use super::*;
     use crate::editor::buffer::EditorState;
-    use crate::editor::search::{execute_search, SearchMode};
+    use crate::editor::search::{execute_search, SearchMessage, SearchMode};
     use crate::formats::traits::{FileSection, RiskLevel};
 
     /// Helper: create a BendApp with file data, sections, and a hex search pre-executed
@@ -476,10 +481,14 @@ mod tests {
         // Safe byte replaced
         assert_eq!(app.editor.as_ref().unwrap().working()[15], 0x00);
 
-        // Informational message set
-        let msg = app.search_state.error.as_ref().unwrap();
-        assert!(msg.contains("1 skipped"));
-        assert!(msg.contains("Replaced 1 of 2"));
+        // Informational message set (should be Info variant, not Error)
+        match app.search_state.message.as_ref().unwrap() {
+            SearchMessage::Info(msg) => {
+                assert!(msg.contains("1 skipped"));
+                assert!(msg.contains("Replaced 1 of 2"));
+            }
+            SearchMessage::Error(_) => panic!("Expected Info, got Error"),
+        }
     }
 
     #[test]
@@ -523,6 +532,33 @@ mod tests {
         assert_eq!(app.editor.as_ref().unwrap().working()[15], 0x00);
 
         // No informational message
-        assert!(app.search_state.error.is_none());
+        assert!(app.search_state.message.is_none());
+    }
+
+    #[test]
+    fn test_replace_all_atomic_undo() {
+        // Data: FF at offsets 5 and 15, no protection
+        let mut data = vec![0u8; 20];
+        data[5] = 0xFF;
+        data[15] = 0xFF;
+        let mut app = setup_app(&data, vec![], "FF", "00");
+
+        // Replace all matches
+        let result = replace_all(&mut app);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 2);
+
+        // Both should be replaced
+        assert_eq!(app.editor.as_ref().unwrap().working()[5], 0x00);
+        assert_eq!(app.editor.as_ref().unwrap().working()[15], 0x00);
+
+        // A single undo should revert ALL replacements
+        let editor = app.editor.as_mut().unwrap();
+        assert!(editor.undo());
+        assert_eq!(editor.working()[5], 0xFF);
+        assert_eq!(editor.working()[15], 0xFF);
+
+        // No more undo — it was a single atomic operation
+        assert!(!editor.can_undo());
     }
 }
