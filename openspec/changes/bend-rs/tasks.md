@@ -170,7 +170,7 @@ Prerequisites: Sections 7-8 (format parsing to identify header regions)
 - [x] 16.6 Add setting to re-enable warnings
 
 ## 17. Polish and Platform Testing
-- [ ] 17.1 Test on macOS, verify native look and feel
+- [x] 17.1 Test on macOS, verify native look and feel
 - [ ] 17.2 Test on Windows, verify native look and feel
 - [ ] 17.3 Test on Linux, verify native look and feel
 - [x] 17.4 Add keyboard shortcut help / cheat sheet (depends on phases 3, 4, 13)
