@@ -684,6 +684,14 @@ fn handle_keyboard_input(
     }
 }
 
+enum ContextAction {
+    CopyHex,
+    CopyAscii,
+    Paste,
+    AddBookmark,
+    GoToOffset,
+}
+
 /// Show the context menu for the hex editor
 fn show_context_menu(ui: &mut egui::Ui, app: &mut BendApp) {
     let Some(target_offset) = app.context_menu_state.target_offset else {
@@ -691,11 +699,7 @@ fn show_context_menu(ui: &mut egui::Ui, app: &mut BendApp) {
     };
 
     let mut close_menu = false;
-    let mut do_copy_hex = false;
-    let mut do_copy_ascii = false;
-    let mut do_paste = false;
-    let mut do_add_bookmark = false;
-    let mut do_go_to_offset = false;
+    let mut action: Option<ContextAction> = None;
 
     // Determine if we have a selection or just cursor
     let (start, end) = app
@@ -723,32 +727,32 @@ fn show_context_menu(ui: &mut egui::Ui, app: &mut BendApp) {
                 ui.set_min_width(150.0);
 
                 if ui.button(format!("Copy as Hex{}", label_suffix)).clicked() {
-                    do_copy_hex = true;
+                    action = Some(ContextAction::CopyHex);
                     close_menu = true;
                 }
                 if ui
                     .button(format!("Copy as ASCII{}", label_suffix))
                     .clicked()
                 {
-                    do_copy_ascii = true;
+                    action = Some(ContextAction::CopyAscii);
                     close_menu = true;
                 }
 
                 ui.separator();
 
                 if ui.button("Paste").clicked() {
-                    do_paste = true;
+                    action = Some(ContextAction::Paste);
                     close_menu = true;
                 }
 
                 ui.separator();
 
                 if ui.button("Add Bookmark").clicked() {
-                    do_add_bookmark = true;
+                    action = Some(ContextAction::AddBookmark);
                     close_menu = true;
                 }
                 if ui.button("Go to Offset...").clicked() {
-                    do_go_to_offset = true;
+                    action = Some(ContextAction::GoToOffset);
                     close_menu = true;
                 }
             });
@@ -762,23 +766,18 @@ fn show_context_menu(ui: &mut egui::Ui, app: &mut BendApp) {
         close_menu = true;
     }
 
-    // Handle actions
-    if do_copy_hex {
-        copy_as_hex(ui, app, target_offset);
-    }
-    if do_copy_ascii {
-        copy_as_ascii(ui, app, target_offset);
-    }
-    if do_paste {
-        paste_hex(ui, app, target_offset);
-    }
-    if do_add_bookmark {
-        if let Some(editor) = &mut app.editor {
-            editor.add_bookmark(target_offset, format!("Offset 0x{:X}", target_offset));
+    // Handle action
+    match action {
+        Some(ContextAction::CopyHex) => copy_as_hex(ui, app, target_offset),
+        Some(ContextAction::CopyAscii) => copy_as_ascii(ui, app, target_offset),
+        Some(ContextAction::Paste) => paste_hex(ui, app, target_offset),
+        Some(ContextAction::AddBookmark) => {
+            if let Some(editor) = &mut app.editor {
+                editor.add_bookmark(target_offset, format!("Offset 0x{:X}", target_offset));
+            }
         }
-    }
-    if do_go_to_offset {
-        app.go_to_offset_state.open_dialog();
+        Some(ContextAction::GoToOffset) => app.go_to_offset_state.open_dialog(),
+        None => {}
     }
 
     if close_menu {
