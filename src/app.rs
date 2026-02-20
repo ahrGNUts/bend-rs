@@ -225,6 +225,14 @@ struct InputActions {
     refresh_preview: bool,
 }
 
+/// Actions triggered by toolbar buttons
+#[derive(Default)]
+struct ToolbarActions {
+    undo: bool,
+    redo: bool,
+    refresh_preview: bool,
+}
+
 impl BendApp {
     pub fn new(_cc: &eframe::CreationContext<'_>, settings: AppSettings) -> Self {
         // Apply settings to initial state
@@ -765,11 +773,9 @@ impl BendApp {
         }
     }
 
-    /// Render the toolbar and return undo/redo/refresh action flags
-    fn render_toolbar(&mut self, ctx: &egui::Context) -> (bool, bool, bool) {
-        let mut wants_undo = false;
-        let mut wants_redo = false;
-        let mut wants_refresh = false;
+    /// Render the toolbar and return deferred action flags
+    fn render_toolbar(&mut self, ctx: &egui::Context) -> ToolbarActions {
+        let mut actions = ToolbarActions::default();
 
         egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
             ui.horizontal(|ui| {
@@ -795,13 +801,13 @@ impl BendApp {
                     .add_enabled(can_undo, egui::Button::new("Undo"))
                     .clicked()
                 {
-                    wants_undo = true;
+                    actions.undo = true;
                 }
                 if ui
                     .add_enabled(can_redo, egui::Button::new("Redo"))
                     .clicked()
                 {
-                    wants_redo = true;
+                    actions.redo = true;
                 }
 
                 ui.separator();
@@ -851,23 +857,23 @@ impl BendApp {
                     .on_hover_text("Refresh preview (Ctrl+R / Cmd+R)")
                     .clicked()
                 {
-                    wants_refresh = true;
+                    actions.refresh_preview = true;
                 }
             });
         });
 
-        (wants_undo, wants_redo, wants_refresh)
+        actions
     }
 
     /// Process toolbar undo/redo/refresh actions
-    fn process_toolbar_actions(&mut self, wants_undo: bool, wants_redo: bool, wants_refresh: bool) {
-        if wants_undo {
+    fn process_toolbar_actions(&mut self, actions: ToolbarActions) {
+        if actions.undo {
             self.do_undo();
         }
-        if wants_redo {
+        if actions.redo {
             self.do_redo();
         }
-        if wants_refresh {
+        if actions.refresh_preview {
             self.mark_preview_dirty();
         }
     }
@@ -1113,8 +1119,8 @@ impl eframe::App for BendApp {
         // Render UI components
         self.show_close_dialog(ctx);
         self.render_menu_bar(ctx);
-        let (wants_undo, wants_redo, wants_refresh) = self.render_toolbar(ctx);
-        self.process_toolbar_actions(wants_undo, wants_redo, wants_refresh);
+        let toolbar_actions = self.render_toolbar(ctx);
+        self.process_toolbar_actions(toolbar_actions);
         self.show_dialogs(ctx);
         self.render_status_bar(ctx);
         self.render_sidebar(ctx);
