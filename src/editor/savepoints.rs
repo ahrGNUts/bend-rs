@@ -154,7 +154,10 @@ impl SavePointManager {
     /// having to recompute diffs for successor save points.
     pub fn can_delete(&self, id: u64) -> bool {
         // Only allow deleting the last save point (leaf)
-        self.save_points.last().map(|sp| sp.id == id).unwrap_or(false)
+        self.save_points
+            .last()
+            .map(|sp| sp.id == id)
+            .unwrap_or(false)
     }
 
     /// Delete a save point (only leaf save points can be deleted)

@@ -1,10 +1,17 @@
 //! Main application state and egui integration
 
-use crate::editor::{EditorState, GoToOffsetState, SearchState};
 use crate::editor::buffer::{EditMode, WriteMode};
+use crate::editor::{EditorState, GoToOffsetState, SearchState};
 use crate::formats::{parse_file, FileSection, RiskLevel};
 use crate::settings::AppSettings;
-use crate::ui::{bookmarks, go_to_offset_dialog, hex_editor::{self, ContextMenuState}, image_preview, savepoints, search_dialog, settings_dialog::{self, SettingsDialogState}, shortcuts_dialog::{self, ShortcutsDialogState}, structure_tree};
+use crate::ui::{
+    bookmarks, go_to_offset_dialog,
+    hex_editor::{self, ContextMenuState},
+    image_preview, savepoints, search_dialog,
+    settings_dialog::{self, SettingsDialogState},
+    shortcuts_dialog::{self, ShortcutsDialogState},
+    structure_tree,
+};
 use eframe::egui;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -336,7 +343,8 @@ impl BendApp {
 
     /// Get the background color for a byte based on its section's risk level
     pub fn section_color_for_offset(&self, offset: usize) -> Option<egui::Color32> {
-        self.section_at_offset(offset).map(|section| section.risk.background_color())
+        self.section_at_offset(offset)
+            .map(|section| section.risk.background_color())
     }
 
     /// Check if an offset is in a protected region (header protection enabled + High/Critical risk)
@@ -402,10 +410,7 @@ impl BendApp {
                                 RiskLevel::Critical => "critical",
                                 _ => "sensitive",
                             };
-                            ui.label(format!(
-                                "You are about to edit a {} region.",
-                                risk_name
-                            ));
+                            ui.label(format!("You are about to edit a {} region.", risk_name));
                             ui.label(format!("Offset: 0x{:08X}", pending.offset));
                         });
                     });
@@ -418,7 +423,10 @@ impl BendApp {
                     ui.add_space(10.0);
 
                     // Don't show again checkbox
-                    ui.checkbox(&mut self.dialogs.high_risk_dont_show, "Don't warn me again this session");
+                    ui.checkbox(
+                        &mut self.dialogs.high_risk_dont_show,
+                        "Don't warn me again this session",
+                    );
 
                     ui.add_space(10.0);
 
@@ -639,7 +647,8 @@ impl BendApp {
                                     .map(|n| n.to_string_lossy().into_owned())
                                     .unwrap_or_else(|| path.to_string_lossy().into_owned());
 
-                                if ui.button(&display_name)
+                                if ui
+                                    .button(&display_name)
                                     .on_hover_text(path.to_string_lossy())
                                     .clicked()
                                 {
@@ -705,7 +714,13 @@ impl BendApp {
                         ui.close_menu();
                     }
                     ui.separator();
-                    if ui.add_enabled(has_file, egui::Checkbox::new(&mut self.header_protection, "Protect Headers")).changed() {
+                    if ui
+                        .add_enabled(
+                            has_file,
+                            egui::Checkbox::new(&mut self.header_protection, "Protect Headers"),
+                        )
+                        .changed()
+                    {
                         // Checkbox already updates the value
                     }
                     ui.separator();
@@ -750,39 +765,62 @@ impl BendApp {
                 if ui.button("Open").clicked() {
                     self.open_file_dialog();
                 }
-                if ui.add_enabled(has_file, egui::Button::new("Export")).clicked() {
+                if ui
+                    .add_enabled(has_file, egui::Button::new("Export"))
+                    .clicked()
+                {
                     self.export_file();
                 }
 
                 ui.separator();
 
                 // Undo/Redo
-                if ui.add_enabled(can_undo, egui::Button::new("Undo")).clicked() {
+                if ui
+                    .add_enabled(can_undo, egui::Button::new("Undo"))
+                    .clicked()
+                {
                     wants_undo = true;
                 }
-                if ui.add_enabled(can_redo, egui::Button::new("Redo")).clicked() {
+                if ui
+                    .add_enabled(can_redo, egui::Button::new("Redo"))
+                    .clicked()
+                {
                     wants_redo = true;
                 }
 
                 ui.separator();
 
                 // Navigation/Search
-                if ui.add_enabled(has_file, egui::Button::new("Search")).clicked() {
+                if ui
+                    .add_enabled(has_file, egui::Button::new("Search"))
+                    .clicked()
+                {
                     self.search_state.open_dialog();
                 }
-                if ui.add_enabled(has_file, egui::Button::new("Go to")).clicked() {
+                if ui
+                    .add_enabled(has_file, egui::Button::new("Go to"))
+                    .clicked()
+                {
                     self.go_to_offset_state.open_dialog();
                 }
 
                 ui.separator();
 
                 // View toggles
-                if ui.add_enabled(has_file, egui::SelectableLabel::new(self.preview.comparison_mode, "Compare"))
+                if ui
+                    .add_enabled(
+                        has_file,
+                        egui::SelectableLabel::new(self.preview.comparison_mode, "Compare"),
+                    )
                     .clicked()
                 {
                     self.preview.comparison_mode = !self.preview.comparison_mode;
                 }
-                if ui.add_enabled(has_file, egui::SelectableLabel::new(self.header_protection, "Protect"))
+                if ui
+                    .add_enabled(
+                        has_file,
+                        egui::SelectableLabel::new(self.header_protection, "Protect"),
+                    )
                     .on_hover_text("Protect header regions from editing")
                     .clicked()
                 {
@@ -792,7 +830,8 @@ impl BendApp {
                 ui.separator();
 
                 // Refresh preview
-                if ui.add_enabled(has_file, egui::Button::new("Refresh"))
+                if ui
+                    .add_enabled(has_file, egui::Button::new("Refresh"))
                     .on_hover_text("Refresh preview (Ctrl+R / Cmd+R)")
                     .clicked()
                 {
@@ -986,11 +1025,8 @@ impl BendApp {
 
                 let color_image = egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
 
-                self.preview.texture = Some(ctx.load_texture(
-                    "preview",
-                    color_image,
-                    egui::TextureOptions::LINEAR,
-                ));
+                self.preview.texture =
+                    Some(ctx.load_texture("preview", color_image, egui::TextureOptions::LINEAR));
                 self.preview.decode_error = None;
             }
             Err(e) => {
@@ -1009,11 +1045,8 @@ impl BendApp {
 
                 let color_image = egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
 
-                self.preview.original_texture = Some(ctx.load_texture(
-                    "original",
-                    color_image,
-                    egui::TextureOptions::LINEAR,
-                ));
+                self.preview.original_texture =
+                    Some(ctx.load_texture("original", color_image, egui::TextureOptions::LINEAR));
             }
         }
 
@@ -1201,7 +1234,7 @@ mod tests {
 
         // Header protection disabled - nothing protected
         assert!(!app.header_protection);
-        assert!(!app.is_offset_protected(5));  // Safe
+        assert!(!app.is_offset_protected(5)); // Safe
         assert!(!app.is_offset_protected(15)); // Caution
         assert!(!app.is_offset_protected(25)); // High
         assert!(!app.is_offset_protected(35)); // Critical

@@ -36,7 +36,12 @@ fn show_comparison_view(ui: &mut egui::Ui, app: &BendApp) {
         // Left: Original image
         ui.vertical(|ui| {
             ui.heading("Original");
-            show_texture_scaled(ui, app.preview.original_texture.as_ref(), scale, max_image_size);
+            show_texture_scaled(
+                ui,
+                app.preview.original_texture.as_ref(),
+                scale,
+                max_image_size,
+            );
         });
 
         ui.separator();
@@ -47,10 +52,7 @@ fn show_comparison_view(ui: &mut egui::Ui, app: &BendApp) {
             // Show decode error indicator if present
             if app.preview.decode_error.is_some() {
                 ui.horizontal(|ui| {
-                    ui.colored_label(
-                        egui::Color32::YELLOW,
-                        "\u{26A0} Preview may be stale",
-                    );
+                    ui.colored_label(egui::Color32::YELLOW, "\u{26A0} Preview may be stale");
                 });
             }
             show_texture_scaled(ui, app.preview.texture.as_ref(), scale, max_image_size);

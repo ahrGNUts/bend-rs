@@ -19,10 +19,10 @@ impl RiskLevel {
     /// Get the solid color for this risk level (for UI elements like tree view)
     pub fn color(self) -> egui::Color32 {
         match self {
-            RiskLevel::Safe => egui::Color32::from_rgb(100, 200, 100),      // Green
-            RiskLevel::Caution => egui::Color32::from_rgb(200, 180, 80),    // Yellow
-            RiskLevel::High => egui::Color32::from_rgb(200, 130, 80),       // Orange
-            RiskLevel::Critical => egui::Color32::from_rgb(200, 80, 80),    // Red
+            RiskLevel::Safe => egui::Color32::from_rgb(100, 200, 100), // Green
+            RiskLevel::Caution => egui::Color32::from_rgb(200, 180, 80), // Yellow
+            RiskLevel::High => egui::Color32::from_rgb(200, 130, 80),  // Orange
+            RiskLevel::Critical => egui::Color32::from_rgb(200, 80, 80), // Red
         }
     }
 
@@ -88,7 +88,6 @@ impl FileSection {
         self.children.push(child);
         self
     }
-
 }
 
 /// Trait for image format parsers

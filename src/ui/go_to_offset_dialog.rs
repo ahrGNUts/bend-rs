@@ -8,7 +8,9 @@ use eframe::egui;
 fn attempt_navigate(app: &mut BendApp) -> Result<(), String> {
     let offset = parse_offset(&app.go_to_offset_state.input_text)?;
 
-    let editor = app.editor.as_mut()
+    let editor = app
+        .editor
+        .as_mut()
         .ok_or_else(|| "No file loaded".to_string())?;
 
     let file_len = editor.len();

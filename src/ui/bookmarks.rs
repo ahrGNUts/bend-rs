@@ -42,9 +42,11 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
     if bookmarks.is_empty() {
         ui.label("No bookmarks yet");
         ui.label(
-            egui::RichText::new("Click \"+ Add Bookmark\" to add one at the current cursor position")
-                .small()
-                .color(egui::Color32::GRAY),
+            egui::RichText::new(
+                "Click \"+ Add Bookmark\" to add one at the current cursor position",
+            )
+            .small()
+            .color(egui::Color32::GRAY),
         );
         return;
     }
@@ -55,102 +57,102 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
     for bookmark in bookmarks {
         ui.push_id(bookmark.id, |ui| {
             ui.group(|ui| {
-                    // Bookmark name (editable if renaming)
-                    if state.renaming == Some(bookmark.id) {
-                        ui.horizontal(|ui| {
-                            let response = ui.text_edit_singleline(&mut state.rename_text);
-                            if response.lost_focus() {
-                                if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                                    action = Some(BookmarkAction::FinishRename(
-                                        bookmark.id,
-                                        std::mem::take(&mut state.rename_text),
-                                    ));
-                                } else if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                                    action = Some(BookmarkAction::CancelRename);
-                                }
-                            }
-                            if ui.button("Save").clicked() {
+                // Bookmark name (editable if renaming)
+                if state.renaming == Some(bookmark.id) {
+                    ui.horizontal(|ui| {
+                        let response = ui.text_edit_singleline(&mut state.rename_text);
+                        if response.lost_focus() {
+                            if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                                 action = Some(BookmarkAction::FinishRename(
                                     bookmark.id,
                                     std::mem::take(&mut state.rename_text),
                                 ));
-                            }
-                            if ui.button("Cancel").clicked() {
+                            } else if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                                 action = Some(BookmarkAction::CancelRename);
                             }
-                        });
-                    } else {
-                        // Normal display mode
-                        ui.horizontal(|ui| {
-                            // Clickable bookmark name
-                            if ui
-                                .link(&bookmark.name)
-                                .on_hover_text("Click to navigate")
-                                .clicked()
-                            {
-                                action = Some(BookmarkAction::Navigate(bookmark.offset));
-                            }
-                        });
-                    }
+                        }
+                        if ui.button("Save").clicked() {
+                            action = Some(BookmarkAction::FinishRename(
+                                bookmark.id,
+                                std::mem::take(&mut state.rename_text),
+                            ));
+                        }
+                        if ui.button("Cancel").clicked() {
+                            action = Some(BookmarkAction::CancelRename);
+                        }
+                    });
+                } else {
+                    // Normal display mode
+                    ui.horizontal(|ui| {
+                        // Clickable bookmark name
+                        if ui
+                            .link(&bookmark.name)
+                            .on_hover_text("Click to navigate")
+                            .clicked()
+                        {
+                            action = Some(BookmarkAction::Navigate(bookmark.offset));
+                        }
+                    });
+                }
 
-                    // Offset display
-                    ui.label(
-                        egui::RichText::new(format!("Offset: 0x{:08X}", bookmark.offset))
-                            .small()
-                            .color(egui::Color32::GRAY),
-                    );
+                // Offset display
+                ui.label(
+                    egui::RichText::new(format!("Offset: 0x{:08X}", bookmark.offset))
+                        .small()
+                        .color(egui::Color32::GRAY),
+                );
 
-                    // Annotation (editable if editing)
-                    if state.editing_annotation == Some(bookmark.id) {
-                        ui.horizontal(|ui| {
-                            ui.label("Note:");
-                            let response = ui.text_edit_singleline(&mut state.annotation_text);
-                            if response.lost_focus() {
-                                if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                                    action = Some(BookmarkAction::FinishAnnotation(
-                                        bookmark.id,
-                                        std::mem::take(&mut state.annotation_text),
-                                    ));
-                                } else if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                                    action = Some(BookmarkAction::CancelAnnotation);
-                                }
-                            }
-                            if ui.button("Save").clicked() {
+                // Annotation (editable if editing)
+                if state.editing_annotation == Some(bookmark.id) {
+                    ui.horizontal(|ui| {
+                        ui.label("Note:");
+                        let response = ui.text_edit_singleline(&mut state.annotation_text);
+                        if response.lost_focus() {
+                            if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                                 action = Some(BookmarkAction::FinishAnnotation(
                                     bookmark.id,
                                     std::mem::take(&mut state.annotation_text),
                                 ));
-                            }
-                        });
-                    } else if !bookmark.annotation.is_empty() {
-                        ui.label(
-                            egui::RichText::new(&bookmark.annotation)
-                                .small()
-                                .italics()
-                                .color(egui::Color32::LIGHT_GRAY),
-                        );
-                    }
-
-                    // Action buttons
-                    ui.horizontal(|ui| {
-                        if state.renaming.is_none() && state.editing_annotation.is_none() {
-                            if ui.small_button("Rename").clicked() {
-                                action = Some(BookmarkAction::StartRename(
-                                    bookmark.id,
-                                    bookmark.name.clone(),
-                                ));
-                            }
-                            if ui.small_button("Add Note").clicked() {
-                                action = Some(BookmarkAction::StartAnnotation(
-                                    bookmark.id,
-                                    bookmark.annotation.clone(),
-                                ));
-                            }
-                            if ui.small_button("Delete").clicked() {
-                                action = Some(BookmarkAction::Delete(bookmark.id));
+                            } else if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                                action = Some(BookmarkAction::CancelAnnotation);
                             }
                         }
+                        if ui.button("Save").clicked() {
+                            action = Some(BookmarkAction::FinishAnnotation(
+                                bookmark.id,
+                                std::mem::take(&mut state.annotation_text),
+                            ));
+                        }
                     });
+                } else if !bookmark.annotation.is_empty() {
+                    ui.label(
+                        egui::RichText::new(&bookmark.annotation)
+                            .small()
+                            .italics()
+                            .color(egui::Color32::LIGHT_GRAY),
+                    );
+                }
+
+                // Action buttons
+                ui.horizontal(|ui| {
+                    if state.renaming.is_none() && state.editing_annotation.is_none() {
+                        if ui.small_button("Rename").clicked() {
+                            action = Some(BookmarkAction::StartRename(
+                                bookmark.id,
+                                bookmark.name.clone(),
+                            ));
+                        }
+                        if ui.small_button("Add Note").clicked() {
+                            action = Some(BookmarkAction::StartAnnotation(
+                                bookmark.id,
+                                bookmark.annotation.clone(),
+                            ));
+                        }
+                        if ui.small_button("Delete").clicked() {
+                            action = Some(BookmarkAction::Delete(bookmark.id));
+                        }
+                    }
+                });
             });
         });
 
@@ -187,7 +189,8 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
             }
             BookmarkAction::FinishAnnotation(id, annotation) => {
                 if let Some(editor) = &mut app.editor {
-                    let _ = editor.bookmarks_mut().set_annotation(id, annotation); // #[must_use] result intentionally ignored — bookmark existence already verified by UI
+                    let _ = editor.bookmarks_mut().set_annotation(id, annotation);
+                    // #[must_use] result intentionally ignored — bookmark existence already verified by UI
                 }
                 state.editing_annotation = None;
                 state.annotation_text.clear();

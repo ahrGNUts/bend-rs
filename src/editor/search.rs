@@ -147,7 +147,8 @@ impl SearchState {
 
     /// Get the offset of the current match
     pub fn current_match_offset(&self) -> Option<usize> {
-        self.current_match.and_then(|i| self.matches.get(i).copied())
+        self.current_match
+            .and_then(|i| self.matches.get(i).copied())
     }
 
     /// Clear search results
@@ -179,9 +180,9 @@ pub fn parse_hex_pattern(pattern: &str) -> Result<Vec<PatternElement>, String> {
             elements.push(PatternElement::Wildcard);
         } else if let Some(high) = c.to_digit(16) {
             // First hex digit - need the second one
-            let low_char = chars.next().ok_or_else(|| {
-                "Incomplete hex byte: expected second digit".to_string()
-            })?;
+            let low_char = chars
+                .next()
+                .ok_or_else(|| "Incomplete hex byte: expected second digit".to_string())?;
 
             // Skip whitespace between digits (e.g., "F F" should work)
             let low_char = if low_char.is_whitespace() {
@@ -192,9 +193,9 @@ pub fn parse_hex_pattern(pattern: &str) -> Result<Vec<PatternElement>, String> {
                 low_char
             };
 
-            let low = low_char.to_digit(16).ok_or_else(|| {
-                format!("Invalid hex digit: '{}'", low_char)
-            })?;
+            let low = low_char
+                .to_digit(16)
+                .ok_or_else(|| format!("Invalid hex digit: '{}'", low_char))?;
 
             elements.push(PatternElement::Byte(((high << 4) | low) as u8));
         } else {
@@ -220,12 +221,13 @@ pub fn parse_hex_replace(pattern: &str) -> Result<Vec<u8>, String> {
         }
     }
 
-    Ok(elements.iter().filter_map(|e| {
-        match e {
+    Ok(elements
+        .iter()
+        .filter_map(|e| match e {
             PatternElement::Byte(b) => Some(*b),
             PatternElement::Wildcard => None,
-        }
-    }).collect())
+        })
+        .collect())
 }
 
 /// Search for a hex pattern in the buffer
@@ -306,19 +308,17 @@ pub fn execute_search(state: &mut SearchState, data: &[u8]) {
     }
 
     let pattern_len = match state.mode {
-        SearchMode::Hex => {
-            match parse_hex_pattern(&state.query) {
-                Ok(pattern) => {
-                    let len = pattern.len();
-                    state.matches = search_hex(data, &pattern);
-                    len
-                }
-                Err(e) => {
-                    state.message = Some(SearchMessage::Error(e));
-                    return;
-                }
+        SearchMode::Hex => match parse_hex_pattern(&state.query) {
+            Ok(pattern) => {
+                let len = pattern.len();
+                state.matches = search_hex(data, &pattern);
+                len
             }
-        }
+            Err(e) => {
+                state.message = Some(SearchMessage::Error(e));
+                return;
+            }
+        },
         SearchMode::Ascii => {
             let len = state.query.len();
             state.matches = search_ascii(data, &state.query, state.case_sensitive);

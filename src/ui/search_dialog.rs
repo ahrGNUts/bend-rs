@@ -182,7 +182,10 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
     // Auto-re-search if buffer was edited since last search (stale matches)
     if (do_next || do_prev) && !do_search {
         if let Some(editor) = &app.editor {
-            if app.search_state.matches_may_be_stale(editor.edit_generation()) {
+            if app
+                .search_state
+                .matches_may_be_stale(editor.edit_generation())
+            {
                 let gen = editor.edit_generation();
                 execute_search(&mut app.search_state, editor.working());
                 app.search_state.set_searched_generation(gen);
@@ -505,7 +508,9 @@ mod tests {
 
         let result = replace_all(&mut app);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("All 1 matches are in protected"));
+        assert!(result
+            .unwrap_err()
+            .contains("All 1 matches are in protected"));
 
         // Byte unchanged
         assert_eq!(app.editor.as_ref().unwrap().working()[5], 0xFF);

@@ -50,26 +50,35 @@ impl ImageFormat for BmpParser {
         // File Header (14 bytes)
         let file_header = FileSection::new("File Header", 0, 14, RiskLevel::Critical)
             .with_description("BMP file header - editing will likely corrupt the file")
-            .with_child(FileSection::new("Signature", 0, 2, RiskLevel::Critical)
-                .with_description("'BM' magic bytes"))
+            .with_child(
+                FileSection::new("Signature", 0, 2, RiskLevel::Critical)
+                    .with_description("'BM' magic bytes"),
+            )
             .with_child(FileSection::new("File Size", 2, 6, RiskLevel::Critical))
-            .with_child(FileSection::new("Reserved", 6, 10, RiskLevel::Safe)
-                .with_description("Reserved bytes, usually zero"))
-            .with_child(FileSection::new("Pixel Data Offset", 10, 14, RiskLevel::Critical));
+            .with_child(
+                FileSection::new("Reserved", 6, 10, RiskLevel::Safe)
+                    .with_description("Reserved bytes, usually zero"),
+            )
+            .with_child(FileSection::new(
+                "Pixel Data Offset",
+                10,
+                14,
+                RiskLevel::Critical,
+            ));
 
         sections.push(file_header);
 
         // Read pixel data offset
-        let pixel_offset = Self::read_u32(data, 10)
-            .ok_or("Failed to read pixel data offset")? as usize;
+        let pixel_offset =
+            Self::read_u32(data, 10).ok_or("Failed to read pixel data offset")? as usize;
 
         // DIB Header
         if data.len() < 18 {
             return Err("File too small for DIB header size".to_string());
         }
 
-        let dib_header_size = Self::read_u32(data, 14)
-            .ok_or("Failed to read DIB header size")? as usize;
+        let dib_header_size =
+            Self::read_u32(data, 14).ok_or("Failed to read DIB header size")? as usize;
 
         let dib_header_end = 14 + dib_header_size;
         if dib_header_end > data.len() {
@@ -91,22 +100,53 @@ impl ImageFormat for BmpParser {
             14,
             dib_header_end,
             RiskLevel::Critical,
-        ).with_description("Image metadata - editing will likely corrupt the image");
+        )
+        .with_description("Image metadata - editing will likely corrupt the image");
 
         // Add child sections for common BITMAPINFOHEADER fields
         if dib_header_size >= 40 {
             dib_header = dib_header
                 .with_child(FileSection::new("Header Size", 14, 18, RiskLevel::Critical))
                 .with_child(FileSection::new("Image Width", 18, 22, RiskLevel::Critical))
-                .with_child(FileSection::new("Image Height", 22, 26, RiskLevel::Critical))
-                .with_child(FileSection::new("Color Planes", 26, 28, RiskLevel::Critical))
-                .with_child(FileSection::new("Bits Per Pixel", 28, 30, RiskLevel::Critical))
+                .with_child(FileSection::new(
+                    "Image Height",
+                    22,
+                    26,
+                    RiskLevel::Critical,
+                ))
+                .with_child(FileSection::new(
+                    "Color Planes",
+                    26,
+                    28,
+                    RiskLevel::Critical,
+                ))
+                .with_child(FileSection::new(
+                    "Bits Per Pixel",
+                    28,
+                    30,
+                    RiskLevel::Critical,
+                ))
                 .with_child(FileSection::new("Compression", 30, 34, RiskLevel::Critical))
                 .with_child(FileSection::new("Image Size", 34, 38, RiskLevel::Caution))
-                .with_child(FileSection::new("X Pixels Per Meter", 38, 42, RiskLevel::Safe))
-                .with_child(FileSection::new("Y Pixels Per Meter", 42, 46, RiskLevel::Safe))
+                .with_child(FileSection::new(
+                    "X Pixels Per Meter",
+                    38,
+                    42,
+                    RiskLevel::Safe,
+                ))
+                .with_child(FileSection::new(
+                    "Y Pixels Per Meter",
+                    42,
+                    46,
+                    RiskLevel::Safe,
+                ))
                 .with_child(FileSection::new("Colors Used", 46, 50, RiskLevel::Caution))
-                .with_child(FileSection::new("Important Colors", 50, 54, RiskLevel::Safe));
+                .with_child(FileSection::new(
+                    "Important Colors",
+                    50,
+                    54,
+                    RiskLevel::Safe,
+                ));
         }
 
         sections.push(dib_header);
@@ -119,18 +159,16 @@ impl ImageFormat for BmpParser {
                 color_table_start,
                 pixel_offset,
                 RiskLevel::Caution,
-            ).with_description("Palette for indexed color images - editing changes colors");
+            )
+            .with_description("Palette for indexed color images - editing changes colors");
             sections.push(color_table);
         }
 
         // Pixel Data
         if pixel_offset < data.len() {
-            let pixel_data = FileSection::new(
-                "Pixel Data",
-                pixel_offset,
-                data.len(),
-                RiskLevel::Safe,
-            ).with_description("Image pixel data - the fun part to glitch!");
+            let pixel_data =
+                FileSection::new("Pixel Data", pixel_offset, data.len(), RiskLevel::Safe)
+                    .with_description("Image pixel data - the fun part to glitch!");
             sections.push(pixel_data);
         }
 
@@ -166,12 +204,21 @@ mod tests {
         bmp[0] = b'B';
         bmp[1] = b'M';
         // File size
-        bmp[2] = 58; bmp[3] = 0; bmp[4] = 0; bmp[5] = 0;
+        bmp[2] = 58;
+        bmp[3] = 0;
+        bmp[4] = 0;
+        bmp[5] = 0;
         // Pixel data offset
-        bmp[10] = 54; bmp[11] = 0; bmp[12] = 0; bmp[13] = 0;
+        bmp[10] = 54;
+        bmp[11] = 0;
+        bmp[12] = 0;
+        bmp[13] = 0;
 
         // DIB header
-        bmp[14] = 40; bmp[15] = 0; bmp[16] = 0; bmp[17] = 0; // Header size
+        bmp[14] = 40;
+        bmp[15] = 0;
+        bmp[16] = 0;
+        bmp[17] = 0; // Header size
 
         let sections = parser.parse(&bmp).unwrap();
 

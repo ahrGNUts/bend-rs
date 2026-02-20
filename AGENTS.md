@@ -39,3 +39,4 @@ Rules:
 - Always reference change name and task in commits
 - Mark tasks complete in tasks.md as you finish them
 - Stop and report if you're stuck after 3 attempts
+- - Always run `cargo fmt` before staging files to commit

@@ -41,73 +41,97 @@ pub fn show(ctx: &egui::Context, state: &mut ShortcutsDialogState) {
             egui::ScrollArea::vertical()
                 .auto_shrink(true)
                 .show(ui, |ui| {
-                // File Operations
-                ui.heading("File Operations");
-                shortcuts_table(ui, "file_ops", &[
-                    ("Ctrl+O / Cmd+O", "Open file"),
-                    ("Ctrl+E / Cmd+E", "Export file"),
-                ]);
+                    // File Operations
+                    ui.heading("File Operations");
+                    shortcuts_table(
+                        ui,
+                        "file_ops",
+                        &[
+                            ("Ctrl+O / Cmd+O", "Open file"),
+                            ("Ctrl+E / Cmd+E", "Export file"),
+                        ],
+                    );
 
-                ui.add_space(10.0);
+                    ui.add_space(10.0);
 
-                // Edit Operations
-                ui.heading("Edit Operations");
-                shortcuts_table(ui, "edit_ops", &[
-                    ("Ctrl+Z / Cmd+Z", "Undo"),
-                    ("Ctrl+Shift+Z / Cmd+Shift+Z", "Redo"),
-                    ("Ctrl+Y / Cmd+Y", "Redo (alternative)"),
-                    ("Ctrl+F / Cmd+F", "Find & Replace"),
-                    ("Ctrl+G / Cmd+G", "Go to offset"),
-                    ("Ctrl+S / Cmd+S", "Create save point"),
-                    ("Ctrl+D / Cmd+D", "Add bookmark at cursor"),
-                    ("Ctrl+R / Cmd+R", "Refresh preview"),
-                ]);
+                    // Edit Operations
+                    ui.heading("Edit Operations");
+                    shortcuts_table(
+                        ui,
+                        "edit_ops",
+                        &[
+                            ("Ctrl+Z / Cmd+Z", "Undo"),
+                            ("Ctrl+Shift+Z / Cmd+Shift+Z", "Redo"),
+                            ("Ctrl+Y / Cmd+Y", "Redo (alternative)"),
+                            ("Ctrl+F / Cmd+F", "Find & Replace"),
+                            ("Ctrl+G / Cmd+G", "Go to offset"),
+                            ("Ctrl+S / Cmd+S", "Create save point"),
+                            ("Ctrl+D / Cmd+D", "Add bookmark at cursor"),
+                            ("Ctrl+R / Cmd+R", "Refresh preview"),
+                        ],
+                    );
 
-                ui.add_space(10.0);
+                    ui.add_space(10.0);
 
-                // Navigation
-                ui.heading("Navigation");
-                shortcuts_table(ui, "navigation", &[
-                    ("Arrow Keys", "Move cursor"),
-                    ("Page Up / Page Down", "Move cursor by 16 rows"),
-                    ("Home", "Go to start of file"),
-                    ("End", "Go to end of file"),
-                ]);
+                    // Navigation
+                    ui.heading("Navigation");
+                    shortcuts_table(
+                        ui,
+                        "navigation",
+                        &[
+                            ("Arrow Keys", "Move cursor"),
+                            ("Page Up / Page Down", "Move cursor by 16 rows"),
+                            ("Home", "Go to start of file"),
+                            ("End", "Go to end of file"),
+                        ],
+                    );
 
-                ui.add_space(10.0);
+                    ui.add_space(10.0);
 
-                // Selection
-                ui.heading("Selection");
-                shortcuts_table(ui, "selection", &[
-                    ("Shift + Arrow Keys", "Extend selection"),
-                    ("Shift + Page Up/Down", "Extend selection by 16 rows"),
-                    ("Shift + Home", "Select to start"),
-                    ("Shift + End", "Select to end"),
-                    ("Shift + Click", "Select range"),
-                ]);
+                    // Selection
+                    ui.heading("Selection");
+                    shortcuts_table(
+                        ui,
+                        "selection",
+                        &[
+                            ("Shift + Arrow Keys", "Extend selection"),
+                            ("Shift + Page Up/Down", "Extend selection by 16 rows"),
+                            ("Shift + Home", "Select to start"),
+                            ("Shift + End", "Select to end"),
+                            ("Shift + Click", "Select range"),
+                        ],
+                    );
 
-                ui.add_space(10.0);
+                    ui.add_space(10.0);
 
-                // Hex Editing
-                ui.heading("Hex Editing");
-                shortcuts_table(ui, "hex_editing", &[
-                    ("0-9, A-F", "Edit hex value at cursor (Hex mode)"),
-                    ("Any printable char", "Edit ASCII value at cursor (ASCII mode)"),
-                    ("Tab", "Toggle between Hex and ASCII editing mode"),
-                    ("Ctrl+I / Cmd+I", "Toggle Insert/Overwrite mode"),
-                    ("Backspace", "Delete byte before cursor (Insert) / Move left (Overwrite)"),
-                    ("Delete", "Delete byte at cursor (Insert mode)"),
-                    ("Right-click", "Context menu (copy, paste, bookmark)"),
-                ]);
+                    // Hex Editing
+                    ui.heading("Hex Editing");
+                    shortcuts_table(
+                        ui,
+                        "hex_editing",
+                        &[
+                            ("0-9, A-F", "Edit hex value at cursor (Hex mode)"),
+                            (
+                                "Any printable char",
+                                "Edit ASCII value at cursor (ASCII mode)",
+                            ),
+                            ("Tab", "Toggle between Hex and ASCII editing mode"),
+                            ("Ctrl+I / Cmd+I", "Toggle Insert/Overwrite mode"),
+                            (
+                                "Backspace",
+                                "Delete byte before cursor (Insert) / Move left (Overwrite)",
+                            ),
+                            ("Delete", "Delete byte at cursor (Insert mode)"),
+                            ("Right-click", "Context menu (copy, paste, bookmark)"),
+                        ],
+                    );
 
-                ui.add_space(10.0);
+                    ui.add_space(10.0);
 
-                // View
-                ui.heading("View");
-                shortcuts_table(ui, "view", &[
-                    ("F1", "Show this help screen"),
-                ]);
-            });
+                    // View
+                    ui.heading("View");
+                    shortcuts_table(ui, "view", &[("F1", "Show this help screen")]);
+                });
 
             ui.add_space(10.0);
 
@@ -136,11 +160,7 @@ fn shortcuts_table(ui: &mut egui::Ui, section: &str, shortcuts: &[(&str, &str)])
         .spacing([20.0, 4.0])
         .show(ui, |ui| {
             for (shortcut, description) in shortcuts {
-                ui.label(
-                    egui::RichText::new(*shortcut)
-                        .monospace()
-                        .strong()
-                );
+                ui.label(egui::RichText::new(*shortcut).monospace().strong());
                 ui.label(*description);
                 ui.end_row();
             }

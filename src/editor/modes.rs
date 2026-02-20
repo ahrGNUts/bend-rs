@@ -71,36 +71,34 @@ impl EditorState {
         }
         match self.write_mode {
             WriteMode::Overwrite => self.edit_nibble(nibble_value),
-            WriteMode::Insert => {
-                match self.nibble {
-                    NibblePosition::High => {
-                        let value = nibble_value << 4;
-                        self.insert_byte(self.cursor, value);
-                        self.nibble = NibblePosition::Low;
-                        false
-                    }
-                    NibblePosition::Low => {
-                        if self.cursor < self.working.len() {
-                            let current = self.working[self.cursor];
-                            let new_value = (current & 0xF0) | nibble_value;
-                            if current != new_value {
-                                self.history.push(EditOperation::Single {
-                                    offset: self.cursor,
-                                    old_value: current,
-                                    new_value,
-                                });
-                                self.working[self.cursor] = new_value;
-                                self.modified = true;
-                            }
-                        }
-                        self.nibble = NibblePosition::High;
-                        if self.cursor + 1 < self.working.len() {
-                            self.cursor += 1;
-                        }
-                        true
-                    }
+            WriteMode::Insert => match self.nibble {
+                NibblePosition::High => {
+                    let value = nibble_value << 4;
+                    self.insert_byte(self.cursor, value);
+                    self.nibble = NibblePosition::Low;
+                    false
                 }
-            }
+                NibblePosition::Low => {
+                    if self.cursor < self.working.len() {
+                        let current = self.working[self.cursor];
+                        let new_value = (current & 0xF0) | nibble_value;
+                        if current != new_value {
+                            self.history.push(EditOperation::Single {
+                                offset: self.cursor,
+                                old_value: current,
+                                new_value,
+                            });
+                            self.working[self.cursor] = new_value;
+                            self.modified = true;
+                        }
+                    }
+                    self.nibble = NibblePosition::High;
+                    if self.cursor + 1 < self.working.len() {
+                        self.cursor += 1;
+                    }
+                    true
+                }
+            },
         }
     }
 

@@ -123,7 +123,12 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
         // Legend
         ui.horizontal(|ui| {
             ui.label("Risk:");
-            for risk in [RiskLevel::Safe, RiskLevel::Caution, RiskLevel::High, RiskLevel::Critical] {
+            for risk in [
+                RiskLevel::Safe,
+                RiskLevel::Caution,
+                RiskLevel::High,
+                RiskLevel::Critical,
+            ] {
                 ui.colored_label(risk.color(), risk.label());
             }
         });

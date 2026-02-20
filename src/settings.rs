@@ -60,18 +60,16 @@ impl AppSettings {
         };
 
         match std::fs::read_to_string(&path) {
-            Ok(contents) => {
-                match serde_json::from_str(&contents) {
-                    Ok(settings) => {
-                        log::info!("Loaded settings from {}", path.display());
-                        settings
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to parse settings file: {}, using defaults", e);
-                        Self::default()
-                    }
+            Ok(contents) => match serde_json::from_str(&contents) {
+                Ok(settings) => {
+                    log::info!("Loaded settings from {}", path.display());
+                    settings
                 }
-            }
+                Err(e) => {
+                    log::warn!("Failed to parse settings file: {}, using defaults", e);
+                    Self::default()
+                }
+            },
             Err(e) => {
                 if e.kind() != std::io::ErrorKind::NotFound {
                     log::warn!("Failed to read settings file: {}", e);
@@ -155,8 +153,14 @@ mod tests {
         settings.add_recent_file(PathBuf::from("/path/to/file2.bmp"));
 
         assert_eq!(settings.recent_files.len(), 2);
-        assert_eq!(settings.recent_files[0], PathBuf::from("/path/to/file2.bmp"));
-        assert_eq!(settings.recent_files[1], PathBuf::from("/path/to/file1.bmp"));
+        assert_eq!(
+            settings.recent_files[0],
+            PathBuf::from("/path/to/file2.bmp")
+        );
+        assert_eq!(
+            settings.recent_files[1],
+            PathBuf::from("/path/to/file1.bmp")
+        );
     }
 
     #[test]
@@ -168,8 +172,14 @@ mod tests {
         settings.add_recent_file(PathBuf::from("/path/to/file1.bmp")); // Re-add file1
 
         assert_eq!(settings.recent_files.len(), 2);
-        assert_eq!(settings.recent_files[0], PathBuf::from("/path/to/file1.bmp"));
-        assert_eq!(settings.recent_files[1], PathBuf::from("/path/to/file2.bmp"));
+        assert_eq!(
+            settings.recent_files[0],
+            PathBuf::from("/path/to/file1.bmp")
+        );
+        assert_eq!(
+            settings.recent_files[1],
+            PathBuf::from("/path/to/file2.bmp")
+        );
     }
 
     #[test]
@@ -182,7 +192,10 @@ mod tests {
 
         assert_eq!(settings.recent_files.len(), MAX_RECENT_FILES);
         // Most recent should be at front
-        assert_eq!(settings.recent_files[0], PathBuf::from("/path/to/file14.bmp"));
+        assert_eq!(
+            settings.recent_files[0],
+            PathBuf::from("/path/to/file14.bmp")
+        );
     }
 
     #[test]

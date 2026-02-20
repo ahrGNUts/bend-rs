@@ -396,10 +396,7 @@ impl EditorState {
                             EditOperation::InsertBytes { .. }
                             | EditOperation::DeleteBytes { .. }
                             | EditOperation::Group(_) => {
-                                debug_assert!(
-                                    false,
-                                    "Unexpected sub-operation type in Group undo"
-                                );
+                                debug_assert!(false, "Unexpected sub-operation type in Group undo");
                             }
                         }
                     }
@@ -467,10 +464,7 @@ impl EditorState {
                             EditOperation::InsertBytes { .. }
                             | EditOperation::DeleteBytes { .. }
                             | EditOperation::Group(_) => {
-                                debug_assert!(
-                                    false,
-                                    "Unexpected sub-operation type in Group redo"
-                                );
+                                debug_assert!(false, "Unexpected sub-operation type in Group redo");
                             }
                         }
                     }

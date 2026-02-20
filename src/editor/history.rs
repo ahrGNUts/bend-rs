@@ -25,15 +25,9 @@ pub enum EditOperation {
         new_values: Vec<u8>,
     },
     /// Insert bytes at an offset (buffer grows)
-    InsertBytes {
-        offset: usize,
-        values: Vec<u8>,
-    },
+    InsertBytes { offset: usize, values: Vec<u8> },
     /// Delete bytes at an offset (buffer shrinks)
-    DeleteBytes {
-        offset: usize,
-        values: Vec<u8>,
-    },
+    DeleteBytes { offset: usize, values: Vec<u8> },
     /// A group of operations treated as a single atomic undo/redo unit
     Group(Vec<EditOperation>),
 }
@@ -513,13 +507,11 @@ mod tests {
         });
 
         // Push a Group — should NOT coalesce with the Single
-        history.push(EditOperation::Group(vec![
-            EditOperation::Range {
-                offset: 1,
-                old_values: vec![0x01],
-                new_values: vec![0xBB],
-            },
-        ]));
+        history.push(EditOperation::Group(vec![EditOperation::Range {
+            offset: 1,
+            old_values: vec![0x01],
+            new_values: vec![0xBB],
+        }]));
 
         assert_eq!(count_undos(&mut history), 2);
     }
@@ -529,13 +521,11 @@ mod tests {
         let mut history = History::new();
 
         // Push a Group
-        history.push(EditOperation::Group(vec![
-            EditOperation::Range {
-                offset: 0,
-                old_values: vec![0x00],
-                new_values: vec![0xAA],
-            },
-        ]));
+        history.push(EditOperation::Group(vec![EditOperation::Range {
+            offset: 0,
+            old_values: vec![0x00],
+            new_values: vec![0xAA],
+        }]));
 
         // Push an adjacent Single — should NOT coalesce with Group
         history.push(EditOperation::Single {

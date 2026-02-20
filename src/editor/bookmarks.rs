@@ -148,7 +148,8 @@ impl BookmarkManager {
     /// Bookmarks after the deleted range are shifted left by `count`.
     pub fn adjust_offsets_after_delete(&mut self, offset: usize, count: usize) {
         let delete_end = offset + count;
-        self.bookmarks.retain(|b| b.offset < offset || b.offset >= delete_end);
+        self.bookmarks
+            .retain(|b| b.offset < offset || b.offset >= delete_end);
         for bookmark in &mut self.bookmarks {
             if bookmark.offset >= delete_end {
                 bookmark.offset -= count;

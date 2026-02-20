@@ -201,15 +201,18 @@ impl ImageFormat for JpegParser {
                     let mut section = FileSection::new(name, segment_start, segment_end, risk);
 
                     // Add descriptions for common markers
-                    section.description = Some(match marker {
-                        0xE0 => "JFIF application data",
-                        0xE1 => "EXIF metadata or XMP data",
-                        0xDB => "Quantization tables - affects image quality",
-                        0xC4 => "Huffman tables - required for decoding",
-                        0xC0 => "Image dimensions and color components",
-                        0xFE => "Comment - safe to edit",
-                        _ => "",
-                    }.to_string());
+                    section.description = Some(
+                        match marker {
+                            0xE0 => "JFIF application data",
+                            0xE1 => "EXIF metadata or XMP data",
+                            0xDB => "Quantization tables - affects image quality",
+                            0xC4 => "Huffman tables - required for decoding",
+                            0xC0 => "Image dimensions and color components",
+                            0xFE => "Comment - safe to edit",
+                            _ => "",
+                        }
+                        .to_string(),
+                    );
 
                     sections.push(section);
                     pos = segment_end;
@@ -245,11 +248,11 @@ mod tests {
 
         // Minimal JPEG: SOI + APP0 + EOI
         let jpeg = vec![
-            0xFF, 0xD8,             // SOI
+            0xFF, 0xD8, // SOI
             0xFF, 0xE0, 0x00, 0x10, // APP0 marker with length 16
             0x4A, 0x46, 0x49, 0x46, 0x00, // "JFIF\0"
             0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, // JFIF data
-            0xFF, 0xD9,             // EOI
+            0xFF, 0xD9, // EOI
         ];
 
         let sections = parser.parse(&jpeg).unwrap();

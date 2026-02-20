@@ -40,7 +40,10 @@ pub fn parse_offset(input: &str) -> Result<usize, String> {
     }
 
     // Try hex with 0x/0X prefix
-    if let Some(hex_part) = trimmed.strip_prefix("0x").or_else(|| trimmed.strip_prefix("0X")) {
+    if let Some(hex_part) = trimmed
+        .strip_prefix("0x")
+        .or_else(|| trimmed.strip_prefix("0X"))
+    {
         if hex_part.is_empty() {
             return Err("Invalid hex value: missing digits after 0x".to_string());
         }
@@ -49,8 +52,12 @@ pub fn parse_offset(input: &str) -> Result<usize, String> {
     }
 
     // Try decimal
-    trimmed.parse::<usize>()
-        .map_err(|_| format!("Invalid offset '{}' (use decimal or 0x prefix for hex)", trimmed))
+    trimmed.parse::<usize>().map_err(|_| {
+        format!(
+            "Invalid offset '{}' (use decimal or 0x prefix for hex)",
+            trimmed
+        )
+    })
 }
 
 #[cfg(test)]

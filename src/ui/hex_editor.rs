@@ -107,10 +107,7 @@ fn render_hex_byte(
             }
         };
 
-        let high_rect = egui::Rect::from_min_size(
-            rect.min,
-            egui::vec2(half_width, rect.height()),
-        );
+        let high_rect = egui::Rect::from_min_size(rect.min, egui::vec2(half_width, rect.height()));
         let low_rect = egui::Rect::from_min_size(
             egui::pos2(rect.min.x + half_width, rect.min.y),
             egui::vec2(half_width, rect.height()),
@@ -194,37 +191,69 @@ fn handle_navigation_keys(editor: &mut crate::editor::EditorState, i: &egui::Inp
     let shift = i.modifiers.shift;
 
     if i.key_pressed(egui::Key::ArrowLeft) {
-        if shift { editor.move_cursor_with_selection(-1); }
-        else { editor.clear_selection(); editor.move_cursor(-1); }
+        if shift {
+            editor.move_cursor_with_selection(-1);
+        } else {
+            editor.clear_selection();
+            editor.move_cursor(-1);
+        }
     }
     if i.key_pressed(egui::Key::ArrowRight) {
-        if shift { editor.move_cursor_with_selection(1); }
-        else { editor.clear_selection(); editor.move_cursor(1); }
+        if shift {
+            editor.move_cursor_with_selection(1);
+        } else {
+            editor.clear_selection();
+            editor.move_cursor(1);
+        }
     }
     if i.key_pressed(egui::Key::ArrowUp) {
-        if shift { editor.move_cursor_with_selection(-(BYTES_PER_ROW as isize)); }
-        else { editor.clear_selection(); editor.move_cursor(-(BYTES_PER_ROW as isize)); }
+        if shift {
+            editor.move_cursor_with_selection(-(BYTES_PER_ROW as isize));
+        } else {
+            editor.clear_selection();
+            editor.move_cursor(-(BYTES_PER_ROW as isize));
+        }
     }
     if i.key_pressed(egui::Key::ArrowDown) {
-        if shift { editor.move_cursor_with_selection(BYTES_PER_ROW as isize); }
-        else { editor.clear_selection(); editor.move_cursor(BYTES_PER_ROW as isize); }
+        if shift {
+            editor.move_cursor_with_selection(BYTES_PER_ROW as isize);
+        } else {
+            editor.clear_selection();
+            editor.move_cursor(BYTES_PER_ROW as isize);
+        }
     }
     if i.key_pressed(egui::Key::PageUp) {
-        if shift { editor.move_cursor_with_selection(-(BYTES_PER_ROW as isize * 16)); }
-        else { editor.clear_selection(); editor.move_cursor(-(BYTES_PER_ROW as isize * 16)); }
+        if shift {
+            editor.move_cursor_with_selection(-(BYTES_PER_ROW as isize * 16));
+        } else {
+            editor.clear_selection();
+            editor.move_cursor(-(BYTES_PER_ROW as isize * 16));
+        }
     }
     if i.key_pressed(egui::Key::PageDown) {
-        if shift { editor.move_cursor_with_selection(BYTES_PER_ROW as isize * 16); }
-        else { editor.clear_selection(); editor.move_cursor(BYTES_PER_ROW as isize * 16); }
+        if shift {
+            editor.move_cursor_with_selection(BYTES_PER_ROW as isize * 16);
+        } else {
+            editor.clear_selection();
+            editor.move_cursor(BYTES_PER_ROW as isize * 16);
+        }
     }
     if i.key_pressed(egui::Key::Home) {
-        if shift { editor.extend_selection_to(0); }
-        else { editor.clear_selection(); editor.set_cursor(0); }
+        if shift {
+            editor.extend_selection_to(0);
+        } else {
+            editor.clear_selection();
+            editor.set_cursor(0);
+        }
     }
     if i.key_pressed(egui::Key::End) {
         let last = editor.len().saturating_sub(1);
-        if shift { editor.extend_selection_to(last); }
-        else { editor.clear_selection(); editor.set_cursor(last); }
+        if shift {
+            editor.extend_selection_to(last);
+        } else {
+            editor.clear_selection();
+            editor.set_cursor(last);
+        }
     }
 }
 
@@ -276,10 +305,15 @@ fn handle_edit_input(
                             if let Some(nibble) = c.to_digit(16) {
                                 if should_warn_for_cursor {
                                     if let Some(risk) = cursor_risk_level {
-                                        pending_high_risk_edit = Some((PendingEditType::Nibble(nibble as u8), cursor_pos, risk));
+                                        pending_high_risk_edit = Some((
+                                            PendingEditType::Nibble(nibble as u8),
+                                            cursor_pos,
+                                            risk,
+                                        ));
                                     }
                                 } else {
-                                    let _ = editor.edit_nibble_with_mode(nibble as u8); // #[must_use] result intentionally ignored — cursor advance handled internally
+                                    let _ = editor.edit_nibble_with_mode(nibble as u8);
+                                    // #[must_use] result intentionally ignored — cursor advance handled internally
                                 }
                             }
                         }
@@ -288,7 +322,8 @@ fn handle_edit_input(
                             if (0x20..=0x7E).contains(&code) {
                                 if should_warn_for_cursor {
                                     if let Some(risk) = cursor_risk_level {
-                                        pending_high_risk_edit = Some((PendingEditType::Ascii(c), cursor_pos, risk));
+                                        pending_high_risk_edit =
+                                            Some((PendingEditType::Ascii(c), cursor_pos, risk));
                                     }
                                 } else {
                                     let _ = editor.edit_ascii_with_mode(c); // #[must_use] result intentionally ignored — acceptance checked by range guard above
@@ -338,9 +373,10 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
 
     // Check if navigation was requested (must be done before closures capture app)
     // We use vertical_scroll_offset to jump to the approximate area, then scroll_to_me() to fine-tune
-    let scroll_to_row: Option<usize> = app.pending_hex_scroll.take().map(|byte_offset| {
-        byte_offset / BYTES_PER_ROW
-    });
+    let scroll_to_row: Option<usize> = app
+        .pending_hex_scroll
+        .take()
+        .map(|byte_offset| byte_offset / BYTES_PER_ROW);
 
     // Calculate approximate scroll offset to ensure target row is rendered
     let initial_scroll_offset: Option<f32> = scroll_to_row.map(|target_row| {
@@ -351,35 +387,31 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
 
     // Pre-compute section colors for the entire file
     // This is cached in app.cached_sections so the lookup is fast
-    let get_section_color = |offset: usize| -> Option<egui::Color32> {
-        app.section_color_for_offset(offset)
-    };
+    let get_section_color =
+        |offset: usize| -> Option<egui::Color32> { app.section_color_for_offset(offset) };
 
     // Check if an offset is within a search match
     let current_match_offset = app.search_state.current_match_offset();
     let pattern_len = app.search_state.pattern_length();
-    let is_search_match = |offset: usize| -> bool {
-        app.search_state.is_within_match(offset)
-    };
+    let is_search_match = |offset: usize| -> bool { app.search_state.is_within_match(offset) };
     let is_current_match = |offset: usize| -> bool {
         current_match_offset.is_some_and(|m| offset >= m && offset < m + pattern_len)
     };
 
     // Check if an offset has a bookmark
     let has_bookmark = |offset: usize| -> bool {
-        app.editor.as_ref().is_some_and(|e| e.has_bookmark_at(offset))
+        app.editor
+            .as_ref()
+            .is_some_and(|e| e.has_bookmark_at(offset))
     };
 
     // Check if an offset is protected (header protection enabled)
-    let is_protected = |offset: usize| -> bool {
-        app.is_offset_protected(offset)
-    };
+    let is_protected = |offset: usize| -> bool { app.is_offset_protected(offset) };
 
     // Check if cursor is at a protected position
     let cursor_protected = app.is_offset_protected(cursor_pos);
 
-    let mut scroll_area = egui::ScrollArea::both()
-        .auto_shrink([false; 2]);
+    let mut scroll_area = egui::ScrollArea::both().auto_shrink([false; 2]);
 
     // Set initial scroll offset to ensure target row is in the rendered range
     if let Some(offset_y) = initial_scroll_offset {
@@ -387,118 +419,138 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
     }
 
     scroll_area.show_viewport(ui, |ui, viewport| {
-            // Calculate which rows are visible
-            let first_visible_row = (viewport.min.y / row_height).floor() as usize;
-            let last_visible_row = ((viewport.max.y / row_height).ceil() as usize).min(total_rows);
+        // Calculate which rows are visible
+        let first_visible_row = (viewport.min.y / row_height).floor() as usize;
+        let last_visible_row = ((viewport.max.y / row_height).ceil() as usize).min(total_rows);
 
-            // Add buffer rows
-            let render_start = first_visible_row.saturating_sub(BUFFER_ROWS);
-            let render_end = (last_visible_row + BUFFER_ROWS).min(total_rows);
+        // Add buffer rows
+        let render_start = first_visible_row.saturating_sub(BUFFER_ROWS);
+        let render_end = (last_visible_row + BUFFER_ROWS).min(total_rows);
 
-            // Reserve space for rows before visible area
-            if render_start > 0 {
-                ui.allocate_space(egui::vec2(ui.available_width(), render_start as f32 * row_height));
-            }
+        // Reserve space for rows before visible area
+        if render_start > 0 {
+            ui.allocate_space(egui::vec2(
+                ui.available_width(),
+                render_start as f32 * row_height,
+            ));
+        }
 
-            // Get the editor reference again (immutable borrow for reading bytes)
-            let editor = app.editor.as_ref().unwrap();
+        // Get the editor reference again (immutable borrow for reading bytes)
+        let editor = app.editor.as_ref().unwrap();
 
-            // Render visible rows
-            for row_idx in render_start..render_end {
-                let offset = row_idx * BYTES_PER_ROW;
-                let row_end = (offset + BYTES_PER_ROW).min(total_bytes);
-                let row_bytes = editor.bytes_in_range(offset, row_end);
+        // Render visible rows
+        for row_idx in render_start..render_end {
+            let offset = row_idx * BYTES_PER_ROW;
+            let row_end = (offset + BYTES_PER_ROW).min(total_bytes);
+            let row_bytes = editor.bytes_in_range(offset, row_end);
 
-                // Check if this is the row we need to scroll to
-                let should_scroll_to_this_row = scroll_to_row == Some(row_idx);
+            // Check if this is the row we need to scroll to
+            let should_scroll_to_this_row = scroll_to_row == Some(row_idx);
 
-                let row_response = ui.horizontal(|ui| {
-                    // Offset column (8 hex digits)
-                    ui.label(
-                        RichText::new(format!("{:08X}", offset))
-                            .monospace()
-                            .color(egui::Color32::GRAY),
-                    );
+            let row_response = ui.horizontal(|ui| {
+                // Offset column (8 hex digits)
+                ui.label(
+                    RichText::new(format!("{:08X}", offset))
+                        .monospace()
+                        .color(egui::Color32::GRAY),
+                );
 
-                    ui.add_space(OFFSET_HEX_SPACING);
+                ui.add_space(OFFSET_HEX_SPACING);
 
-                    // Hex bytes
-                    for (i, byte) in row_bytes.iter().enumerate() {
-                        if i == 8 {
-                            ui.add_space(HEX_GROUP_SPACING);
-                        }
-
-                        let byte_offset = offset + i;
-                        let highlight = ByteHighlight {
-                            is_cursor: byte_offset == cursor_pos,
-                            is_selected: selection
-                                .map(|(start, end)| byte_offset >= start && byte_offset < end)
-                                .unwrap_or(false),
-                            is_search_match: is_search_match(byte_offset),
-                            is_current_match: is_current_match(byte_offset),
-                            has_bookmark: has_bookmark(byte_offset),
-                            is_protected: is_protected(byte_offset),
-                            section_bg: get_section_color(byte_offset),
-                        };
-
-                        let response = render_hex_byte(ui, *byte, &highlight, cursor_nibble, edit_mode, write_mode);
-                        if response.clicked() {
-                            clicked_offset = Some(byte_offset);
-                        }
-                        if response.secondary_clicked() {
-                            context_menu_offset = Some(byte_offset);
-                        }
+                // Hex bytes
+                for (i, byte) in row_bytes.iter().enumerate() {
+                    if i == 8 {
+                        ui.add_space(HEX_GROUP_SPACING);
                     }
 
-                    // Pad remaining space if row is incomplete
-                    let missing = BYTES_PER_ROW - row_bytes.len();
-                    if missing > 0 {
-                        ui.add_space(missing as f32 * HEX_BYTE_WIDTH);
-                    }
-
-                    ui.add_space(HEX_ASCII_SPACING);
-
-                    // ASCII column - per-character rendering for click handling
-                    // Set zero spacing between characters so they render tightly together
-                    ui.spacing_mut().item_spacing.x = 0.0;
-
-                    ui.label(
-                        RichText::new("|").monospace().color(egui::Color32::DARK_GRAY),
-                    );
-
-                    for (i, byte) in row_bytes.iter().enumerate() {
-                        let byte_offset = offset + i;
-                        let is_cursor = byte_offset == cursor_pos;
-                        let is_selected = selection
+                    let byte_offset = offset + i;
+                    let highlight = ByteHighlight {
+                        is_cursor: byte_offset == cursor_pos,
+                        is_selected: selection
                             .map(|(start, end)| byte_offset >= start && byte_offset < end)
-                            .unwrap_or(false);
+                            .unwrap_or(false),
+                        is_search_match: is_search_match(byte_offset),
+                        is_current_match: is_current_match(byte_offset),
+                        has_bookmark: has_bookmark(byte_offset),
+                        is_protected: is_protected(byte_offset),
+                        section_bg: get_section_color(byte_offset),
+                    };
 
-                        let response = render_ascii_char(ui, *byte, is_cursor, is_selected, edit_mode, write_mode);
-                        if response.clicked() {
-                            clicked_ascii_offset = Some(byte_offset);
-                        }
-                        if response.secondary_clicked() {
-                            context_menu_offset = Some(byte_offset);
-                        }
-                    }
-
-                    ui.label(
-                        RichText::new("|").monospace().color(egui::Color32::DARK_GRAY),
+                    let response = render_hex_byte(
+                        ui,
+                        *byte,
+                        &highlight,
+                        cursor_nibble,
+                        edit_mode,
+                        write_mode,
                     );
-                });
-
-                // Scroll to this row if it was the navigation target
-                if should_scroll_to_this_row {
-                    row_response.response.scroll_to_me(Some(egui::Align::Center));
+                    if response.clicked() {
+                        clicked_offset = Some(byte_offset);
+                    }
+                    if response.secondary_clicked() {
+                        context_menu_offset = Some(byte_offset);
+                    }
                 }
-            }
 
-            // Reserve space for rows after visible area
-            let rows_after = total_rows.saturating_sub(render_end);
-            if rows_after > 0 {
-                ui.allocate_space(egui::vec2(ui.available_width(), rows_after as f32 * row_height));
+                // Pad remaining space if row is incomplete
+                let missing = BYTES_PER_ROW - row_bytes.len();
+                if missing > 0 {
+                    ui.add_space(missing as f32 * HEX_BYTE_WIDTH);
+                }
+
+                ui.add_space(HEX_ASCII_SPACING);
+
+                // ASCII column - per-character rendering for click handling
+                // Set zero spacing between characters so they render tightly together
+                ui.spacing_mut().item_spacing.x = 0.0;
+
+                ui.label(
+                    RichText::new("|")
+                        .monospace()
+                        .color(egui::Color32::DARK_GRAY),
+                );
+
+                for (i, byte) in row_bytes.iter().enumerate() {
+                    let byte_offset = offset + i;
+                    let is_cursor = byte_offset == cursor_pos;
+                    let is_selected = selection
+                        .map(|(start, end)| byte_offset >= start && byte_offset < end)
+                        .unwrap_or(false);
+
+                    let response =
+                        render_ascii_char(ui, *byte, is_cursor, is_selected, edit_mode, write_mode);
+                    if response.clicked() {
+                        clicked_ascii_offset = Some(byte_offset);
+                    }
+                    if response.secondary_clicked() {
+                        context_menu_offset = Some(byte_offset);
+                    }
+                }
+
+                ui.label(
+                    RichText::new("|")
+                        .monospace()
+                        .color(egui::Color32::DARK_GRAY),
+                );
+            });
+
+            // Scroll to this row if it was the navigation target
+            if should_scroll_to_this_row {
+                row_response
+                    .response
+                    .scroll_to_me(Some(egui::Align::Center));
             }
-        });
+        }
+
+        // Reserve space for rows after visible area
+        let rows_after = total_rows.saturating_sub(render_end);
+        if rows_after > 0 {
+            ui.allocate_space(egui::vec2(
+                ui.available_width(),
+                rows_after as f32 * row_height,
+            ));
+        }
+    });
 
     // Handle deferred click from hex column (stays in hex mode)
     if let Some(offset) = clicked_offset {
@@ -582,7 +634,11 @@ fn handle_keyboard_input(
     let cursor_risk_level = app.get_high_risk_level(cursor_pos);
 
     // Cache edit mode for text input handling
-    let current_edit_mode = app.editor.as_ref().map(|e| e.edit_mode()).unwrap_or(EditMode::Hex);
+    let current_edit_mode = app
+        .editor
+        .as_ref()
+        .map(|e| e.edit_mode())
+        .unwrap_or(EditMode::Hex);
 
     let (pending_high_risk_edit, paste_text) = ui.input_mut(|i| {
         let Some(editor) = &mut app.editor else {
@@ -614,7 +670,15 @@ fn handle_keyboard_input(
         }
 
         // Edit input (text entry, backspace, delete, paste)
-        handle_edit_input(editor, i, cursor_pos, cursor_protected, should_warn_for_cursor, cursor_risk_level, current_edit_mode)
+        handle_edit_input(
+            editor,
+            i,
+            cursor_pos,
+            cursor_protected,
+            should_warn_for_cursor,
+            cursor_risk_level,
+            current_edit_mode,
+        )
     });
 
     // Handle paste outside the input closure
@@ -622,10 +686,15 @@ fn handle_keyboard_input(
         let bytes = match current_edit_mode {
             EditMode::Hex => parse_hex_input(&text),
             EditMode::Ascii => {
-                let b: Vec<u8> = text.bytes()
+                let b: Vec<u8> = text
+                    .bytes()
                     .filter(|&b| (0x20..=0x7E).contains(&b))
                     .collect();
-                if b.is_empty() { None } else { Some(b) }
+                if b.is_empty() {
+                    None
+                } else {
+                    Some(b)
+                }
             }
         };
         if let Some(bytes) = bytes {
@@ -663,7 +732,9 @@ fn show_context_menu(ui: &mut egui::Ui, app: &mut BendApp) {
     let mut do_go_to_offset = false;
 
     // Determine if we have a selection or just cursor
-    let (start, end) = app.editor.as_ref()
+    let (start, end) = app
+        .editor
+        .as_ref()
         .and_then(|e| e.selection())
         .unwrap_or((target_offset, target_offset + 1));
 
@@ -689,7 +760,10 @@ fn show_context_menu(ui: &mut egui::Ui, app: &mut BendApp) {
                     do_copy_hex = true;
                     close_menu = true;
                 }
-                if ui.button(format!("Copy as ASCII{}", label_suffix)).clicked() {
+                if ui
+                    .button(format!("Copy as ASCII{}", label_suffix))
+                    .clicked()
+                {
                     do_copy_ascii = true;
                     close_menu = true;
                 }
@@ -715,9 +789,7 @@ fn show_context_menu(ui: &mut egui::Ui, app: &mut BendApp) {
         });
 
     // Close menu on click outside or Escape
-    let clicked_outside = ctx.input(|i| {
-        i.pointer.any_click() && !i.pointer.secondary_down()
-    });
+    let clicked_outside = ctx.input(|i| i.pointer.any_click() && !i.pointer.secondary_down());
     let escape_pressed = ctx.input(|i| i.key_pressed(egui::Key::Escape));
 
     if clicked_outside || escape_pressed {
@@ -752,7 +824,9 @@ fn show_context_menu(ui: &mut egui::Ui, app: &mut BendApp) {
 fn copy_as_hex(ui: &mut egui::Ui, app: &BendApp, target_offset: usize) {
     let Some(editor) = &app.editor else { return };
 
-    let (start, end) = editor.selection().unwrap_or((target_offset, target_offset + 1));
+    let (start, end) = editor
+        .selection()
+        .unwrap_or((target_offset, target_offset + 1));
     let bytes = editor.bytes_in_range(start, end);
 
     let table = hex_table();
@@ -771,7 +845,9 @@ fn copy_as_hex(ui: &mut egui::Ui, app: &BendApp, target_offset: usize) {
 fn copy_as_ascii(ui: &mut egui::Ui, app: &BendApp, target_offset: usize) {
     let Some(editor) = &app.editor else { return };
 
-    let (start, end) = editor.selection().unwrap_or((target_offset, target_offset + 1));
+    let (start, end) = editor
+        .selection()
+        .unwrap_or((target_offset, target_offset + 1));
     let bytes = editor.bytes_in_range(start, end);
 
     let ascii_string: String = bytes
@@ -797,7 +873,9 @@ fn paste_hex(_ui: &mut egui::Ui, app: &mut BendApp, target_offset: usize) {
         return;
     };
 
-    let Some(editor) = &mut app.editor else { return };
+    let Some(editor) = &mut app.editor else {
+        return;
+    };
 
     // Parse bytes based on current edit mode
     let bytes: Option<Vec<u8>> = match editor.edit_mode() {
@@ -808,10 +886,15 @@ fn paste_hex(_ui: &mut egui::Ui, app: &mut BendApp, target_offset: usize) {
         EditMode::Ascii => {
             // ASCII mode: interpret as raw text bytes
             // Only include printable ASCII characters (0x20-0x7E)
-            let bytes: Vec<u8> = text.bytes()
+            let bytes: Vec<u8> = text
+                .bytes()
                 .filter(|&b| (0x20..=0x7E).contains(&b))
                 .collect();
-            if bytes.is_empty() { None } else { Some(bytes) }
+            if bytes.is_empty() {
+                None
+            } else {
+                Some(bytes)
+            }
         }
     };
 
@@ -844,10 +927,7 @@ fn read_clipboard() -> Option<String> {
 
 /// Parse hex input string into bytes (supports "FF FF FF" or "FFFFFF" formats)
 fn parse_hex_input(input: &str) -> Option<Vec<u8>> {
-    let clean: String = input
-        .chars()
-        .filter(|c| c.is_ascii_hexdigit())
-        .collect();
+    let clean: String = input.chars().filter(|c| c.is_ascii_hexdigit()).collect();
 
     if clean.is_empty() || !clean.len().is_multiple_of(2) {
         return None;
@@ -855,7 +935,7 @@ fn parse_hex_input(input: &str) -> Option<Vec<u8>> {
 
     let bytes: Option<Vec<u8>> = (0..clean.len())
         .step_by(2)
-        .map(|i| u8::from_str_radix(&clean[i..i+2], 16).ok())
+        .map(|i| u8::from_str_radix(&clean[i..i + 2], 16).ok())
         .collect();
 
     bytes

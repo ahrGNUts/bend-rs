@@ -29,7 +29,11 @@ impl SettingsDialogState {
 
 /// Show the settings/preferences dialog
 /// Returns true if settings were changed and should be saved
-pub fn show(ctx: &egui::Context, state: &mut SettingsDialogState, settings: &mut AppSettings) -> bool {
+pub fn show(
+    ctx: &egui::Context,
+    state: &mut SettingsDialogState,
+    settings: &mut AppSettings,
+) -> bool {
     if !state.dialog_open {
         return false;
     }
