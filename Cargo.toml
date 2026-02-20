@@ -9,7 +9,6 @@ license = "MIT"
 # GUI framework
 eframe = "0.29"
 egui = "0.29"
-egui_extras = { version = "0.29", features = ["image"] }
 
 # Image processing
 image = { version = "0.25", default-features = false, features = ["bmp", "jpeg", "png", "ico"] }
