@@ -235,11 +235,20 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
     if do_replace_all {
         match replace_all(app) {
             Ok(_count) => {
-                // Re-execute search (should find nothing now)
+                // Save informational message (e.g. "N skipped in protected regions")
+                // before re-search, which clears error via clear_results()
+                let info_message = app.search_state.error.take();
+
+                // Re-execute search to update remaining matches
                 if let Some(editor) = &app.editor {
                     let gen = editor.edit_generation();
                     execute_search(&mut app.search_state, editor.working());
                     app.search_state.set_searched_generation(gen);
+                }
+
+                // Restore informational message if re-search didn't produce a new error
+                if app.search_state.error.is_none() {
+                    app.search_state.error = info_message;
                 }
             }
             Err(e) => {
@@ -276,6 +285,14 @@ fn replace_current(app: &mut BendApp) -> Result<(), String> {
         ));
     }
 
+    // Check header protection
+    if app.is_range_protected(current_offset, pattern_len) {
+        return Err(format!(
+            "Cannot replace: match at offset 0x{:08X} is in a protected header region",
+            current_offset
+        ));
+    }
+
     let editor = app.editor.as_mut().ok_or("No file loaded")?;
 
     // Apply the replacement as a single undoable operation
@@ -306,16 +323,41 @@ fn replace_all(app: &mut BendApp) -> Result<usize, String> {
         ));
     }
 
-    let editor = app.editor.as_mut().ok_or("No file loaded")?;
-    let count = app.search_state.matches.len();
+    // Partition matches into protected vs replaceable
+    let (protected, replaceable): (Vec<usize>, Vec<usize>) = app
+        .search_state
+        .matches
+        .iter()
+        .partition(|&&offset| app.is_range_protected(offset, pattern_len));
 
-    // Apply all replacements as individual Range operations (one per match)
+    if replaceable.is_empty() {
+        return Err(format!(
+            "All {} matches are in protected header regions",
+            protected.len()
+        ));
+    }
+
+    let editor = app.editor.as_mut().ok_or("No file loaded")?;
+
+    // Apply replacements only to unprotected matches
     // Since we require replacement to be same length, positions don't shift
-    for &match_offset in &app.search_state.matches {
+    for &match_offset in &replaceable {
         editor.replace_bytes(match_offset, &replacement);
     }
 
-    Ok(count)
+    let replaced_count = replaceable.len();
+    let skipped_count = protected.len();
+
+    if skipped_count > 0 {
+        app.search_state.error = Some(format!(
+            "Replaced {} of {} matches ({} skipped in protected regions)",
+            replaced_count,
+            replaced_count + skipped_count,
+            skipped_count
+        ));
+    }
+
+    Ok(replaced_count)
 }
 
 /// Get replacement bytes based on current mode
@@ -323,5 +365,164 @@ fn get_replacement_bytes(app: &BendApp) -> Result<Vec<u8>, String> {
     match app.search_state.mode {
         SearchMode::Hex => parse_hex_replace(&app.search_state.replace_with),
         SearchMode::Ascii => Ok(app.search_state.replace_with.as_bytes().to_vec()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::editor::buffer::EditorState;
+    use crate::editor::search::{execute_search, SearchMode};
+    use crate::formats::traits::{FileSection, RiskLevel};
+
+    /// Helper: create a BendApp with file data, sections, and a hex search pre-executed
+    fn setup_app(data: &[u8], sections: Vec<FileSection>, query: &str, replace: &str) -> BendApp {
+        let mut app = BendApp::default();
+        app.editor = Some(EditorState::new(data.to_vec()));
+        app.cached_sections = Some(sections);
+        app.search_state.mode = SearchMode::Hex;
+        app.search_state.query = query.to_string();
+        app.search_state.replace_with = replace.to_string();
+        // Execute search to populate matches
+        if let Some(editor) = &app.editor {
+            execute_search(&mut app.search_state, editor.working());
+        }
+        app
+    }
+
+    #[test]
+    fn test_replace_current_blocked_in_protected_region() {
+        // Data: 20 bytes, FF at offset 5 (in High region)
+        let mut data = vec![0u8; 20];
+        data[5] = 0xFF;
+        let sections = vec![
+            FileSection::new("Header", 0, 10, RiskLevel::High),
+            FileSection::new("Data", 10, 20, RiskLevel::Safe),
+        ];
+        let mut app = setup_app(&data, sections, "FF", "00");
+        app.header_protection = true;
+        app.search_state.current_match = Some(0);
+
+        let result = replace_current(&mut app);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("protected header region"));
+
+        // Verify byte was NOT changed
+        assert_eq!(app.editor.as_ref().unwrap().working()[5], 0xFF);
+    }
+
+    #[test]
+    fn test_replace_current_allowed_in_safe_region() {
+        // Data: 20 bytes, FF at offset 15 (in Safe region)
+        let mut data = vec![0u8; 20];
+        data[15] = 0xFF;
+        let sections = vec![
+            FileSection::new("Header", 0, 10, RiskLevel::High),
+            FileSection::new("Data", 10, 20, RiskLevel::Safe),
+        ];
+        let mut app = setup_app(&data, sections, "FF", "00");
+        app.header_protection = true;
+        app.search_state.current_match = Some(0);
+
+        let result = replace_current(&mut app);
+        assert!(result.is_ok());
+
+        // Verify byte WAS changed
+        assert_eq!(app.editor.as_ref().unwrap().working()[15], 0x00);
+    }
+
+    #[test]
+    fn test_replace_current_blocked_when_spanning_boundary() {
+        // Data: 20 bytes, "AA BB" at offset 9 (spans Safe at 9 and High at 10)
+        let mut data = vec![0u8; 20];
+        data[9] = 0xAA;
+        data[10] = 0xBB;
+        let sections = vec![
+            FileSection::new("Safe", 0, 10, RiskLevel::Safe),
+            FileSection::new("High", 10, 20, RiskLevel::High),
+        ];
+        let mut app = setup_app(&data, sections, "AA BB", "00 00");
+        app.header_protection = true;
+        app.search_state.current_match = Some(0);
+
+        let result = replace_current(&mut app);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("protected header region"));
+
+        // Verify bytes NOT changed
+        assert_eq!(app.editor.as_ref().unwrap().working()[9], 0xAA);
+        assert_eq!(app.editor.as_ref().unwrap().working()[10], 0xBB);
+    }
+
+    #[test]
+    fn test_replace_all_skips_protected_replaces_safe() {
+        // Data: FF at offset 5 (High) and FF at offset 15 (Safe)
+        let mut data = vec![0u8; 20];
+        data[5] = 0xFF;
+        data[15] = 0xFF;
+        let sections = vec![
+            FileSection::new("Header", 0, 10, RiskLevel::High),
+            FileSection::new("Data", 10, 20, RiskLevel::Safe),
+        ];
+        let mut app = setup_app(&data, sections, "FF", "00");
+        app.header_protection = true;
+
+        let result = replace_all(&mut app);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 1); // Only 1 replaced
+
+        // Protected byte unchanged
+        assert_eq!(app.editor.as_ref().unwrap().working()[5], 0xFF);
+        // Safe byte replaced
+        assert_eq!(app.editor.as_ref().unwrap().working()[15], 0x00);
+
+        // Informational message set
+        let msg = app.search_state.error.as_ref().unwrap();
+        assert!(msg.contains("1 skipped"));
+        assert!(msg.contains("Replaced 1 of 2"));
+    }
+
+    #[test]
+    fn test_replace_all_errors_when_all_protected() {
+        // Data: FF at offset 5 (High), no safe matches
+        let mut data = vec![0u8; 20];
+        data[5] = 0xFF;
+        let sections = vec![
+            FileSection::new("Header", 0, 10, RiskLevel::High),
+            FileSection::new("Data", 10, 20, RiskLevel::Safe),
+        ];
+        let mut app = setup_app(&data, sections, "FF", "00");
+        app.header_protection = true;
+
+        let result = replace_all(&mut app);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("All 1 matches are in protected"));
+
+        // Byte unchanged
+        assert_eq!(app.editor.as_ref().unwrap().working()[5], 0xFF);
+    }
+
+    #[test]
+    fn test_replace_all_replaces_everything_when_protection_disabled() {
+        // Data: FF at offset 5 (High) and FF at offset 15 (Safe), protection OFF
+        let mut data = vec![0u8; 20];
+        data[5] = 0xFF;
+        data[15] = 0xFF;
+        let sections = vec![
+            FileSection::new("Header", 0, 10, RiskLevel::High),
+            FileSection::new("Data", 10, 20, RiskLevel::Safe),
+        ];
+        let mut app = setup_app(&data, sections, "FF", "00");
+        // header_protection is false by default
+
+        let result = replace_all(&mut app);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 2); // Both replaced
+
+        assert_eq!(app.editor.as_ref().unwrap().working()[5], 0x00);
+        assert_eq!(app.editor.as_ref().unwrap().working()[15], 0x00);
+
+        // No informational message
+        assert!(app.search_state.error.is_none());
     }
 }

@@ -200,6 +200,9 @@ Prerequisites: Sections 7-8 (format parsing to identify header regions)
 - [x] 17.23 BUG: Shift+Enter on first search causes double-scroll (both do_search and do_prev fire)
 - [x] 17.24 ENHANCEMENT: Use strikethrough instead of opaque red background for protected bytes
 - [x] 17.25 BUG: vertical scrolling should be enabled for far left panel when contents extend beyond window height
+- [x] 17.26 BUG: replace operations should ignore headers when 'Protect Headers' is enabled
+- [ ] 17.27 ENHANCEMENT: search_state.error field is overloaded for both errors and informational messages (e.g. "Replaced N of M, K skipped") — all render in red. Add a separate info message field or enum to distinguish severity and render informational messages in a neutral/yellow color.
+- [ ] 17.28 BUG: Replace All creates per-match undo operations instead of a single atomic undo (Ctrl+Z only undoes the last replacement, not all of them)
 
 ## 18. Settings and Persistence (P3)
 - [x] 18.1 Design settings data structure (window size, recent files, preferences)

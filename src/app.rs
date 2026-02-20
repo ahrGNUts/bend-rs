@@ -350,6 +350,14 @@ impl BendApp {
             .unwrap_or(false)
     }
 
+    /// Check if any byte in a range overlaps a protected region
+    pub fn is_range_protected(&self, start: usize, len: usize) -> bool {
+        if !self.header_protection || len == 0 {
+            return false;
+        }
+        (start..start + len).any(|offset| self.is_offset_protected(offset))
+    }
+
     /// Check if an offset is in a high-risk region that should show a warning
     /// Returns the risk level if it's High or Critical, None otherwise
     pub fn get_high_risk_level(&self, offset: usize) -> Option<RiskLevel> {
@@ -1246,5 +1254,34 @@ mod tests {
         // No warnings when suppressed
         assert!(!app.should_warn_for_edit(25));
         assert!(!app.should_warn_for_edit(35));
+    }
+
+    #[test]
+    fn test_is_range_protected() {
+        let sections = vec![
+            FileSection::new("Safe", 0, 10, RiskLevel::Safe),
+            FileSection::new("High", 10, 20, RiskLevel::High),
+            FileSection::new("Critical", 20, 30, RiskLevel::Critical),
+        ];
+        let mut app = create_test_app_with_sections(sections);
+        app.header_protection = true;
+
+        // Entirely in safe region — not protected
+        assert!(!app.is_range_protected(0, 10));
+
+        // Entirely in protected region
+        assert!(app.is_range_protected(10, 5));
+        assert!(app.is_range_protected(20, 5));
+
+        // Spanning safe-to-protected boundary
+        assert!(app.is_range_protected(8, 4)); // bytes 8..12, crosses into High at 10
+
+        // Zero length — never protected
+        assert!(!app.is_range_protected(15, 0));
+
+        // Protection disabled — nothing protected
+        app.header_protection = false;
+        assert!(!app.is_range_protected(10, 5));
+        assert!(!app.is_range_protected(20, 5));
     }
 }
