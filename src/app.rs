@@ -327,7 +327,7 @@ impl BendApp {
                 self.cached_sections = parse_file(&bytes);
                 self.editor = Some(EditorState::new(bytes));
                 self.current_file = Some(path.clone());
-                self.preview.dirty = true;
+                self.mark_preview_dirty();
                 self.preview.decode_error = None;
                 // Clear existing textures - they'll be recreated on next frame
                 self.preview.texture = None;

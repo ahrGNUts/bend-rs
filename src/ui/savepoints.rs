@@ -152,7 +152,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut SavePointsPanelSta
     if let Some(id) = action_restore {
         if let Some(editor) = &mut app.editor {
             if editor.restore_save_point(id) {
-                app.preview.dirty = true;
+                app.mark_preview_dirty();
             }
         }
     }
