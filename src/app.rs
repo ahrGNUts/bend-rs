@@ -626,133 +626,143 @@ impl BendApp {
 
     /// Render the top menu bar
     fn render_menu_bar(&mut self, ctx: &egui::Context) {
-        // Create platform-appropriate shortcut strings
-        let open_shortcut = format!("{}O", modifier_key());
-        let export_shortcut = format!("{}E", modifier_key());
-        let find_shortcut = format!("{}F", modifier_key());
-        let goto_shortcut = format!("{}G", modifier_key());
-
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
-                ui.menu_button("File", |ui| {
-                    if menu_item_with_shortcut(ui, "Open...", &open_shortcut, true) {
-                        self.open_file_dialog();
-                        ui.close_menu();
-                    }
-                    let has_file = self.editor.is_some();
-                    if menu_item_with_shortcut(ui, "Export...", &export_shortcut, has_file) {
-                        self.export_file();
-                        ui.close_menu();
-                    }
-                    ui.separator();
-
-                    // Recent files submenu
-                    let recent_files = self.settings.recent_files().to_vec();
-                    let has_recent = !recent_files.is_empty();
-                    ui.menu_button("Recent Files", |ui| {
-                        if has_recent {
-                            for path in &recent_files {
-                                let display_name = path
-                                    .file_name()
-                                    .map(|n| n.to_string_lossy().into_owned())
-                                    .unwrap_or_else(|| path.to_string_lossy().into_owned());
-
-                                if ui
-                                    .button(&display_name)
-                                    .on_hover_text(path.to_string_lossy())
-                                    .clicked()
-                                {
-                                    self.pending_open_path = Some(path.clone());
-                                    ui.close_menu();
-                                }
-                            }
-                            ui.separator();
-                            if ui.button("Clear Recent Files").clicked() {
-                                self.settings.clear_recent_files();
-                                self.settings.save();
-                                ui.close_menu();
-                            }
-                        } else {
-                            ui.label("No recent files");
-                        }
-                    });
-
-                    ui.separator();
-                    if ui.button("Exit").clicked() {
-                        if self.has_unsaved_changes() {
-                            self.dialogs.show_close = true;
-                        } else {
-                            self.settings.save();
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                        }
-                        ui.close_menu();
-                    }
-                });
-                ui.menu_button("Edit", |ui| {
-                    let has_file = self.editor.is_some();
-                    let can_undo = self.editor.as_ref().is_some_and(|e| e.can_undo());
-                    let can_redo = self.editor.as_ref().is_some_and(|e| e.can_redo());
-                    let undo_shortcut = format!("{}Z", modifier_key());
-                    let redo_shortcut = format!("{}Shift+Z", modifier_key());
-                    let refresh_shortcut = format!("{}R", modifier_key());
-
-                    if menu_item_with_shortcut(ui, "Undo", &undo_shortcut, can_undo) {
-                        self.do_undo();
-                        ui.close_menu();
-                    }
-                    if menu_item_with_shortcut(ui, "Redo", &redo_shortcut, can_redo) {
-                        self.do_redo();
-                        ui.close_menu();
-                    }
-                    ui.separator();
-
-                    if menu_item_with_shortcut(ui, "Find & Replace...", &find_shortcut, has_file) {
-                        self.search_state.open_dialog();
-                        ui.close_menu();
-                    }
-                    if menu_item_with_shortcut(ui, "Go to Offset...", &goto_shortcut, has_file) {
-                        self.go_to_offset_state.open_dialog();
-                        ui.close_menu();
-                    }
-                    ui.separator();
-                    if menu_item_with_shortcut(ui, "Refresh Preview", &refresh_shortcut, has_file) {
-                        self.mark_preview_dirty();
-                        ui.close_menu();
-                    }
-                    ui.separator();
-                    if ui
-                        .add_enabled(
-                            has_file,
-                            egui::Checkbox::new(&mut self.header_protection, "Protect Headers"),
-                        )
-                        .changed()
-                    {
-                        // Checkbox already updates the value
-                    }
-                    ui.separator();
-                    // Re-enable warnings option (only shown when warnings are suppressed)
-                    if self.dialogs.suppress_high_risk_warnings {
-                        if ui.button("Re-enable High-Risk Warnings").clicked() {
-                            self.dialogs.suppress_high_risk_warnings = false;
-                            ui.close_menu();
-                        }
-                    } else {
-                        ui.add_enabled(false, egui::Button::new("High-Risk Warnings: Enabled"));
-                    }
-                    ui.separator();
-                    if ui.button("Preferences...").clicked() {
-                        self.settings_dialog_state.open(&self.settings);
-                        ui.close_menu();
-                    }
-                });
-                ui.menu_button("Help", |ui| {
-                    if menu_item_with_shortcut(ui, "Keyboard Shortcuts", "F1", true) {
-                        self.shortcuts_dialog_state.open_dialog();
-                        ui.close_menu();
-                    }
-                });
+                ui.menu_button("File", |ui| self.render_file_menu(ui, ctx));
+                ui.menu_button("Edit", |ui| self.render_edit_menu(ui));
+                ui.menu_button("Help", |ui| self.render_help_menu(ui));
             });
         });
+    }
+
+    /// Render the File menu contents
+    fn render_file_menu(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        let mod_str = modifier_key();
+        let open_shortcut = format!("{}O", mod_str);
+        let export_shortcut = format!("{}E", mod_str);
+
+        if menu_item_with_shortcut(ui, "Open...", &open_shortcut, true) {
+            self.open_file_dialog();
+            ui.close_menu();
+        }
+        let has_file = self.editor.is_some();
+        if menu_item_with_shortcut(ui, "Export...", &export_shortcut, has_file) {
+            self.export_file();
+            ui.close_menu();
+        }
+        ui.separator();
+
+        // Recent files submenu
+        let recent_files = self.settings.recent_files().to_vec();
+        let has_recent = !recent_files.is_empty();
+        ui.menu_button("Recent Files", |ui| {
+            if has_recent {
+                for path in &recent_files {
+                    let display_name = path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| path.to_string_lossy().into_owned());
+
+                    if ui
+                        .button(&display_name)
+                        .on_hover_text(path.to_string_lossy())
+                        .clicked()
+                    {
+                        self.pending_open_path = Some(path.clone());
+                        ui.close_menu();
+                    }
+                }
+                ui.separator();
+                if ui.button("Clear Recent Files").clicked() {
+                    self.settings.clear_recent_files();
+                    self.settings.save();
+                    ui.close_menu();
+                }
+            } else {
+                ui.label("No recent files");
+            }
+        });
+
+        ui.separator();
+        if ui.button("Exit").clicked() {
+            if self.has_unsaved_changes() {
+                self.dialogs.show_close = true;
+            } else {
+                self.settings.save();
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+            ui.close_menu();
+        }
+    }
+
+    /// Render the Edit menu contents
+    fn render_edit_menu(&mut self, ui: &mut egui::Ui) {
+        let mod_str = modifier_key();
+        let has_file = self.editor.is_some();
+        let can_undo = self.editor.as_ref().is_some_and(|e| e.can_undo());
+        let can_redo = self.editor.as_ref().is_some_and(|e| e.can_redo());
+        let undo_shortcut = format!("{}Z", mod_str);
+        let redo_shortcut = format!("{}Shift+Z", mod_str);
+        let find_shortcut = format!("{}F", mod_str);
+        let goto_shortcut = format!("{}G", mod_str);
+        let refresh_shortcut = format!("{}R", mod_str);
+
+        if menu_item_with_shortcut(ui, "Undo", &undo_shortcut, can_undo) {
+            self.do_undo();
+            ui.close_menu();
+        }
+        if menu_item_with_shortcut(ui, "Redo", &redo_shortcut, can_redo) {
+            self.do_redo();
+            ui.close_menu();
+        }
+        ui.separator();
+
+        if menu_item_with_shortcut(ui, "Find & Replace...", &find_shortcut, has_file) {
+            self.search_state.open_dialog();
+            ui.close_menu();
+        }
+        if menu_item_with_shortcut(ui, "Go to Offset...", &goto_shortcut, has_file) {
+            self.go_to_offset_state.open_dialog();
+            ui.close_menu();
+        }
+        ui.separator();
+        if menu_item_with_shortcut(ui, "Refresh Preview", &refresh_shortcut, has_file) {
+            self.mark_preview_dirty();
+            ui.close_menu();
+        }
+        ui.separator();
+        if ui
+            .add_enabled(
+                has_file,
+                egui::Checkbox::new(&mut self.header_protection, "Protect Headers"),
+            )
+            .changed()
+        {
+            // Checkbox already updates the value
+        }
+        ui.separator();
+        // Re-enable warnings option (only shown when warnings are suppressed)
+        if self.dialogs.suppress_high_risk_warnings {
+            if ui.button("Re-enable High-Risk Warnings").clicked() {
+                self.dialogs.suppress_high_risk_warnings = false;
+                ui.close_menu();
+            }
+        } else {
+            ui.add_enabled(false, egui::Button::new("High-Risk Warnings: Enabled"));
+        }
+        ui.separator();
+        if ui.button("Preferences...").clicked() {
+            self.settings_dialog_state.open(&self.settings);
+            ui.close_menu();
+        }
+    }
+
+    /// Render the Help menu contents
+    fn render_help_menu(&mut self, ui: &mut egui::Ui) {
+        if menu_item_with_shortcut(ui, "Keyboard Shortcuts", "F1", true) {
+            self.shortcuts_dialog_state.open_dialog();
+            ui.close_menu();
+        }
     }
 
     /// Render the toolbar and return undo/redo/refresh action flags
