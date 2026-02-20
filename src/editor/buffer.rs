@@ -107,6 +107,13 @@ impl EditorState {
         self.edit_generation
     }
 
+    /// Record an edit operation: push to history, mark modified, bump generation
+    fn record_operation(&mut self, op: EditOperation) {
+        self.history.push(op);
+        self.modified = true;
+        self.edit_generation += 1;
+    }
+
     /// Check and reset the length_changed flag (returns true if length changed since last call)
     pub fn take_length_changed(&mut self) -> bool {
         let changed = self.length_changed;
@@ -133,15 +140,12 @@ impl EditorState {
         let current = self.working[self.cursor];
 
         if current != new_value {
-            // Record the edit for undo
-            self.history.push(EditOperation::Single {
+            self.working[self.cursor] = new_value;
+            self.record_operation(EditOperation::Single {
                 offset: self.cursor,
                 old_value: current,
                 new_value,
             });
-            self.working[self.cursor] = new_value;
-            self.modified = true;
-            self.edit_generation += 1;
         }
 
         // Advance cursor to next byte
@@ -167,15 +171,12 @@ impl EditorState {
         };
 
         if current != new_value {
-            // Record the edit for undo
-            self.history.push(EditOperation::Single {
+            self.working[self.cursor] = new_value;
+            self.record_operation(EditOperation::Single {
                 offset: self.cursor,
                 old_value: current,
                 new_value,
             });
-            self.working[self.cursor] = new_value;
-            self.modified = true;
-            self.edit_generation += 1;
         }
 
         // Toggle nibble position
@@ -216,13 +217,11 @@ impl EditorState {
         }
 
         self.working[offset..end].copy_from_slice(&new_values);
-        self.history.push(EditOperation::Range {
+        self.record_operation(EditOperation::Range {
             offset,
             old_values,
             new_values,
         });
-        self.modified = true;
-        self.edit_generation += 1;
     }
 
     /// Replace bytes at multiple offsets as a single atomic undo/redo operation
@@ -249,9 +248,7 @@ impl EditorState {
         if sub_ops.is_empty() {
             return;
         }
-        self.history.push(EditOperation::Group(sub_ops));
-        self.modified = true;
-        self.edit_generation += 1;
+        self.record_operation(EditOperation::Group(sub_ops));
     }
 
     /// Edit a single byte at the given offset
@@ -265,17 +262,12 @@ impl EditorState {
             return;
         }
 
-        // Record the edit for undo
-        self.history.push(EditOperation::Single {
+        self.working[offset] = new_value;
+        self.record_operation(EditOperation::Single {
             offset,
             old_value,
             new_value,
         });
-
-        // Apply the edit
-        self.working[offset] = new_value;
-        self.modified = true;
-        self.edit_generation += 1;
     }
 
     // ========== Insert/Delete Operations ==========
@@ -298,12 +290,10 @@ impl EditorState {
     pub fn insert_byte(&mut self, offset: usize, value: u8) {
         let offset = offset.min(self.working.len());
         self.working.insert(offset, value);
-        self.history.push(EditOperation::InsertBytes {
+        self.record_operation(EditOperation::InsertBytes {
             offset,
             values: vec![value],
         });
-        self.modified = true;
-        self.edit_generation += 1;
         self.on_length_changed(offset, 1, true);
     }
 
@@ -314,12 +304,10 @@ impl EditorState {
         }
         let offset = offset.min(self.working.len());
         self.working.splice(offset..offset, values.iter().copied());
-        self.history.push(EditOperation::InsertBytes {
+        self.record_operation(EditOperation::InsertBytes {
             offset,
             values: values.to_vec(),
         });
-        self.modified = true;
-        self.edit_generation += 1;
         self.on_length_changed(offset, values.len(), true);
     }
 
@@ -329,12 +317,10 @@ impl EditorState {
             return None;
         }
         let value = self.working.remove(offset);
-        self.history.push(EditOperation::DeleteBytes {
+        self.record_operation(EditOperation::DeleteBytes {
             offset,
             values: vec![value],
         });
-        self.modified = true;
-        self.edit_generation += 1;
         // Clamp cursor if it now points past the end
         if !self.working.is_empty() {
             self.cursor = self.cursor.min(self.working.len() - 1);
