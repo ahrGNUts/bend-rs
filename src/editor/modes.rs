@@ -108,14 +108,13 @@ impl EditorState {
     /// In Insert mode, inserts a new byte and advances cursor.
     #[must_use = "returns whether the character was accepted"]
     pub fn edit_ascii_with_mode(&mut self, ch: char) -> bool {
-        let byte_value = ch as u32;
-        if !(0x20..=0x7E).contains(&byte_value) {
+        if !super::is_printable_ascii_char(ch) {
             return false;
         }
         match self.write_mode {
             WriteMode::Overwrite => self.edit_ascii(ch),
             WriteMode::Insert => {
-                let value = byte_value as u8;
+                let value = ch as u8;
                 self.insert_byte(self.cursor, value);
                 if self.cursor + 1 < self.working.len() {
                     self.cursor += 1;

@@ -2,6 +2,7 @@
 
 use crate::app::{BendApp, PendingEditType};
 use crate::editor::buffer::{EditMode, NibblePosition, WriteMode};
+use crate::editor::{is_printable_ascii, is_printable_ascii_char};
 use crate::formats::RiskLevel;
 use eframe::egui::{self, RichText, TextStyle};
 use std::sync::OnceLock;
@@ -160,7 +161,7 @@ fn render_ascii_char(
     edit_mode: EditMode,
     write_mode: WriteMode,
 ) -> egui::Response {
-    let display_char = if byte.is_ascii_graphic() || byte == b' ' {
+    let display_char = if is_printable_ascii(byte) {
         byte as char
     } else {
         '.'
@@ -186,58 +187,32 @@ fn render_ascii_char(
     ui.label(rich_text)
 }
 
+/// Navigation keys that follow the move-by-delta pattern: (key, cursor delta).
+const NAV_KEYS: &[(egui::Key, isize)] = &[
+    (egui::Key::ArrowLeft, -1),
+    (egui::Key::ArrowRight, 1),
+    (egui::Key::ArrowUp, -(BYTES_PER_ROW as isize)),
+    (egui::Key::ArrowDown, BYTES_PER_ROW as isize),
+    (egui::Key::PageUp, -(BYTES_PER_ROW as isize * 16)),
+    (egui::Key::PageDown, BYTES_PER_ROW as isize * 16),
+];
+
 /// Handle navigation keys (arrows, page up/down, home/end) with optional selection extension.
 fn handle_navigation_keys(editor: &mut crate::editor::EditorState, i: &egui::InputState) {
     let shift = i.modifiers.shift;
 
-    if i.key_pressed(egui::Key::ArrowLeft) {
-        if shift {
-            editor.move_cursor_with_selection(-1);
-        } else {
-            editor.clear_selection();
-            editor.move_cursor(-1);
+    for &(key, delta) in NAV_KEYS {
+        if i.key_pressed(key) {
+            if shift {
+                editor.move_cursor_with_selection(delta);
+            } else {
+                editor.clear_selection();
+                editor.move_cursor(delta);
+            }
         }
     }
-    if i.key_pressed(egui::Key::ArrowRight) {
-        if shift {
-            editor.move_cursor_with_selection(1);
-        } else {
-            editor.clear_selection();
-            editor.move_cursor(1);
-        }
-    }
-    if i.key_pressed(egui::Key::ArrowUp) {
-        if shift {
-            editor.move_cursor_with_selection(-(BYTES_PER_ROW as isize));
-        } else {
-            editor.clear_selection();
-            editor.move_cursor(-(BYTES_PER_ROW as isize));
-        }
-    }
-    if i.key_pressed(egui::Key::ArrowDown) {
-        if shift {
-            editor.move_cursor_with_selection(BYTES_PER_ROW as isize);
-        } else {
-            editor.clear_selection();
-            editor.move_cursor(BYTES_PER_ROW as isize);
-        }
-    }
-    if i.key_pressed(egui::Key::PageUp) {
-        if shift {
-            editor.move_cursor_with_selection(-(BYTES_PER_ROW as isize * 16));
-        } else {
-            editor.clear_selection();
-            editor.move_cursor(-(BYTES_PER_ROW as isize * 16));
-        }
-    }
-    if i.key_pressed(egui::Key::PageDown) {
-        if shift {
-            editor.move_cursor_with_selection(BYTES_PER_ROW as isize * 16);
-        } else {
-            editor.clear_selection();
-            editor.move_cursor(BYTES_PER_ROW as isize * 16);
-        }
-    }
+
+    // Home/End use set_cursor/extend_selection_to instead of move_cursor
     if i.key_pressed(egui::Key::Home) {
         if shift {
             editor.extend_selection_to(0);
@@ -318,8 +293,7 @@ fn handle_edit_input(
                             }
                         }
                         EditMode::Ascii => {
-                            let code = c as u32;
-                            if (0x20..=0x7E).contains(&code) {
+                            if is_printable_ascii_char(c) {
                                 if should_warn_for_cursor {
                                     if let Some(risk) = cursor_risk_level {
                                         pending_high_risk_edit =
@@ -824,7 +798,7 @@ fn copy_as_ascii(ui: &mut egui::Ui, app: &BendApp, target_offset: usize) {
     let ascii_string: String = bytes
         .iter()
         .map(|&b| {
-            if b.is_ascii_graphic() || b == b' ' {
+            if is_printable_ascii(b) {
                 b as char
             } else {
                 '.'
@@ -858,10 +832,7 @@ fn parse_paste_input(text: &str, mode: EditMode) -> Option<Vec<u8>> {
     match mode {
         EditMode::Hex => parse_hex_input(text),
         EditMode::Ascii => {
-            let bytes: Vec<u8> = text
-                .bytes()
-                .filter(|&b| (0x20..=0x7E).contains(&b))
-                .collect();
+            let bytes: Vec<u8> = text.bytes().filter(|&b| is_printable_ascii(b)).collect();
             if bytes.is_empty() {
                 None
             } else {

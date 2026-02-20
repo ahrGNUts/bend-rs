@@ -138,39 +138,13 @@ fn show_single_preview(ui: &mut egui::Ui, app: &BendApp) {
             });
         }
 
-        // Get available size for the preview
         let available_size = ui.available_size();
-
-        // Calculate scaled size maintaining aspect ratio
         let texture_size = texture.size_vec2();
         let scale = (available_size.x / texture_size.x)
             .min(available_size.y / texture_size.y)
-            .min(1.0); // Don't upscale
-        let scaled_size = texture_size * scale;
+            .min(1.0);
 
-        // Clamp to available size
-        let clamped_size = egui::vec2(
-            scaled_size.x.min(available_size.x),
-            scaled_size.y.min(available_size.y),
-        );
-
-        // Allocate exact space
-        let (rect, _response) = ui.allocate_exact_size(available_size, egui::Sense::hover());
-
-        // Center the image within allocated space
-        let image_pos = egui::pos2(
-            rect.center().x - clamped_size.x / 2.0,
-            rect.center().y - clamped_size.y / 2.0,
-        );
-        let image_rect = egui::Rect::from_min_size(image_pos, clamped_size);
-
-        // Use a painter clipped to the allocated rect to prevent overflow
-        ui.painter().with_clip_rect(rect).image(
-            texture.id(),
-            image_rect,
-            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-            egui::Color32::WHITE,
-        );
+        show_texture_scaled(ui, Some(texture), scale, available_size);
     } else {
         // No preview available
         ui.centered_and_justified(|ui| {

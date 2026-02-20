@@ -225,14 +225,6 @@ struct InputActions {
     refresh_preview: bool,
 }
 
-/// Actions triggered by toolbar buttons
-#[derive(Default)]
-struct ToolbarActions {
-    undo: bool,
-    redo: bool,
-    refresh_preview: bool,
-}
-
 impl BendApp {
     pub fn new(_cc: &eframe::CreationContext<'_>, settings: AppSettings) -> Self {
         // Apply settings to initial state
@@ -793,8 +785,8 @@ impl BendApp {
     }
 
     /// Render the toolbar and return deferred action flags
-    fn render_toolbar(&mut self, ctx: &egui::Context) -> ToolbarActions {
-        let mut actions = ToolbarActions::default();
+    fn render_toolbar(&mut self, ctx: &egui::Context) -> InputActions {
+        let mut actions = InputActions::default();
 
         egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
             ui.horizontal(|ui| {
@@ -882,19 +874,6 @@ impl BendApp {
         });
 
         actions
-    }
-
-    /// Process toolbar undo/redo/refresh actions
-    fn process_toolbar_actions(&mut self, actions: ToolbarActions) {
-        if actions.undo {
-            self.do_undo();
-        }
-        if actions.redo {
-            self.do_redo();
-        }
-        if actions.refresh_preview {
-            self.mark_preview_dirty();
-        }
     }
 
     /// Show all modal dialogs
@@ -1030,6 +1009,20 @@ impl BendApp {
         });
     }
 
+    /// Decode image data into an egui texture handle.
+    fn decode_to_texture(
+        ctx: &egui::Context,
+        data: &[u8],
+        name: &str,
+    ) -> Result<egui::TextureHandle, image::ImageError> {
+        let img = image::load_from_memory(data)?;
+        let rgba = img.to_rgba8();
+        let size = [rgba.width() as usize, rgba.height() as usize];
+        let pixels = rgba.into_raw();
+        let color_image = egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
+        Ok(ctx.load_texture(name, color_image, egui::TextureOptions::LINEAR))
+    }
+
     /// Update the image preview texture from the working buffer
     /// Uses debouncing to prevent excessive re-renders during rapid editing
     pub fn update_preview(&mut self, ctx: &egui::Context) {
@@ -1054,16 +1047,9 @@ impl BendApp {
         };
 
         // Try to decode the working buffer as an image
-        match image::load_from_memory(editor.working()) {
-            Ok(img) => {
-                let rgba = img.to_rgba8();
-                let size = [rgba.width() as usize, rgba.height() as usize];
-                let pixels = rgba.into_raw();
-
-                let color_image = egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
-
-                self.preview.texture =
-                    Some(ctx.load_texture("preview", color_image, egui::TextureOptions::LINEAR));
+        match Self::decode_to_texture(ctx, editor.working(), "preview") {
+            Ok(texture) => {
+                self.preview.texture = Some(texture);
                 self.preview.decode_error = None;
             }
             Err(e) => {
@@ -1075,15 +1061,8 @@ impl BendApp {
 
         // Also update original texture if not yet loaded
         if self.preview.original_texture.is_none() {
-            if let Ok(img) = image::load_from_memory(editor.original()) {
-                let rgba = img.to_rgba8();
-                let size = [rgba.width() as usize, rgba.height() as usize];
-                let pixels = rgba.into_raw();
-
-                let color_image = egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
-
-                self.preview.original_texture =
-                    Some(ctx.load_texture("original", color_image, egui::TextureOptions::LINEAR));
+            if let Ok(texture) = Self::decode_to_texture(ctx, editor.original(), "original") {
+                self.preview.original_texture = Some(texture);
             }
         }
 
@@ -1139,7 +1118,7 @@ impl eframe::App for BendApp {
         self.show_close_dialog(ctx);
         self.render_menu_bar(ctx);
         let toolbar_actions = self.render_toolbar(ctx);
-        self.process_toolbar_actions(toolbar_actions);
+        self.process_input_actions(toolbar_actions);
         self.show_dialogs(ctx);
         self.render_status_bar(ctx);
         self.render_sidebar(ctx);

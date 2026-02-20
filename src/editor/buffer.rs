@@ -127,8 +127,7 @@ impl EditorState {
     #[must_use = "returns whether the character was accepted"]
     pub fn edit_ascii(&mut self, ch: char) -> bool {
         // Only accept printable ASCII characters (space through tilde)
-        let byte_value = ch as u32;
-        if !(0x20..=0x7E).contains(&byte_value) {
+        if !super::is_printable_ascii_char(ch) {
             return false;
         }
 
@@ -136,7 +135,7 @@ impl EditorState {
             return false;
         }
 
-        let new_value = byte_value as u8;
+        let new_value = ch as u8;
         let current = self.working[self.cursor];
 
         if current != new_value {
