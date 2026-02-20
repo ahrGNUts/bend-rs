@@ -329,66 +329,87 @@ impl EditorState {
         Some(value)
     }
 
+    // ========== Undo/Redo Shared Helpers ==========
+
+    /// Splice bytes into the working buffer and adjust bookmarks/save points
+    fn apply_insert(&mut self, offset: usize, values: &[u8]) {
+        let count = values.len();
+        self.working.splice(offset..offset, values.iter().copied());
+        self.bookmarks.adjust_offsets_after_insert(offset, count);
+        self.save_points.clear_all(&self.original);
+        self.length_changed = true;
+    }
+
+    /// Drain bytes from the working buffer and adjust bookmarks/save points/cursor
+    fn apply_delete(&mut self, offset: usize, count: usize) {
+        self.working.drain(offset..offset + count);
+        self.bookmarks.adjust_offsets_after_delete(offset, count);
+        self.save_points.clear_all(&self.original);
+        self.length_changed = true;
+        if !self.working.is_empty() {
+            self.cursor = self.cursor.min(self.working.len() - 1);
+        }
+    }
+
+    /// Apply an operation in the "undo" direction (restores old values)
+    fn apply_undo_op(&mut self, op: &EditOperation) {
+        match op {
+            EditOperation::Single {
+                offset, old_value, ..
+            } => {
+                self.working[*offset] = *old_value;
+            }
+            EditOperation::Range {
+                offset, old_values, ..
+            } => {
+                self.working[*offset..*offset + old_values.len()].copy_from_slice(old_values);
+            }
+            EditOperation::InsertBytes { offset, values } => {
+                self.apply_delete(*offset, values.len());
+            }
+            EditOperation::DeleteBytes { offset, values } => {
+                self.apply_insert(*offset, values);
+            }
+            EditOperation::Group(ops) => {
+                for sub_op in ops.iter().rev() {
+                    self.apply_undo_op(sub_op);
+                }
+            }
+        }
+    }
+
+    /// Apply an operation in the "redo" direction (applies new values)
+    fn apply_redo_op(&mut self, op: &EditOperation) {
+        match op {
+            EditOperation::Single {
+                offset, new_value, ..
+            } => {
+                self.working[*offset] = *new_value;
+            }
+            EditOperation::Range {
+                offset, new_values, ..
+            } => {
+                self.working[*offset..*offset + new_values.len()].copy_from_slice(new_values);
+            }
+            EditOperation::InsertBytes { offset, values } => {
+                self.apply_insert(*offset, values);
+            }
+            EditOperation::DeleteBytes { offset, values } => {
+                self.apply_delete(*offset, values.len());
+            }
+            EditOperation::Group(ops) => {
+                for sub_op in ops {
+                    self.apply_redo_op(sub_op);
+                }
+            }
+        }
+    }
+
     /// Undo the last edit operation
     #[must_use = "returns whether an operation was undone"]
     pub fn undo(&mut self) -> bool {
         if let Some(op) = self.history.undo() {
-            match op {
-                EditOperation::Single {
-                    offset, old_value, ..
-                } => {
-                    self.working[offset] = old_value;
-                }
-                EditOperation::Range {
-                    offset, old_values, ..
-                } => {
-                    let end = offset + old_values.len();
-                    self.working[offset..end].copy_from_slice(&old_values);
-                }
-                EditOperation::InsertBytes { offset, ref values } => {
-                    // Undo insert: remove the inserted bytes
-                    let count = values.len();
-                    self.working.drain(offset..offset + count);
-                    self.bookmarks.adjust_offsets_after_delete(offset, count);
-                    self.save_points.clear_all(&self.original);
-                    self.length_changed = true;
-                    if !self.working.is_empty() {
-                        self.cursor = self.cursor.min(self.working.len() - 1);
-                    }
-                }
-                EditOperation::DeleteBytes { offset, ref values } => {
-                    // Undo delete: re-insert the deleted bytes
-                    let count = values.len();
-                    self.working.splice(offset..offset, values.iter().copied());
-                    self.bookmarks.adjust_offsets_after_insert(offset, count);
-                    self.save_points.clear_all(&self.original);
-                    self.length_changed = true;
-                }
-                EditOperation::Group(ref ops) => {
-                    // Undo all sub-operations in reverse order
-                    for sub_op in ops.iter().rev() {
-                        match sub_op {
-                            EditOperation::Single {
-                                offset, old_value, ..
-                            } => {
-                                self.working[*offset] = *old_value;
-                            }
-                            EditOperation::Range {
-                                offset, old_values, ..
-                            } => {
-                                let end = offset + old_values.len();
-                                self.working[*offset..end].copy_from_slice(old_values);
-                            }
-                            EditOperation::InsertBytes { .. }
-                            | EditOperation::DeleteBytes { .. }
-                            | EditOperation::Group(_) => {
-                                debug_assert!(false, "Unexpected sub-operation type in Group undo");
-                            }
-                        }
-                    }
-                }
-            }
-            // Check if we're back to original state
+            self.apply_undo_op(&op);
             self.modified = self.working != self.original;
             self.edit_generation += 1;
             true
@@ -401,61 +422,7 @@ impl EditorState {
     #[must_use = "returns whether an operation was redone"]
     pub fn redo(&mut self) -> bool {
         if let Some(op) = self.history.redo() {
-            match op {
-                EditOperation::Single {
-                    offset, new_value, ..
-                } => {
-                    self.working[offset] = new_value;
-                }
-                EditOperation::Range {
-                    offset, new_values, ..
-                } => {
-                    let end = offset + new_values.len();
-                    self.working[offset..end].copy_from_slice(&new_values);
-                }
-                EditOperation::InsertBytes { offset, ref values } => {
-                    // Redo insert: splice bytes back in
-                    let count = values.len();
-                    self.working.splice(offset..offset, values.iter().copied());
-                    self.bookmarks.adjust_offsets_after_insert(offset, count);
-                    self.save_points.clear_all(&self.original);
-                    self.length_changed = true;
-                }
-                EditOperation::DeleteBytes { offset, ref values } => {
-                    // Redo delete: drain bytes again
-                    let count = values.len();
-                    self.working.drain(offset..offset + count);
-                    self.bookmarks.adjust_offsets_after_delete(offset, count);
-                    self.save_points.clear_all(&self.original);
-                    self.length_changed = true;
-                    if !self.working.is_empty() {
-                        self.cursor = self.cursor.min(self.working.len() - 1);
-                    }
-                }
-                EditOperation::Group(ref ops) => {
-                    // Redo all sub-operations in forward order
-                    for sub_op in ops {
-                        match sub_op {
-                            EditOperation::Single {
-                                offset, new_value, ..
-                            } => {
-                                self.working[*offset] = *new_value;
-                            }
-                            EditOperation::Range {
-                                offset, new_values, ..
-                            } => {
-                                let end = offset + new_values.len();
-                                self.working[*offset..end].copy_from_slice(new_values);
-                            }
-                            EditOperation::InsertBytes { .. }
-                            | EditOperation::DeleteBytes { .. }
-                            | EditOperation::Group(_) => {
-                                debug_assert!(false, "Unexpected sub-operation type in Group redo");
-                            }
-                        }
-                    }
-                }
-            }
+            self.apply_redo_op(&op);
             self.modified = self.working != self.original;
             self.edit_generation += 1;
             true
