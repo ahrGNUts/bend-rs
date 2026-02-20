@@ -63,10 +63,6 @@ impl JpegParser {
 }
 
 impl ImageFormat for JpegParser {
-    fn name(&self) -> &'static str {
-        "JPEG"
-    }
-
     fn can_parse(&self, data: &[u8]) -> bool {
         // JPEG files start with FF D8 FF
         data.len() >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF

@@ -91,11 +91,7 @@ impl FileSection {
 }
 
 /// Trait for image format parsers
-#[allow(dead_code)]
 pub trait ImageFormat {
-    /// Get the format name (e.g., "BMP", "JPEG")
-    fn name(&self) -> &'static str;
-
     /// Parse the file structure and return sections
     fn parse(&self, data: &[u8]) -> Result<Vec<FileSection>, String>;
 

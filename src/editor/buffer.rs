@@ -616,17 +616,17 @@ mod tests {
         let mut editor = EditorState::new(data.clone());
 
         // Edit high nibble
-        editor.edit_nibble(0xF);
+        let _ = editor.edit_nibble(0xF);
         assert_eq!(editor.working()[0], 0xF0);
 
         // Edit low nibble (same byte - will be coalesced with high nibble edit)
-        editor.edit_nibble(0xE);
+        let _ = editor.edit_nibble(0xE);
         assert_eq!(editor.working()[0], 0xFE);
 
         // Undo should restore to original state (edits are coalesced)
         // Since both nibble edits are to the same byte and within 500ms,
         // they are coalesced into a single operation
-        editor.undo();
+        let _ = editor.undo();
         assert_eq!(editor.working()[0], 0x00);
 
         // No more undo available since both edits were coalesced
@@ -639,8 +639,8 @@ mod tests {
         let mut editor = EditorState::new(data.clone());
 
         // Make some edits
-        editor.edit_nibble(0xA);
-        editor.edit_nibble(0xB);
+        let _ = editor.edit_nibble(0xA);
+        let _ = editor.edit_nibble(0xB);
         assert_eq!(editor.working()[0], 0xAB);
 
         // Create a save point
@@ -648,8 +648,8 @@ mod tests {
         assert_eq!(editor.save_point_count(), 1);
 
         // Make more edits
-        editor.edit_nibble(0xC);
-        editor.edit_nibble(0xD);
+        let _ = editor.edit_nibble(0xC);
+        let _ = editor.edit_nibble(0xD);
         assert_eq!(editor.working()[1], 0xCD);
 
         // Restore to save point
@@ -739,10 +739,10 @@ mod tests {
         let data = vec![0x00, 0x01, 0x02, 0x03];
         let mut editor = EditorState::new(data.clone());
 
-        editor.edit_ascii('A');
+        let _ = editor.edit_ascii('A');
         assert_eq!(editor.working()[0], 0x41);
 
-        editor.undo();
+        let _ = editor.undo();
         assert_eq!(editor.working()[0], 0x00);
         assert!(!editor.is_modified());
     }

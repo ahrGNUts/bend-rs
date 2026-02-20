@@ -185,7 +185,7 @@ mod tests {
         let data = vec![0x00, 0x01, 0x02, 0x03];
         let mut editor = EditorState::new(data);
 
-        editor.edit_nibble(0xA);
+        let _ = editor.edit_nibble(0xA);
         assert_eq!(editor.nibble(), NibblePosition::Low);
 
         editor.toggle_edit_mode();
@@ -197,7 +197,7 @@ mod tests {
         let data = vec![0x00, 0x01, 0x02, 0x03];
         let mut editor = EditorState::new(data);
 
-        editor.edit_nibble(0xA);
+        let _ = editor.edit_nibble(0xA);
         assert_eq!(editor.nibble(), NibblePosition::Low);
 
         editor.set_edit_mode(EditMode::Ascii);
@@ -271,14 +271,14 @@ mod tests {
         let mut editor = EditorState::new(data.clone());
         editor.toggle_write_mode();
 
-        editor.edit_nibble_with_mode(0xA);
-        editor.edit_nibble_with_mode(0xB);
+        let _ = editor.edit_nibble_with_mode(0xA);
+        let _ = editor.edit_nibble_with_mode(0xB);
         assert_eq!(editor.working(), &[0xAB, 0x00, 0x01, 0x02, 0x03]);
 
-        editor.undo();
+        let _ = editor.undo();
         assert_eq!(editor.working()[0], 0xA0);
 
-        editor.undo();
+        let _ = editor.undo();
         assert_eq!(editor.working(), &data);
     }
 

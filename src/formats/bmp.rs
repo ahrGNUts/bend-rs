@@ -27,10 +27,6 @@ impl BmpParser {
 }
 
 impl ImageFormat for BmpParser {
-    fn name(&self) -> &'static str {
-        "BMP"
-    }
-
     fn can_parse(&self, data: &[u8]) -> bool {
         // BMP files start with "BM"
         data.len() >= 2 && data[0] == b'B' && data[1] == b'M'
