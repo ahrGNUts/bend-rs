@@ -343,91 +343,131 @@ fn handle_edit_input(
     (pending_high_risk_edit, paste_text)
 }
 
+/// Cached display state for the hex editor, read from BendApp once per frame
+struct HexDisplayState {
+    total_bytes: usize,
+    total_rows: usize,
+    cursor_pos: usize,
+    cursor_nibble: NibblePosition,
+    selection: Option<(usize, usize)>,
+    edit_mode: EditMode,
+    write_mode: WriteMode,
+    cursor_protected: bool,
+}
+
+/// Pre-computed highlight lookup data for search matches and bookmarks
+struct HighlightLookup<'a> {
+    app: &'a BendApp,
+    current_match_offset: Option<usize>,
+    pattern_len: usize,
+}
+
+impl<'a> HighlightLookup<'a> {
+    fn new(app: &'a BendApp) -> Self {
+        Self {
+            current_match_offset: app.search_state.current_match_offset(),
+            pattern_len: app.search_state.pattern_length(),
+            app,
+        }
+    }
+
+    fn byte_highlight(&self, byte_offset: usize, state: &HexDisplayState) -> ByteHighlight {
+        ByteHighlight {
+            is_cursor: byte_offset == state.cursor_pos,
+            is_selected: state
+                .selection
+                .map(|(start, end)| byte_offset >= start && byte_offset < end)
+                .unwrap_or(false),
+            is_search_match: self.app.search_state.is_within_match(byte_offset),
+            is_current_match: self
+                .current_match_offset
+                .is_some_and(|m| byte_offset >= m && byte_offset < m + self.pattern_len),
+            has_bookmark: self
+                .app
+                .editor
+                .as_ref()
+                .is_some_and(|e| e.has_bookmark_at(byte_offset)),
+            is_protected: self.app.is_offset_protected(byte_offset),
+            section_bg: self.app.section_color_for_offset(byte_offset),
+        }
+    }
+}
+
+/// Prepare display state from the current editor state.
+/// Returns None if no editor is loaded.
+fn prepare_display_state(app: &BendApp) -> Option<HexDisplayState> {
+    let editor = app.editor.as_ref()?;
+    let total_bytes = editor.len();
+    Some(HexDisplayState {
+        total_bytes,
+        total_rows: total_bytes.div_ceil(BYTES_PER_ROW),
+        cursor_pos: editor.cursor(),
+        cursor_nibble: editor.nibble(),
+        selection: editor.selection(),
+        edit_mode: editor.edit_mode(),
+        write_mode: editor.write_mode(),
+        cursor_protected: app.is_offset_protected(editor.cursor()),
+    })
+}
+
+/// Handle deferred click events from hex/ASCII columns
+fn handle_click_events(
+    app: &mut BendApp,
+    hex_click: Option<usize>,
+    ascii_click: Option<usize>,
+    shift_held: bool,
+) {
+    if let Some(offset) = hex_click {
+        if let Some(editor) = &mut app.editor {
+            editor.set_edit_mode(EditMode::Hex);
+            editor.set_cursor_with_selection(offset, shift_held);
+        }
+    }
+    if let Some(offset) = ascii_click {
+        if let Some(editor) = &mut app.editor {
+            editor.set_edit_mode(EditMode::Ascii);
+            editor.set_cursor_with_selection(offset, shift_held);
+        }
+    }
+}
+
 /// Show the hex editor panel
 pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
-    let Some(editor) = &app.editor else {
+    let Some(state) = prepare_display_state(app) else {
         return;
     };
 
-    let total_bytes = editor.len();
-    let total_rows = total_bytes.div_ceil(BYTES_PER_ROW);
-
-    // Cache cursor and selection state for rendering
-    let cursor_pos = editor.cursor();
-    let cursor_nibble = editor.nibble();
-    let selection = editor.selection();
-    let edit_mode = editor.edit_mode();
-    let write_mode = editor.write_mode();
-
-    // Get monospace font metrics
     let row_height = ui.text_style_height(&TextStyle::Monospace);
 
-    // Track clicked byte offset for deferred cursor update (from hex column)
     let mut clicked_offset: Option<usize> = None;
-    // Track clicked byte offset from ASCII column (switches to ASCII mode)
     let mut clicked_ascii_offset: Option<usize> = None;
-    // Track whether shift was held during click
     let shift_held = ui.input(|i| i.modifiers.shift);
-    // Track right-clicked byte for context menu
     let mut context_menu_offset: Option<usize> = None;
 
-    // Check if navigation was requested (must be done before closures capture app)
-    // We use vertical_scroll_offset to jump to the approximate area, then scroll_to_me() to fine-tune
     let scroll_to_row: Option<usize> = app
         .pending_hex_scroll
         .take()
         .map(|byte_offset| byte_offset / BYTES_PER_ROW);
 
-    // Calculate approximate scroll offset to ensure target row is rendered
     let initial_scroll_offset: Option<f32> = scroll_to_row.map(|target_row| {
-        // Jump to a position where the target row will be rendered
-        // We aim for slightly before the target so it's in the rendered range
         (target_row.saturating_sub(SCROLL_BUFFER_ROWS) as f32 * row_height).max(0.0)
     });
 
-    // Pre-compute section colors for the entire file
-    // This is cached in app.cached_sections so the lookup is fast
-    let get_section_color =
-        |offset: usize| -> Option<egui::Color32> { app.section_color_for_offset(offset) };
-
-    // Check if an offset is within a search match
-    let current_match_offset = app.search_state.current_match_offset();
-    let pattern_len = app.search_state.pattern_length();
-    let is_search_match = |offset: usize| -> bool { app.search_state.is_within_match(offset) };
-    let is_current_match = |offset: usize| -> bool {
-        current_match_offset.is_some_and(|m| offset >= m && offset < m + pattern_len)
-    };
-
-    // Check if an offset has a bookmark
-    let has_bookmark = |offset: usize| -> bool {
-        app.editor
-            .as_ref()
-            .is_some_and(|e| e.has_bookmark_at(offset))
-    };
-
-    // Check if an offset is protected (header protection enabled)
-    let is_protected = |offset: usize| -> bool { app.is_offset_protected(offset) };
-
-    // Check if cursor is at a protected position
-    let cursor_protected = app.is_offset_protected(cursor_pos);
+    let highlights = HighlightLookup::new(app);
 
     let mut scroll_area = egui::ScrollArea::both().auto_shrink([false; 2]);
-
-    // Set initial scroll offset to ensure target row is in the rendered range
     if let Some(offset_y) = initial_scroll_offset {
         scroll_area = scroll_area.vertical_scroll_offset(offset_y);
     }
 
     scroll_area.show_viewport(ui, |ui, viewport| {
-        // Calculate which rows are visible
         let first_visible_row = (viewport.min.y / row_height).floor() as usize;
-        let last_visible_row = ((viewport.max.y / row_height).ceil() as usize).min(total_rows);
+        let last_visible_row =
+            ((viewport.max.y / row_height).ceil() as usize).min(state.total_rows);
 
-        // Add buffer rows
         let render_start = first_visible_row.saturating_sub(BUFFER_ROWS);
-        let render_end = (last_visible_row + BUFFER_ROWS).min(total_rows);
+        let render_end = (last_visible_row + BUFFER_ROWS).min(state.total_rows);
 
-        // Reserve space for rows before visible area
         if render_start > 0 {
             ui.allocate_space(egui::vec2(
                 ui.available_width(),
@@ -435,26 +475,21 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
             ));
         }
 
-        // Get the editor reference again (immutable borrow for reading bytes)
         let editor = app.editor.as_ref().unwrap();
 
-        // Render visible rows
         for row_idx in render_start..render_end {
             let offset = row_idx * BYTES_PER_ROW;
-            let row_end = (offset + BYTES_PER_ROW).min(total_bytes);
+            let row_end = (offset + BYTES_PER_ROW).min(state.total_bytes);
             let row_bytes = editor.bytes_in_range(offset, row_end);
-
-            // Check if this is the row we need to scroll to
             let should_scroll_to_this_row = scroll_to_row == Some(row_idx);
 
             let row_response = ui.horizontal(|ui| {
-                // Offset column (8 hex digits)
+                // Offset column
                 ui.label(
                     RichText::new(format!("{:08X}", offset))
                         .monospace()
                         .color(egui::Color32::GRAY),
                 );
-
                 ui.add_space(OFFSET_HEX_SPACING);
 
                 // Hex bytes
@@ -462,27 +497,15 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                     if i == 8 {
                         ui.add_space(HEX_GROUP_SPACING);
                     }
-
                     let byte_offset = offset + i;
-                    let highlight = ByteHighlight {
-                        is_cursor: byte_offset == cursor_pos,
-                        is_selected: selection
-                            .map(|(start, end)| byte_offset >= start && byte_offset < end)
-                            .unwrap_or(false),
-                        is_search_match: is_search_match(byte_offset),
-                        is_current_match: is_current_match(byte_offset),
-                        has_bookmark: has_bookmark(byte_offset),
-                        is_protected: is_protected(byte_offset),
-                        section_bg: get_section_color(byte_offset),
-                    };
-
+                    let highlight = highlights.byte_highlight(byte_offset, &state);
                     let response = render_hex_byte(
                         ui,
                         *byte,
                         &highlight,
-                        cursor_nibble,
-                        edit_mode,
-                        write_mode,
+                        state.cursor_nibble,
+                        state.edit_mode,
+                        state.write_mode,
                     );
                     if response.clicked() {
                         clicked_offset = Some(byte_offset);
@@ -497,28 +520,30 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                 if missing > 0 {
                     ui.add_space(missing as f32 * HEX_BYTE_WIDTH);
                 }
-
                 ui.add_space(HEX_ASCII_SPACING);
 
-                // ASCII column - per-character rendering for click handling
-                // Set zero spacing between characters so they render tightly together
+                // ASCII column
                 ui.spacing_mut().item_spacing.x = 0.0;
-
                 ui.label(
                     RichText::new("|")
                         .monospace()
                         .color(egui::Color32::DARK_GRAY),
                 );
-
                 for (i, byte) in row_bytes.iter().enumerate() {
                     let byte_offset = offset + i;
-                    let is_cursor = byte_offset == cursor_pos;
-                    let is_selected = selection
+                    let is_cursor = byte_offset == state.cursor_pos;
+                    let is_selected = state
+                        .selection
                         .map(|(start, end)| byte_offset >= start && byte_offset < end)
                         .unwrap_or(false);
-
-                    let response =
-                        render_ascii_char(ui, *byte, is_cursor, is_selected, edit_mode, write_mode);
+                    let response = render_ascii_char(
+                        ui,
+                        *byte,
+                        is_cursor,
+                        is_selected,
+                        state.edit_mode,
+                        state.write_mode,
+                    );
                     if response.clicked() {
                         clicked_ascii_offset = Some(byte_offset);
                     }
@@ -526,7 +551,6 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                         context_menu_offset = Some(byte_offset);
                     }
                 }
-
                 ui.label(
                     RichText::new("|")
                         .monospace()
@@ -534,7 +558,6 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                 );
             });
 
-            // Scroll to this row if it was the navigation target
             if should_scroll_to_this_row {
                 row_response
                     .response
@@ -543,7 +566,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
         }
 
         // Reserve space for rows after visible area
-        let rows_after = total_rows.saturating_sub(render_end);
+        let rows_after = state.total_rows.saturating_sub(render_end);
         if rows_after > 0 {
             ui.allocate_space(egui::vec2(
                 ui.available_width(),
@@ -552,26 +575,11 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
         }
     });
 
-    // Handle deferred click from hex column (stays in hex mode)
-    if let Some(offset) = clicked_offset {
-        if let Some(editor) = &mut app.editor {
-            editor.set_edit_mode(EditMode::Hex);
-            editor.set_cursor_with_selection(offset, shift_held);
-        }
-    }
-
-    // Handle deferred click from ASCII column (switches to ASCII mode)
-    if let Some(offset) = clicked_ascii_offset {
-        if let Some(editor) = &mut app.editor {
-            editor.set_edit_mode(EditMode::Ascii);
-            editor.set_cursor_with_selection(offset, shift_held);
-        }
-    }
+    // Handle deferred click events
+    handle_click_events(app, clicked_offset, clicked_ascii_offset, shift_held);
 
     // Handle keyboard input
-    let keyboard_result = handle_keyboard_input(ui, app, cursor_pos, cursor_protected);
-
-    // Handle pending high-risk edit (after input borrow ends)
+    let keyboard_result = handle_keyboard_input(ui, app, state.cursor_pos, state.cursor_protected);
     if let Some((edit_type, offset, risk_level)) = keyboard_result.pending_high_risk_edit {
         app.dialogs.pending_high_risk_edit = Some(crate::app::PendingEdit {
             edit_type,
@@ -580,12 +588,10 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
         });
     }
 
-    // Handle context menu right-click
+    // Handle context menu
     if let Some(offset) = context_menu_offset {
         app.context_menu_state.target_offset = Some(offset);
     }
-
-    // Show context menu if active
     show_context_menu(ui, app);
 }
 
