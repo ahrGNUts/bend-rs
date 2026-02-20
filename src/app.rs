@@ -248,6 +248,20 @@ impl BendApp {
         self.preview.last_edit_time = Some(Instant::now());
     }
 
+    /// Perform undo on the active editor (if any)
+    fn do_undo(&mut self) {
+        if let Some(editor) = &mut self.editor {
+            let _ = editor.undo();
+        }
+    }
+
+    /// Perform redo on the active editor (if any)
+    fn do_redo(&mut self) {
+        if let Some(editor) = &mut self.editor {
+            let _ = editor.redo();
+        }
+    }
+
     /// Request the hex editor to scroll to show the given byte offset
     pub fn scroll_hex_to_offset(&mut self, offset: usize) {
         self.pending_hex_scroll = Some(offset);
@@ -557,14 +571,10 @@ impl BendApp {
             self.go_to_offset_state.open_dialog();
         }
         if actions.undo {
-            if let Some(editor) = &mut self.editor {
-                let _ = editor.undo();
-            }
+            self.do_undo();
         }
         if actions.redo {
-            if let Some(editor) = &mut self.editor {
-                let _ = editor.redo();
-            }
+            self.do_redo();
         }
         if actions.create_save_point {
             if let Some(editor) = &mut self.editor {
@@ -687,15 +697,11 @@ impl BendApp {
                     let refresh_shortcut = format!("{}R", modifier_key());
 
                     if menu_item_with_shortcut(ui, "Undo", &undo_shortcut, can_undo) {
-                        if let Some(editor) = &mut self.editor {
-                            let _ = editor.undo();
-                        }
+                        self.do_undo();
                         ui.close_menu();
                     }
                     if menu_item_with_shortcut(ui, "Redo", &redo_shortcut, can_redo) {
-                        if let Some(editor) = &mut self.editor {
-                            let _ = editor.redo();
-                        }
+                        self.do_redo();
                         ui.close_menu();
                     }
                     ui.separator();
@@ -846,14 +852,10 @@ impl BendApp {
     /// Process toolbar undo/redo/refresh actions
     fn process_toolbar_actions(&mut self, wants_undo: bool, wants_redo: bool, wants_refresh: bool) {
         if wants_undo {
-            if let Some(editor) = &mut self.editor {
-                let _ = editor.undo();
-            }
+            self.do_undo();
         }
         if wants_redo {
-            if let Some(editor) = &mut self.editor {
-                let _ = editor.redo();
-            }
+            self.do_redo();
         }
         if wants_refresh {
             self.mark_preview_dirty();
