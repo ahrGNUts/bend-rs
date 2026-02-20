@@ -663,21 +663,7 @@ fn handle_keyboard_input(
 
     // Handle paste outside the input closure
     if let Some(text) = paste_text {
-        let bytes = match current_edit_mode {
-            EditMode::Hex => parse_hex_input(&text),
-            EditMode::Ascii => {
-                let b: Vec<u8> = text
-                    .bytes()
-                    .filter(|&b| (0x20..=0x7E).contains(&b))
-                    .collect();
-                if b.is_empty() {
-                    None
-                } else {
-                    Some(b)
-                }
-            }
-        };
-        if let Some(bytes) = bytes {
+        if let Some(bytes) = parse_paste_input(&text, current_edit_mode) {
             if let Some(editor) = &mut app.editor {
                 apply_paste_bytes(editor, cursor_pos, &bytes);
             }
@@ -857,15 +843,16 @@ fn paste_hex(_ui: &mut egui::Ui, app: &mut BendApp, target_offset: usize) {
         return;
     };
 
-    // Parse bytes based on current edit mode
-    let bytes: Option<Vec<u8>> = match editor.edit_mode() {
-        EditMode::Hex => {
-            // Hex mode: parse as hex bytes
-            parse_hex_input(&text)
-        }
+    if let Some(bytes) = parse_paste_input(&text, editor.edit_mode()) {
+        apply_paste_bytes(editor, target_offset, &bytes);
+    }
+}
+
+/// Parse paste/clipboard text into bytes based on the current edit mode
+fn parse_paste_input(text: &str, mode: EditMode) -> Option<Vec<u8>> {
+    match mode {
+        EditMode::Hex => parse_hex_input(text),
         EditMode::Ascii => {
-            // ASCII mode: interpret as raw text bytes
-            // Only include printable ASCII characters (0x20-0x7E)
             let bytes: Vec<u8> = text
                 .bytes()
                 .filter(|&b| (0x20..=0x7E).contains(&b))
@@ -876,10 +863,6 @@ fn paste_hex(_ui: &mut egui::Ui, app: &mut BendApp, target_offset: usize) {
                 Some(bytes)
             }
         }
-    };
-
-    if let Some(bytes) = bytes {
-        apply_paste_bytes(editor, target_offset, &bytes);
     }
 }
 
