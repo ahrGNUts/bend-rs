@@ -246,6 +246,39 @@ mod tests {
     }
 
     #[test]
+    fn test_unknown_risk_not_protected() {
+        let sections = vec![
+            FileSection::new("Unknown", 0, 50, RiskLevel::Unknown),
+            FileSection::new("Header", 50, 60, RiskLevel::Critical),
+        ];
+        let mut app = create_test_app_with_sections(sections);
+        app.header_protection = true;
+
+        // Unknown region should NOT be protected even with header protection on
+        assert!(!app.is_offset_protected(10));
+        assert!(!app.is_offset_protected(40));
+
+        // Critical region is still protected
+        assert!(app.is_offset_protected(55));
+    }
+
+    #[test]
+    fn test_unknown_risk_no_warnings() {
+        let sections = vec![
+            FileSection::new("Unknown", 0, 50, RiskLevel::Unknown),
+            FileSection::new("High", 50, 60, RiskLevel::High),
+        ];
+        let app = create_test_app_with_sections(sections);
+
+        // Unknown should NOT trigger a warning
+        assert!(!app.should_warn_for_edit(10));
+        assert!(app.get_high_risk_level(10).is_none());
+
+        // High still triggers a warning
+        assert!(app.should_warn_for_edit(55));
+    }
+
+    #[test]
     fn test_is_range_protected() {
         let sections = vec![
             FileSection::new("Safe", 0, 10, RiskLevel::Safe),

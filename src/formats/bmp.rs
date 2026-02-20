@@ -37,11 +37,12 @@ impl ImageFormat for BmpParser {
             return Err("Not a valid BMP file".to_string());
         }
 
-        if data.len() < 14 {
-            return Err("File too small for BMP header".to_string());
-        }
-
         let mut sections = Vec::new();
+
+        // Need at least 14 bytes for the file header
+        if data.len() < 14 {
+            return Ok(sections);
+        }
 
         // File Header (14 bytes)
         let file_header = FileSection::new("File Header", 0, 14, RiskLevel::Critical)
@@ -64,21 +65,24 @@ impl ImageFormat for BmpParser {
 
         sections.push(file_header);
 
-        // Read pixel data offset
-        let pixel_offset =
-            Self::read_u32(data, 10).ok_or("Failed to read pixel data offset")? as usize;
+        // Read pixel data offset — return partial on failure
+        let Some(pixel_offset) = Self::read_u32(data, 10).map(|v| v as usize) else {
+            return Ok(sections);
+        };
 
-        // DIB Header
+        // DIB Header — need at least 4 bytes for the size field
         if data.len() < 18 {
-            return Err("File too small for DIB header size".to_string());
+            return Ok(sections);
         }
 
-        let dib_header_size =
-            Self::read_u32(data, 14).ok_or("Failed to read DIB header size")? as usize;
+        let Some(dib_header_size) = Self::read_u32(data, 14).map(|v| v as usize) else {
+            return Ok(sections);
+        };
 
         let dib_header_end = 14 + dib_header_size;
         if dib_header_end > data.len() {
-            return Err("DIB header extends beyond file".to_string());
+            // DIB header extends beyond file — return partial results
+            return Ok(sections);
         }
 
         let dib_header_name = match dib_header_size {

@@ -203,8 +203,24 @@ impl BendApp {
         }
     }
 
+    /// Check if a file extension is a supported format
+    fn is_supported_extension(path: &std::path::Path) -> bool {
+        match path.extension().and_then(|e| e.to_str()) {
+            Some(ext) => matches!(ext.to_ascii_lowercase().as_str(), "bmp" | "jpg" | "jpeg"),
+            None => false,
+        }
+    }
+
     /// Open a file from a path
     pub fn open_file(&mut self, path: PathBuf) {
+        if !Self::is_supported_extension(&path) {
+            self.preview.decode_error = Some(
+                "Unsupported file format. Bend supports BMP (.bmp) and JPEG (.jpg, .jpeg) files."
+                    .to_string(),
+            );
+            return;
+        }
+
         match std::fs::read(&path) {
             Ok(bytes) => {
                 log::info!("Loaded file: {} ({} bytes)", path.display(), bytes.len());
@@ -244,8 +260,10 @@ impl BendApp {
         search_dialog::show(ctx, self);
         go_to_offset_dialog::show(ctx, self);
         shortcuts_dialog::show(ctx, &mut self.shortcuts_dialog_state);
-        // Settings dialog handles saving internally
-        let _ = settings_dialog::show(ctx, &mut self.settings_dialog_state, &mut self.settings);
+        // Settings dialog handles saving internally; sync runtime flag on change
+        if settings_dialog::show(ctx, &mut self.settings_dialog_state, &mut self.settings) {
+            self.dialogs.suppress_high_risk_warnings = !self.settings.show_high_risk_warnings;
+        }
         self.show_high_risk_warning_dialog(ctx);
     }
 
@@ -426,5 +444,81 @@ impl eframe::App for BendApp {
         self.render_status_bar(ctx);
         self.render_sidebar(ctx);
         self.render_main_content(ctx);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_supported_extension() {
+        assert!(BendApp::is_supported_extension(std::path::Path::new(
+            "photo.bmp"
+        )));
+        assert!(BendApp::is_supported_extension(std::path::Path::new(
+            "photo.jpg"
+        )));
+        assert!(BendApp::is_supported_extension(std::path::Path::new(
+            "photo.jpeg"
+        )));
+        assert!(BendApp::is_supported_extension(std::path::Path::new(
+            "photo.BMP"
+        )));
+        assert!(BendApp::is_supported_extension(std::path::Path::new(
+            "photo.JPG"
+        )));
+
+        assert!(!BendApp::is_supported_extension(std::path::Path::new(
+            "photo.png"
+        )));
+        assert!(!BendApp::is_supported_extension(std::path::Path::new(
+            "photo.gif"
+        )));
+        assert!(!BendApp::is_supported_extension(std::path::Path::new(
+            "document.txt"
+        )));
+        assert!(!BendApp::is_supported_extension(std::path::Path::new(
+            "noext"
+        )));
+    }
+
+    #[test]
+    fn test_open_file_unsupported_extension_sets_error() {
+        let mut app = BendApp::default();
+        app.open_file(PathBuf::from("/tmp/test.png"));
+
+        // Should set an error message
+        assert!(app.preview.decode_error.is_some());
+        assert!(app
+            .preview
+            .decode_error
+            .as_ref()
+            .unwrap()
+            .contains("Unsupported file format"));
+
+        // Should NOT load a file
+        assert!(app.editor.is_none());
+        assert!(app.current_file.is_none());
+    }
+
+    #[test]
+    fn test_settings_sync_suppress_warnings() {
+        let mut app = BendApp::default();
+
+        // Initially warnings are not suppressed
+        assert!(!app.dialogs.suppress_high_risk_warnings);
+        assert!(app.settings.show_high_risk_warnings);
+
+        // Simulate what show_dialogs does when settings change:
+        // Toggle the setting and sync
+        app.settings.show_high_risk_warnings = false;
+        app.dialogs.suppress_high_risk_warnings = !app.settings.show_high_risk_warnings;
+        assert!(app.dialogs.suppress_high_risk_warnings);
+
+        // Toggle back
+        app.settings.show_high_risk_warnings = true;
+        app.dialogs.suppress_high_risk_warnings = !app.settings.show_high_risk_warnings;
+        assert!(!app.dialogs.suppress_high_risk_warnings);
     }
 }

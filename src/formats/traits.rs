@@ -13,6 +13,8 @@ pub enum RiskLevel {
     High,
     /// Critical - editing will almost certainly break the file
     Critical,
+    /// Unknown - unrecognized data region (not a header, no special protection)
+    Unknown,
 }
 
 impl RiskLevel {
@@ -23,6 +25,7 @@ impl RiskLevel {
             RiskLevel::Caution => egui::Color32::from_rgb(200, 180, 80), // Yellow
             RiskLevel::High => egui::Color32::from_rgb(200, 130, 80),  // Orange
             RiskLevel::Critical => egui::Color32::from_rgb(200, 80, 80), // Red
+            RiskLevel::Unknown => egui::Color32::from_rgb(150, 150, 150), // Gray
         }
     }
 
@@ -33,6 +36,7 @@ impl RiskLevel {
             RiskLevel::Caution => egui::Color32::from_rgba_unmultiplied(200, 180, 80, 50),
             RiskLevel::High => egui::Color32::from_rgba_unmultiplied(200, 130, 80, 50),
             RiskLevel::Critical => egui::Color32::from_rgba_unmultiplied(200, 80, 80, 50),
+            RiskLevel::Unknown => egui::Color32::from_rgba_unmultiplied(150, 150, 150, 50),
         }
     }
 
@@ -43,6 +47,7 @@ impl RiskLevel {
             RiskLevel::Caution => "Caution",
             RiskLevel::High => "High Risk",
             RiskLevel::Critical => "Critical",
+            RiskLevel::Unknown => "Unknown",
         }
     }
 }
