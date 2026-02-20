@@ -1,7 +1,7 @@
 //! Search and replace dialog UI component
 
 use crate::app::BendApp;
-use crate::editor::search::{execute_search, parse_hex_replace, SearchMessage, SearchMode};
+use crate::editor::search::{parse_hex_replace, SearchMessage, SearchMode};
 use eframe::egui;
 
 /// Show the search dialog (modal window)
@@ -161,22 +161,12 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
 
     // Handle actions after UI is done (to avoid borrow issues)
     if do_search {
-        if let Some(editor) = &app.editor {
-            let gen = editor.edit_generation();
-            execute_search(&mut app.search_state, editor.working());
-            app.search_state.set_searched_generation(gen);
-            // Navigate to last match if Shift+Enter was used on first search
-            if navigate_to_last_after_search && !app.search_state.matches.is_empty() {
-                app.search_state.current_match = Some(app.search_state.matches.len() - 1);
-            }
-            // Scroll to current match if found
-            if let Some(offset) = app.search_state.current_match_offset() {
-                if let Some(editor) = &mut app.editor {
-                    editor.set_cursor(offset);
-                }
-                app.scroll_hex_to_offset(offset);
-            }
+        app.refresh_search();
+        // Navigate to last match if Shift+Enter was used on first search
+        if navigate_to_last_after_search && !app.search_state.matches.is_empty() {
+            app.search_state.current_match = Some(app.search_state.matches.len() - 1);
         }
+        app.navigate_to_search_match();
     }
 
     // Auto-re-search if buffer was edited since last search (stale matches)
@@ -186,9 +176,7 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
                 .search_state
                 .matches_may_be_stale(editor.edit_generation())
             {
-                let gen = editor.edit_generation();
-                execute_search(&mut app.search_state, editor.working());
-                app.search_state.set_searched_generation(gen);
+                app.refresh_search();
                 if app.search_state.matches.is_empty() {
                     do_next = false;
                     do_prev = false;
@@ -199,22 +187,12 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
 
     if do_next {
         app.search_state.next_match();
-        if let Some(offset) = app.search_state.current_match_offset() {
-            if let Some(editor) = &mut app.editor {
-                editor.set_cursor(offset);
-            }
-            app.scroll_hex_to_offset(offset);
-        }
+        app.navigate_to_search_match();
     }
 
     if do_prev {
         app.search_state.prev_match();
-        if let Some(offset) = app.search_state.current_match_offset() {
-            if let Some(editor) = &mut app.editor {
-                editor.set_cursor(offset);
-            }
-            app.scroll_hex_to_offset(offset);
-        }
+        app.navigate_to_search_match();
     }
 
     if do_replace_one {
@@ -222,22 +200,12 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
         if let Err(e) = replace_current(app) {
             app.search_state.message = Some(SearchMessage::Error(e));
         } else {
-            // Re-execute search to update matches after replacement
-            if let Some(editor) = &app.editor {
-                let gen = editor.edit_generation();
-                execute_search(&mut app.search_state, editor.working());
-                app.search_state.set_searched_generation(gen);
-            }
+            app.refresh_search();
             // Restore match position (clamped to new matches length)
             if !app.search_state.matches.is_empty() {
                 let clamped = prev_index.min(app.search_state.matches.len() - 1);
                 app.search_state.current_match = Some(clamped);
-                if let Some(offset) = app.search_state.current_match_offset() {
-                    if let Some(editor) = &mut app.editor {
-                        editor.set_cursor(offset);
-                    }
-                    app.scroll_hex_to_offset(offset);
-                }
+                app.navigate_to_search_match();
             }
         }
     }
@@ -245,17 +213,9 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
     if do_replace_all {
         match replace_all(app) {
             Ok(_count) => {
-                // Save informational message (e.g. "N skipped in protected regions")
-                // before re-search, which clears message via clear_results()
+                // Save informational message before re-search clears it
                 let info_message = app.search_state.message.take();
-
-                // Re-execute search to update remaining matches
-                if let Some(editor) = &app.editor {
-                    let gen = editor.edit_generation();
-                    execute_search(&mut app.search_state, editor.working());
-                    app.search_state.set_searched_generation(gen);
-                }
-
+                app.refresh_search();
                 // Restore informational message if re-search didn't produce a new error
                 if app.search_state.message.is_none() {
                     app.search_state.message = info_message;

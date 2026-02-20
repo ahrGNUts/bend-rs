@@ -275,6 +275,25 @@ impl BendApp {
         self.pending_hex_scroll = Some(offset);
     }
 
+    /// Navigate the editor cursor and hex view to the current search match
+    pub fn navigate_to_search_match(&mut self) {
+        if let Some(offset) = self.search_state.current_match_offset() {
+            if let Some(editor) = &mut self.editor {
+                editor.set_cursor(offset);
+            }
+            self.scroll_hex_to_offset(offset);
+        }
+    }
+
+    /// Re-execute the current search against the working buffer and record the generation
+    pub fn refresh_search(&mut self) {
+        if let Some(editor) = &self.editor {
+            let gen = editor.edit_generation();
+            crate::editor::search::execute_search(&mut self.search_state, editor.working());
+            self.search_state.set_searched_generation(gen);
+        }
+    }
+
     /// Check if there are unsaved changes
     pub fn has_unsaved_changes(&self) -> bool {
         self.editor.as_ref().is_some_and(|e| e.is_modified())
