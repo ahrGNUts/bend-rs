@@ -606,7 +606,6 @@ fn handle_keyboard_input(
         };
 
         let ctrl = i.modifiers.ctrl || i.modifiers.mac_cmd;
-        let shift = i.modifiers.shift;
 
         // Ctrl+I / Cmd+I toggles Insert/Overwrite mode
         if ctrl && i.key_pressed(egui::Key::I) {
@@ -615,14 +614,6 @@ fn handle_keyboard_input(
 
         // Navigation keys (arrows, page up/down, home/end)
         handle_navigation_keys(editor, i);
-
-        // Undo/Redo
-        if ctrl && !shift && i.key_pressed(egui::Key::Z) {
-            let _ = editor.undo(); // #[must_use] result intentionally ignored — UI doesn't need to distinguish no-op
-        }
-        if ctrl && shift && i.key_pressed(egui::Key::Z) {
-            let _ = editor.redo(); // #[must_use] result intentionally ignored — UI doesn't need to distinguish no-op
-        }
 
         // Edit input (text entry, backspace, delete, paste)
         handle_edit_input(
