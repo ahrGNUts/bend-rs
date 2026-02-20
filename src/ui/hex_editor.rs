@@ -1,6 +1,6 @@
 //! Hex editor UI component with virtual scrolling
 
-use crate::app::BendApp;
+use crate::app::{BendApp, PendingEditType};
 use crate::editor::buffer::{EditMode, NibblePosition, WriteMode};
 use crate::formats::RiskLevel;
 use eframe::egui::{self, RichText, TextStyle};
@@ -573,15 +573,8 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
 
     // Handle pending high-risk edit (after input borrow ends)
     if let Some((edit_type, offset, risk_level)) = keyboard_result.pending_high_risk_edit {
-        // Convert local PendingEditType to app's PendingEditType
-        let app_edit_type = match edit_type {
-            PendingEditType::Nibble(n) => crate::app::PendingEditType::Nibble(n),
-            PendingEditType::Ascii(c) => crate::app::PendingEditType::Ascii(c),
-            PendingEditType::Backspace => crate::app::PendingEditType::Backspace,
-            PendingEditType::Delete => crate::app::PendingEditType::Delete,
-        };
         app.dialogs.pending_high_risk_edit = Some(crate::app::PendingEdit {
-            edit_type: app_edit_type,
+            edit_type,
             offset,
             risk_level,
         });
@@ -594,19 +587,6 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
 
     // Show context menu if active
     show_context_menu(ui, app);
-}
-
-/// Type of pending edit for high-risk confirmation
-#[derive(Clone, Copy)]
-enum PendingEditType {
-    /// Nibble edit (hex mode): nibble value 0-15
-    Nibble(u8),
-    /// ASCII edit: character to write
-    Ascii(char),
-    /// Backspace key (insert mode delete-previous)
-    Backspace,
-    /// Delete key (insert mode delete-at-cursor)
-    Delete,
 }
 
 /// Result of keyboard input handling
