@@ -1,5 +1,7 @@
 use eframe::egui;
 
+use crate::editor::buffer::EditMode;
+
 use super::BendApp;
 
 /// Actions triggered by keyboard/mouse input, processed after input handling
@@ -14,6 +16,7 @@ pub(super) struct InputActions {
     pub create_save_point: bool,
     pub add_bookmark: bool,
     pub refresh_preview: bool,
+    pub set_edit_mode: Option<EditMode>,
 }
 
 impl BendApp {
@@ -95,6 +98,33 @@ impl BendApp {
 
                 ui.separator();
 
+                // Edit mode selector
+                let current_mode = self
+                    .editor
+                    .as_ref()
+                    .map(|e| e.edit_mode())
+                    .unwrap_or(EditMode::Hex);
+                if ui
+                    .add_enabled(
+                        has_file,
+                        egui::SelectableLabel::new(current_mode == EditMode::Hex, "HEX"),
+                    )
+                    .clicked()
+                {
+                    actions.set_edit_mode = Some(EditMode::Hex);
+                }
+                if ui
+                    .add_enabled(
+                        has_file,
+                        egui::SelectableLabel::new(current_mode == EditMode::Ascii, "ASCII"),
+                    )
+                    .clicked()
+                {
+                    actions.set_edit_mode = Some(EditMode::Ascii);
+                }
+
+                ui.separator();
+
                 // Refresh preview
                 if ui
                     .add_enabled(has_file, egui::Button::new("Refresh"))
@@ -145,6 +175,11 @@ impl BendApp {
         }
         if actions.refresh_preview {
             self.mark_preview_dirty();
+        }
+        if let Some(mode) = actions.set_edit_mode {
+            if let Some(editor) = &mut self.editor {
+                editor.set_edit_mode(mode);
+            }
         }
     }
 }

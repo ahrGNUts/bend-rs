@@ -36,15 +36,6 @@ impl EditorState {
         self.nibble = NibblePosition::High;
     }
 
-    /// Toggle between Hex and ASCII editing modes
-    pub fn toggle_edit_mode(&mut self) {
-        self.edit_mode = match self.edit_mode {
-            EditMode::Hex => EditMode::Ascii,
-            EditMode::Ascii => EditMode::Hex,
-        };
-        self.nibble = NibblePosition::High;
-    }
-
     /// Get the current write mode
     pub fn write_mode(&self) -> WriteMode {
         self.write_mode
@@ -168,26 +159,26 @@ mod tests {
     }
 
     #[test]
-    fn test_edit_mode_toggle() {
+    fn test_edit_mode_set_toggles() {
         let data = vec![0x00, 0x01, 0x02, 0x03];
         let mut editor = EditorState::new(data);
 
         assert_eq!(editor.edit_mode(), EditMode::Hex);
-        editor.toggle_edit_mode();
+        editor.set_edit_mode(EditMode::Ascii);
         assert_eq!(editor.edit_mode(), EditMode::Ascii);
-        editor.toggle_edit_mode();
+        editor.set_edit_mode(EditMode::Hex);
         assert_eq!(editor.edit_mode(), EditMode::Hex);
     }
 
     #[test]
-    fn test_edit_mode_toggle_resets_nibble() {
+    fn test_set_edit_mode_resets_nibble() {
         let data = vec![0x00, 0x01, 0x02, 0x03];
         let mut editor = EditorState::new(data);
 
         let _ = editor.edit_nibble(0xA);
         assert_eq!(editor.nibble(), NibblePosition::Low);
 
-        editor.toggle_edit_mode();
+        editor.set_edit_mode(EditMode::Ascii);
         assert_eq!(editor.nibble(), NibblePosition::High);
     }
 

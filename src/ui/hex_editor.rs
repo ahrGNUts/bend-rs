@@ -608,11 +608,6 @@ fn handle_keyboard_input(
         let ctrl = i.modifiers.ctrl || i.modifiers.mac_cmd;
         let shift = i.modifiers.shift;
 
-        // Tab key toggles between Hex and ASCII edit mode
-        if i.consume_key(egui::Modifiers::NONE, egui::Key::Tab) {
-            editor.toggle_edit_mode();
-        }
-
         // Ctrl+I / Cmd+I toggles Insert/Overwrite mode
         if ctrl && i.key_pressed(egui::Key::I) {
             editor.toggle_write_mode();

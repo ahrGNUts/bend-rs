@@ -115,7 +115,10 @@ pub fn show(ctx: &egui::Context, state: &mut ShortcutsDialogState) {
                                 "Any printable char",
                                 "Edit ASCII value at cursor (ASCII mode)",
                             ),
-                            ("Tab", "Toggle between Hex and ASCII editing mode"),
+                            (
+                                "Ctrl+M / Cmd+M",
+                                "Toggle between Hex and ASCII editing mode",
+                            ),
                             ("Ctrl+I / Cmd+I", "Toggle Insert/Overwrite mode"),
                             (
                                 "Backspace",

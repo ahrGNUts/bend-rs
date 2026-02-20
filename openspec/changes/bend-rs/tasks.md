@@ -203,6 +203,7 @@ Prerequisites: Sections 7-8 (format parsing to identify header regions)
 - [x] 17.26 BUG: replace operations should ignore headers when 'Protect Headers' is enabled
 - [x] 17.27 ENHANCEMENT: search_state.error field is overloaded for both errors and informational messages (e.g. "Replaced N of M, K skipped") — all render in red. Add a separate info message field or enum to distinguish severity and render informational messages in a neutral/yellow color.
 - [x] 17.28 BUG: Replace All creates per-match undo operations instead of a single atomic undo (Ctrl+Z only undoes the last replacement, not all of them)
+- [x] 17.29 ENHANCEMENT: Switch edit mode toggle from Tab to Cmd/Ctrl+M and add HEX/ASCII mode buttons to toolbar
 
 ## 18. Settings and Persistence (P3)
 - [x] 18.1 Design settings data structure (window size, recent files, preferences)

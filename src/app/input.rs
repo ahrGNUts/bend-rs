@@ -1,5 +1,7 @@
 use eframe::egui;
 
+use crate::editor::buffer::EditMode;
+
 use super::toolbar::InputActions;
 use super::BendApp;
 
@@ -53,6 +55,15 @@ impl BendApp {
             // Refresh preview: Ctrl+R / Cmd+R
             if ctrl && i.key_pressed(egui::Key::R) && self.editor.is_some() {
                 actions.refresh_preview = true;
+            }
+            // Toggle edit mode: Ctrl+M / Cmd+M
+            if ctrl && i.key_pressed(egui::Key::M) {
+                if let Some(editor) = self.editor.as_ref() {
+                    actions.set_edit_mode = Some(match editor.edit_mode() {
+                        EditMode::Hex => EditMode::Ascii,
+                        EditMode::Ascii => EditMode::Hex,
+                    });
+                }
             }
             // F1: Show keyboard shortcuts help
             if i.key_pressed(egui::Key::F1) {
