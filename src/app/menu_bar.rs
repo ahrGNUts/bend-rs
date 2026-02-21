@@ -196,7 +196,7 @@ impl BendApp {
     /// Render the Help menu contents
     fn render_help_menu(&mut self, ui: &mut egui::Ui) {
         if menu_item_with_shortcut(ui, "Keyboard Shortcuts", "F1", true) {
-            self.shortcuts_dialog_state.open_dialog();
+            self.shortcuts_dialog_state.open();
             ui.close_menu();
         }
     }

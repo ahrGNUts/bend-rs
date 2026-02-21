@@ -106,7 +106,9 @@ pub struct BendApp {
 }
 
 impl BendApp {
-    pub fn new(_cc: &eframe::CreationContext<'_>, settings: AppSettings) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>, settings: AppSettings) -> Self {
+        settings.theme.apply(&cc.egui_ctx);
+
         // Apply settings to initial state
         let header_protection = settings.default_header_protection;
         let suppress_warnings = !settings.show_high_risk_warnings;

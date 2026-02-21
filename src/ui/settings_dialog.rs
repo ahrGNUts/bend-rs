@@ -1,6 +1,6 @@
 //! Settings/Preferences dialog UI component
 
-use crate::settings::AppSettings;
+use crate::settings::{AppSettings, ThemePreference};
 use eframe::egui;
 
 /// State for the settings dialog
@@ -9,22 +9,27 @@ pub struct SettingsDialogState {
     /// Whether the dialog is visible
     pub dialog_open: bool,
     /// Snapshot of settings when dialog opened (for change detection)
-    initial_header_protection: bool,
-    initial_show_warnings: bool,
+    initial_settings: Option<AppSettings>,
 }
 
 impl SettingsDialogState {
     /// Open the settings dialog and snapshot current settings for change detection
     pub fn open(&mut self, settings: &AppSettings) {
         self.dialog_open = true;
-        self.initial_header_protection = settings.default_header_protection;
-        self.initial_show_warnings = settings.show_high_risk_warnings;
+        self.initial_settings = Some(settings.clone());
     }
 
     /// Close the settings dialog
     pub fn close(&mut self) {
         self.dialog_open = false;
+        self.initial_settings = None;
     }
+}
+
+/// Actions that can be triggered by the settings dialog
+enum SettingsAction {
+    Close,
+    ClearRecent,
 }
 
 /// Show the settings/preferences dialog
@@ -38,8 +43,7 @@ pub fn show(
         return false;
     }
 
-    let mut close_dialog = false;
-    let mut clear_recent = false;
+    let mut actions: Vec<SettingsAction> = Vec::new();
 
     egui::Window::new("Preferences")
         .collapsible(false)
@@ -47,6 +51,24 @@ pub fn show(
         .default_width(400.0)
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .show(ctx, |ui| {
+            // Appearance section
+            ui.heading("Appearance");
+            ui.add_space(4.0);
+
+            ui.horizontal(|ui| {
+                ui.label("Theme:");
+                let prev = settings.theme;
+                ui.selectable_value(&mut settings.theme, ThemePreference::Light, "Light");
+                ui.selectable_value(&mut settings.theme, ThemePreference::Dark, "Dark");
+                ui.selectable_value(&mut settings.theme, ThemePreference::System, "System");
+                // Live preview: apply immediately on change
+                if settings.theme != prev {
+                    settings.theme.apply(ctx);
+                }
+            });
+
+            ui.add_space(16.0);
+
             // Editing section
             ui.heading("Editing");
             ui.add_space(4.0);
@@ -82,7 +104,7 @@ pub fn show(
                     .add_enabled(recent_count > 0, egui::Button::new("Clear"))
                     .clicked()
                 {
-                    clear_recent = true;
+                    actions.push(SettingsAction::ClearRecent);
                 }
             });
 
@@ -93,9 +115,9 @@ pub fn show(
             ui.add_space(4.0);
 
             ui.label(
-                egui::RichText::new("Settings are saved automatically when changed.")
+                egui::RichText::new("Settings are saved when this dialog is closed.")
                     .small()
-                    .color(egui::Color32::GRAY),
+                    .color(ui.visuals().weak_text_color()),
             );
 
             if let Some(path) = dirs::config_dir() {
@@ -103,7 +125,7 @@ pub fn show(
                 ui.label(
                     egui::RichText::new(format!("Settings file: {}", settings_path.display()))
                         .small()
-                        .color(egui::Color32::GRAY),
+                        .color(ui.visuals().weak_text_color()),
                 );
             }
 
@@ -112,32 +134,33 @@ pub fn show(
             // Close button
             ui.horizontal(|ui| {
                 if ui.button("Close").clicked() {
-                    close_dialog = true;
+                    actions.push(SettingsAction::Close);
                 }
             });
 
             // Handle Escape to close
             if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                close_dialog = true;
+                actions.push(SettingsAction::Close);
             }
         });
 
     // Process actions after UI scope
     let mut should_save = false;
 
-    if clear_recent {
-        settings.clear_recent_files();
-        should_save = true;
-    }
-
-    if close_dialog {
-        // Check if checkbox settings changed
-        if settings.default_header_protection != state.initial_header_protection
-            || settings.show_high_risk_warnings != state.initial_show_warnings
-        {
-            should_save = true;
+    for action in &actions {
+        match action {
+            SettingsAction::ClearRecent => {
+                settings.clear_recent_files();
+                should_save = true;
+            }
+            SettingsAction::Close => {
+                // Check if settings changed
+                if state.initial_settings.as_ref() != Some(settings) {
+                    should_save = true;
+                }
+                state.close();
+            }
         }
-        state.close();
     }
 
     // Save immediately if needed
@@ -156,6 +179,7 @@ mod tests {
     fn test_settings_dialog_state_default() {
         let state = SettingsDialogState::default();
         assert!(!state.dialog_open);
+        assert!(state.initial_settings.is_none());
     }
 
     #[test]
@@ -165,8 +189,10 @@ mod tests {
 
         state.open(&settings);
         assert!(state.dialog_open);
+        assert!(state.initial_settings.is_some());
 
         state.close();
         assert!(!state.dialog_open);
+        assert!(state.initial_settings.is_none());
     }
 }

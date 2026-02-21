@@ -67,7 +67,7 @@ impl BendApp {
             }
             // F1: Show keyboard shortcuts help
             if i.key_pressed(egui::Key::F1) {
-                self.shortcuts_dialog_state.open_dialog();
+                self.shortcuts_dialog_state.open();
             }
         });
 

@@ -5,14 +5,62 @@
 //! - Windows: %APPDATA%/bend-rs/settings.json
 //! - Linux: ~/.config/bend-rs/settings.json
 
+use eframe::egui;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::path::PathBuf;
+
+/// User preference for application theme
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum ThemePreference {
+    Dark,
+    Light,
+    #[default]
+    System,
+}
+
+impl fmt::Display for ThemePreference {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ThemePreference::Dark => write!(f, "Dark"),
+            ThemePreference::Light => write!(f, "Light"),
+            ThemePreference::System => write!(f, "System"),
+        }
+    }
+}
+
+impl From<ThemePreference> for egui::ThemePreference {
+    fn from(pref: ThemePreference) -> Self {
+        match pref {
+            ThemePreference::Dark => egui::ThemePreference::Dark,
+            ThemePreference::Light => egui::ThemePreference::Light,
+            ThemePreference::System => egui::ThemePreference::System,
+        }
+    }
+}
+
+impl From<egui::ThemePreference> for ThemePreference {
+    fn from(pref: egui::ThemePreference) -> Self {
+        match pref {
+            egui::ThemePreference::Dark => ThemePreference::Dark,
+            egui::ThemePreference::Light => ThemePreference::Light,
+            egui::ThemePreference::System => ThemePreference::System,
+        }
+    }
+}
+
+impl ThemePreference {
+    /// Apply this theme preference to the given egui context
+    pub fn apply(self, ctx: &egui::Context) {
+        ctx.set_theme(egui::ThemePreference::from(self));
+    }
+}
 
 /// Maximum number of recent files to track
 const MAX_RECENT_FILES: usize = 10;
 
 /// Application settings
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppSettings {
     /// Window width in logical pixels
     pub window_width: f32,
@@ -28,6 +76,10 @@ pub struct AppSettings {
 
     /// Whether to show high-risk edit warnings
     pub show_high_risk_warnings: bool,
+
+    /// Theme preference (Dark, Light, or System)
+    #[serde(default)]
+    pub theme: ThemePreference,
 }
 
 impl Default for AppSettings {
@@ -38,6 +90,7 @@ impl Default for AppSettings {
             recent_files: Vec::new(),
             default_header_protection: false,
             show_high_risk_warnings: true,
+            theme: ThemePreference::default(),
         }
     }
 }
@@ -143,6 +196,7 @@ mod tests {
         assert!(settings.recent_files.is_empty());
         assert!(!settings.default_header_protection);
         assert!(settings.show_high_risk_warnings);
+        assert_eq!(settings.theme, ThemePreference::System);
     }
 
     #[test]
@@ -217,5 +271,77 @@ mod tests {
 
         assert_eq!(loaded.window_width, 1000.0);
         assert_eq!(loaded.recent_files.len(), 1);
+    }
+
+    #[test]
+    fn test_theme_preference_default_is_system() {
+        assert_eq!(ThemePreference::default(), ThemePreference::System);
+    }
+
+    #[test]
+    fn test_theme_preference_to_egui() {
+        let dark: egui::ThemePreference = ThemePreference::Dark.into();
+        assert_eq!(dark, egui::ThemePreference::Dark);
+        let light: egui::ThemePreference = ThemePreference::Light.into();
+        assert_eq!(light, egui::ThemePreference::Light);
+        let system: egui::ThemePreference = ThemePreference::System.into();
+        assert_eq!(system, egui::ThemePreference::System);
+    }
+
+    #[test]
+    fn test_egui_theme_to_theme_preference() {
+        let dark: ThemePreference = egui::ThemePreference::Dark.into();
+        assert_eq!(dark, ThemePreference::Dark);
+        let light: ThemePreference = egui::ThemePreference::Light.into();
+        assert_eq!(light, ThemePreference::Light);
+        let system: ThemePreference = egui::ThemePreference::System.into();
+        assert_eq!(system, ThemePreference::System);
+    }
+
+    #[test]
+    fn test_theme_preference_display() {
+        assert_eq!(ThemePreference::Dark.to_string(), "Dark");
+        assert_eq!(ThemePreference::Light.to_string(), "Light");
+        assert_eq!(ThemePreference::System.to_string(), "System");
+    }
+
+    #[test]
+    fn test_app_settings_partial_eq() {
+        let a = AppSettings::default();
+        let b = AppSettings::default();
+        assert_eq!(a, b);
+
+        let mut c = AppSettings::default();
+        c.window_width = 999.0;
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn test_theme_round_trip_serialization() {
+        for theme in [
+            ThemePreference::Dark,
+            ThemePreference::Light,
+            ThemePreference::System,
+        ] {
+            let mut settings = AppSettings::default();
+            settings.theme = theme;
+            let json = serde_json::to_string(&settings).unwrap();
+            let loaded: AppSettings = serde_json::from_str(&json).unwrap();
+            assert_eq!(loaded.theme, theme);
+        }
+    }
+
+    #[test]
+    fn test_theme_backward_compat_missing_key() {
+        // Simulate a settings.json from before theme was added
+        let json = r#"{
+            "window_width": 1200.0,
+            "window_height": 800.0,
+            "recent_files": [],
+            "default_header_protection": false,
+            "show_high_risk_warnings": true
+        }"#;
+        let loaded: AppSettings = serde_json::from_str(json).unwrap();
+        assert_eq!(loaded.theme, ThemePreference::System);
     }
 }

@@ -205,6 +205,7 @@ Prerequisites: Sections 7-8 (format parsing to identify header regions)
 - [x] 17.28 BUG: Replace All creates per-match undo operations instead of a single atomic undo (Ctrl+Z only undoes the last replacement, not all of them)
 - [x] 17.29 ENHANCEMENT: Switch edit mode toggle from Tab to Cmd/Ctrl+M and add HEX/ASCII mode buttons to toolbar
 - [x] 17.30 BUG: Ctrl+Z/Ctrl+Shift+Z fires undo/redo twice per keypress (duplicate handling in input.rs and hex_editor.rs)
+- [x] 17.31 ENHANCEMENT: Add theme toggle (Dark / Light / System) to Preferences dialog with persistence
 
 ## 18. Settings and Persistence (P3)
 - [x] 18.1 Design settings data structure (window size, recent files, preferences)

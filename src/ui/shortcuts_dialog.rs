@@ -11,12 +11,12 @@ pub struct ShortcutsDialogState {
 
 impl ShortcutsDialogState {
     /// Open the shortcuts dialog
-    pub fn open_dialog(&mut self) {
+    pub fn open(&mut self) {
         self.dialog_open = true;
     }
 
     /// Close the shortcuts dialog
-    pub fn close_dialog(&mut self) {
+    pub fn close(&mut self) {
         self.dialog_open = false;
     }
 }
@@ -152,7 +152,7 @@ pub fn show(ctx: &egui::Context, state: &mut ShortcutsDialogState) {
         });
 
     if close_dialog {
-        state.close_dialog();
+        state.close();
     }
 }
 
