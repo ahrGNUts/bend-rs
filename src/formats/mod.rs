@@ -5,10 +5,12 @@
 
 mod bmp;
 mod jpeg;
+mod png;
 pub mod traits;
 
 pub use bmp::BmpParser;
 pub use jpeg::JpegParser;
+pub use png::PngParser;
 pub use traits::{FileSection, ImageFormat, RiskLevel};
 
 /// Detect the format of a file and return the appropriate parser
@@ -21,6 +23,11 @@ pub fn detect_format(data: &[u8]) -> Option<Box<dyn ImageFormat>> {
     let jpeg = JpegParser;
     if jpeg.can_parse(data) {
         return Some(Box::new(jpeg));
+    }
+
+    let png = PngParser;
+    if png.can_parse(data) {
+        return Some(Box::new(png));
     }
 
     None
@@ -176,6 +183,28 @@ mod tests {
         let sections = sections.unwrap();
         // Should have at least an Unknown section covering the file
         assert!(sections.iter().any(|s| s.risk == RiskLevel::Unknown));
+    }
+
+    #[test]
+    fn test_detect_format_png() {
+        // Valid PNG signature
+        let png_sig = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        assert!(detect_format(&png_sig).is_some());
+
+        // Ensure BMP and JPEG are not detected as PNG
+        assert!(detect_format(b"BM\x00\x00\x00\x00").is_some()); // BMP
+        assert!(detect_format(&[0xFF, 0xD8, 0xFF, 0xE0]).is_some()); // JPEG
+    }
+
+    #[test]
+    fn test_parse_file_png_signature_only_returns_partial_with_unknown() {
+        // PNG signature only (no chunks) — parser returns just the signature
+        let data = [0x89u8, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        let sections = parse_file(&data);
+        assert!(sections.is_some());
+        let sections = sections.unwrap();
+        // Should have the PNG Signature section + Unknown gap (if any) from fill_gaps
+        assert!(sections.iter().any(|s| s.name == "PNG Signature"));
     }
 
     #[test]
