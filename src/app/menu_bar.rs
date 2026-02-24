@@ -78,12 +78,12 @@ impl BendApp {
         let export_shortcut = format!("{}E", mod_str);
 
         if menu_item_with_shortcut(ui, "Open...", &open_shortcut, true) {
-            self.open_file_dialog();
+            self.open_file_dialog(ui.ctx());
             ui.close_menu();
         }
         let has_file = self.editor.is_some();
         if menu_item_with_shortcut(ui, "Export...", &export_shortcut, has_file) {
-            self.export_file();
+            self.export_file(ui.ctx());
             ui.close_menu();
         }
         ui.separator();

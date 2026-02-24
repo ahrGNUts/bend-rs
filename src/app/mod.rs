@@ -24,7 +24,15 @@ use crate::ui::{
 };
 use eframe::egui;
 use std::path::PathBuf;
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
+
+enum FileDialogResult {
+    OpenFile(PathBuf),
+    ExportSuccess(PathBuf),
+    ExportError(String),
+    Cancelled,
+}
 
 /// Threshold for detecting window size changes (pixels)
 const WINDOW_RESIZE_THRESHOLD: f32 = 1.0;
@@ -103,6 +111,12 @@ pub struct BendApp {
 
     /// Timer for debouncing window resize saves
     window_resize_timer: Option<Instant>,
+
+    /// Receiver for a pending open-file dialog running on a background thread
+    open_dialog_rx: Option<mpsc::Receiver<FileDialogResult>>,
+
+    /// Receiver for a pending export dialog running on a background thread
+    export_dialog_rx: Option<mpsc::Receiver<FileDialogResult>>,
 }
 
 impl BendApp {
@@ -122,6 +136,11 @@ impl BendApp {
             settings,
             ..Default::default()
         }
+    }
+
+    /// Returns true if a file dialog is already open on a background thread
+    fn is_dialog_pending(&self) -> bool {
+        self.open_dialog_rx.is_some() || self.export_dialog_rx.is_some()
     }
 
     /// Perform undo on the active editor (if any)
@@ -167,13 +186,16 @@ impl BendApp {
         self.editor.as_ref().is_some_and(|e| e.is_modified())
     }
 
-    /// Export the working buffer to a new file
-    pub fn export_file(&self) {
-        let Some(editor) = &self.editor else {
+    /// Export the working buffer to a new file (non-blocking)
+    pub fn export_file(&mut self, ctx: &egui::Context) {
+        if self.is_dialog_pending() || self.editor.is_none() {
             return;
-        };
+        }
 
-        // Suggest a default filename based on original
+        let editor = self.editor.as_ref().unwrap();
+        let buffer = editor.working().to_vec();
+
+        // Pre-compute filename and extension on main thread
         let default_name = self
             .current_file
             .as_ref()
@@ -188,21 +210,28 @@ impl BendApp {
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| "bmp".to_string());
 
-        if let Some(path) = rfd::FileDialog::new()
-            .set_file_name(format!("{}.{}", default_name, extension))
-            .add_filter("Images", &["bmp", "jpg", "jpeg"])
-            .add_filter("All files", &["*"])
-            .save_file()
-        {
-            match std::fs::write(&path, editor.working()) {
-                Ok(()) => {
-                    log::info!("Exported to: {}", path.display());
+        let (tx, rx) = mpsc::channel();
+        let ctx = ctx.clone();
+
+        std::thread::spawn(move || {
+            let result = if let Some(path) = rfd::FileDialog::new()
+                .set_file_name(format!("{}.{}", default_name, extension))
+                .add_filter("Images", &["bmp", "jpg", "jpeg"])
+                .add_filter("All files", &["*"])
+                .save_file()
+            {
+                match std::fs::write(&path, &buffer) {
+                    Ok(()) => FileDialogResult::ExportSuccess(path),
+                    Err(e) => FileDialogResult::ExportError(e.to_string()),
                 }
-                Err(e) => {
-                    log::error!("Failed to export: {}", e);
-                }
-            }
-        }
+            } else {
+                FileDialogResult::Cancelled
+            };
+            let _ = tx.send(result);
+            ctx.request_repaint();
+        });
+
+        self.export_dialog_rx = Some(rx);
     }
 
     /// Check if a file extension is a supported format
@@ -246,15 +275,30 @@ impl BendApp {
         }
     }
 
-    /// Open file dialog and load selected file
-    pub fn open_file_dialog(&mut self) {
-        if let Some(path) = rfd::FileDialog::new()
-            .add_filter("Images", &["bmp", "jpg", "jpeg"])
-            .add_filter("All files", &["*"])
-            .pick_file()
-        {
-            self.open_file(path);
+    /// Open file dialog on a background thread (non-blocking)
+    pub fn open_file_dialog(&mut self, ctx: &egui::Context) {
+        if self.is_dialog_pending() {
+            return;
         }
+
+        let (tx, rx) = mpsc::channel();
+        let ctx = ctx.clone();
+
+        std::thread::spawn(move || {
+            let result = if let Some(path) = rfd::FileDialog::new()
+                .add_filter("Images", &["bmp", "jpg", "jpeg"])
+                .add_filter("All files", &["*"])
+                .pick_file()
+            {
+                FileDialogResult::OpenFile(path)
+            } else {
+                FileDialogResult::Cancelled
+            };
+            let _ = tx.send(result);
+            ctx.request_repaint();
+        });
+
+        self.open_dialog_rx = Some(rx);
     }
 
     /// Show all modal dialogs
@@ -385,7 +429,7 @@ impl BendApp {
                         ui.label("Drag and drop a file here, or use File > Open");
                         ui.add_space(20.0);
                         if ui.button("Open File...").clicked() {
-                            self.open_file_dialog();
+                            self.open_file_dialog(ui.ctx());
                         }
                     });
                 });
@@ -431,9 +475,33 @@ impl eframe::App for BendApp {
             self.open_file(path);
         }
 
+        // Poll background file dialogs
+        if let Some(rx) = &self.open_dialog_rx {
+            if let Ok(result) = rx.try_recv() {
+                if let FileDialogResult::OpenFile(path) = result {
+                    self.open_file(path);
+                }
+                self.open_dialog_rx = None;
+            }
+        }
+        if let Some(rx) = &self.export_dialog_rx {
+            if let Ok(result) = rx.try_recv() {
+                match result {
+                    FileDialogResult::ExportSuccess(path) => {
+                        log::info!("Exported to: {}", path.display());
+                    }
+                    FileDialogResult::ExportError(e) => {
+                        log::error!("Failed to export: {}", e);
+                    }
+                    _ => {}
+                }
+                self.export_dialog_rx = None;
+            }
+        }
+
         // Handle input and process actions
         let input_actions = self.handle_input(ctx);
-        self.process_input_actions(input_actions);
+        self.process_input_actions(input_actions, ctx);
 
         // Update preview if needed
         self.update_preview(ctx);
@@ -442,7 +510,7 @@ impl eframe::App for BendApp {
         self.show_close_dialog(ctx);
         self.render_menu_bar(ctx);
         let toolbar_actions = self.render_toolbar(ctx);
-        self.process_input_actions(toolbar_actions);
+        self.process_input_actions(toolbar_actions, ctx);
         self.show_dialogs(ctx);
         self.render_status_bar(ctx);
         self.render_sidebar(ctx);

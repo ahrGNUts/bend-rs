@@ -150,7 +150,7 @@ impl BendApp {
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {
                     if ui.button("Export First").clicked() {
-                        self.export_file();
+                        self.export_file(ui.ctx());
                         self.dialogs.show_close = false;
                     }
                     if ui.button("Discard & Exit").clicked() {

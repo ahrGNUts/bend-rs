@@ -32,13 +32,13 @@ impl BendApp {
 
                 // File operations
                 if ui.button("Open").clicked() {
-                    self.open_file_dialog();
+                    self.open_file_dialog(ui.ctx());
                 }
                 if ui
                     .add_enabled(has_file, egui::Button::new("Export"))
                     .clicked()
                 {
-                    self.export_file();
+                    self.export_file(ui.ctx());
                 }
 
                 ui.separator();
@@ -140,12 +140,12 @@ impl BendApp {
     }
 
     /// Process input actions (deferred to avoid borrow conflicts)
-    pub(super) fn process_input_actions(&mut self, actions: InputActions) {
+    pub(super) fn process_input_actions(&mut self, actions: InputActions, ctx: &egui::Context) {
         if actions.open {
-            self.open_file_dialog();
+            self.open_file_dialog(ctx);
         }
         if actions.export {
-            self.export_file();
+            self.export_file(ctx);
         }
         if actions.search {
             self.search_state.open_dialog();
