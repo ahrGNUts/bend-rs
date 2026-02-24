@@ -47,7 +47,7 @@ fn show_section(
         // Show description if present
         if let Some(desc) = &section.description {
             if !desc.is_empty() {
-                ui.indent("desc", |ui| {
+                ui.indent(section.start, |ui| {
                     ui.label(RichText::new(desc).small().italics());
                 });
             }
@@ -55,6 +55,7 @@ fn show_section(
     } else {
         // Parent node with children
         let header = egui::CollapsingHeader::new(name)
+            .id_salt(section.start)
             .default_open(is_cursor_in_section)
             .show(ui, |ui| {
                 // Show this section's info
