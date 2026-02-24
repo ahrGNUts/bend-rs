@@ -1,7 +1,5 @@
 //! Traits for image format parsing
 
-use eframe::egui;
-
 /// Risk level for editing a section
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RiskLevel {
@@ -18,28 +16,6 @@ pub enum RiskLevel {
 }
 
 impl RiskLevel {
-    /// Get the solid color for this risk level (for UI elements like tree view)
-    pub fn color(self) -> egui::Color32 {
-        match self {
-            RiskLevel::Safe => egui::Color32::from_rgb(100, 200, 100), // Green
-            RiskLevel::Caution => egui::Color32::from_rgb(200, 180, 80), // Yellow
-            RiskLevel::High => egui::Color32::from_rgb(200, 130, 80),  // Orange
-            RiskLevel::Critical => egui::Color32::from_rgb(200, 80, 80), // Red
-            RiskLevel::Unknown => egui::Color32::from_rgb(150, 150, 150), // Gray
-        }
-    }
-
-    /// Get the background color for this risk level (with alpha for hex view)
-    pub fn background_color(self) -> egui::Color32 {
-        match self {
-            RiskLevel::Safe => egui::Color32::from_rgba_unmultiplied(100, 200, 100, 50),
-            RiskLevel::Caution => egui::Color32::from_rgba_unmultiplied(200, 180, 80, 50),
-            RiskLevel::High => egui::Color32::from_rgba_unmultiplied(200, 130, 80, 50),
-            RiskLevel::Critical => egui::Color32::from_rgba_unmultiplied(200, 80, 80, 50),
-            RiskLevel::Unknown => egui::Color32::from_rgba_unmultiplied(150, 150, 150, 50),
-        }
-    }
-
     /// Get a human-readable label for this risk level
     pub fn label(self) -> &'static str {
         match self {

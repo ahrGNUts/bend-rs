@@ -1,6 +1,7 @@
 //! Image preview UI component
 
 use crate::app::BendApp;
+use crate::ui::theme::AppColors;
 use eframe::egui;
 
 /// Show the image preview panel with optional comparison mode
@@ -23,6 +24,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
 
 /// Show the comparison view with original and current images side-by-side
 fn show_comparison_view(ui: &mut egui::Ui, app: &BendApp) {
+    let colors = AppColors::new(ui.visuals().dark_mode);
     let available_size = ui.available_size();
 
     // Calculate the maximum size for each image (half the width minus spacing)
@@ -52,7 +54,7 @@ fn show_comparison_view(ui: &mut egui::Ui, app: &BendApp) {
             // Show decode error indicator if present
             if app.preview.decode_error.is_some() {
                 ui.horizontal(|ui| {
-                    ui.colored_label(egui::Color32::YELLOW, "\u{26A0} Preview may be stale");
+                    ui.colored_label(colors.warning_text, "\u{26A0} Preview may be stale");
                 });
             }
             show_texture_scaled(ui, app.preview.texture.as_ref(), scale, max_image_size);
@@ -119,7 +121,7 @@ fn show_texture_scaled(
             ui.label(
                 egui::RichText::new("\u{1F5BC}")
                     .size(48.0)
-                    .color(egui::Color32::GRAY),
+                    .color(ui.visuals().weak_text_color()),
             );
         });
     }
@@ -130,9 +132,10 @@ fn show_single_preview(ui: &mut egui::Ui, app: &BendApp) {
     if let Some(texture) = &app.preview.texture {
         // Show decode error indicator if present
         if app.preview.decode_error.is_some() {
+            let colors = AppColors::new(ui.visuals().dark_mode);
             ui.horizontal(|ui| {
                 ui.colored_label(
-                    egui::Color32::YELLOW,
+                    colors.warning_text,
                     "\u{26A0} Preview may be stale (decode error)",
                 );
             });
@@ -154,11 +157,15 @@ fn show_single_preview(ui: &mut egui::Ui, app: &BendApp) {
                     ui.label(
                         egui::RichText::new("\u{1F5BC}")
                             .size(64.0)
-                            .color(egui::Color32::GRAY),
+                            .color(ui.visuals().weak_text_color()),
                     );
                     ui.label("Unable to decode image");
                     if let Some(err) = &app.preview.decode_error {
-                        ui.label(egui::RichText::new(err).small().color(egui::Color32::GRAY));
+                        ui.label(
+                            egui::RichText::new(err)
+                                .small()
+                                .color(ui.visuals().weak_text_color()),
+                        );
                     }
                 });
             } else {

@@ -272,10 +272,11 @@ impl BendApp {
     /// Render the status bar
     fn render_status_bar(&self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
+            let colors = crate::ui::theme::AppColors::new(ui.visuals().dark_mode);
             ui.horizontal(|ui| {
                 // Unsaved changes indicator
                 if self.has_unsaved_changes() {
-                    ui.colored_label(egui::Color32::from_rgb(255, 180, 0), "\u{25CF} Modified");
+                    ui.colored_label(colors.modified_indicator, "\u{25CF} Modified");
                     ui.separator();
                 }
                 if let Some(path) = &self.current_file {
@@ -303,7 +304,7 @@ impl BendApp {
                 }
                 if let Some(err) = &self.preview.decode_error {
                     ui.separator();
-                    ui.colored_label(egui::Color32::YELLOW, err);
+                    ui.colored_label(colors.warning_text, err);
                 }
             });
         });

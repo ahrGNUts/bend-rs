@@ -1,4 +1,5 @@
 use crate::formats::RiskLevel;
+use crate::ui::theme::AppColors;
 use eframe::egui;
 
 use super::BendApp;
@@ -57,13 +58,14 @@ impl BendApp {
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ctx, |ui| {
+                let colors = AppColors::new(ui.visuals().dark_mode);
                 ui.vertical(|ui| {
                     // Warning icon and message
                     ui.horizontal(|ui| {
                         ui.label(
                             egui::RichText::new("\u{26A0}")
                                 .size(32.0)
-                                .color(egui::Color32::YELLOW),
+                                .color(colors.warning_text),
                         );
                         ui.vertical(|ui| {
                             let risk_name = match pending.risk_level {

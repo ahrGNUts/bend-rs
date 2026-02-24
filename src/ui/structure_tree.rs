@@ -2,6 +2,7 @@
 
 use crate::app::BendApp;
 use crate::formats::{FileSection, RiskLevel};
+use crate::ui::theme::AppColors;
 use eframe::egui::{self, RichText};
 
 /// Show a single section in the tree
@@ -10,11 +11,12 @@ fn show_section(
     section: &FileSection,
     clicked_offset: &mut Option<usize>,
     current_cursor: usize,
+    colors: &AppColors,
 ) {
     let is_cursor_in_section = current_cursor >= section.start && current_cursor < section.end;
 
     // Color the section name based on risk level
-    let color = section.risk.color();
+    let color = colors.risk_color(section.risk);
     let mut name = RichText::new(&section.name).color(color);
 
     if is_cursor_in_section {
@@ -38,7 +40,7 @@ fn show_section(
                     section.end - section.start
                 ))
                 .small()
-                .color(egui::Color32::GRAY),
+                .color(ui.visuals().weak_text_color()),
             );
         });
 
@@ -65,7 +67,7 @@ fn show_section(
                             section.end - section.start
                         ))
                         .small()
-                        .color(egui::Color32::GRAY),
+                        .color(ui.visuals().weak_text_color()),
                     );
                     if ui.small_button("Go").clicked() {
                         *clicked_offset = Some(section.start);
@@ -80,7 +82,7 @@ fn show_section(
 
                 // Show children
                 for child in &section.children {
-                    show_section(ui, child, clicked_offset, current_cursor);
+                    show_section(ui, child, clicked_offset, current_cursor, colors);
                 }
             });
 
@@ -120,6 +122,8 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
 
     // Scope the immutable borrow of sections for UI rendering
     if let Some(sections) = &app.cached_sections {
+        let colors = AppColors::new(ui.visuals().dark_mode);
+
         // Legend
         ui.horizontal(|ui| {
             ui.label("Risk:");
@@ -129,7 +133,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                 RiskLevel::High,
                 RiskLevel::Critical,
             ] {
-                ui.colored_label(risk.color(), risk.label());
+                ui.colored_label(colors.risk_color(risk), risk.label());
             }
         });
 
@@ -137,7 +141,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
 
         // Show sections
         for section in sections {
-            show_section(ui, section, &mut clicked_offset, current_cursor);
+            show_section(ui, section, &mut clicked_offset, current_cursor, &colors);
         }
     }
 

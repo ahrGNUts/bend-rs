@@ -4,6 +4,7 @@ use crate::app::{BendApp, PendingEditType};
 use crate::editor::buffer::{EditMode, NibblePosition, WriteMode};
 use crate::editor::{is_printable_ascii, is_printable_ascii_char};
 use crate::formats::RiskLevel;
+use crate::ui::theme::AppColors;
 use eframe::egui::{self, RichText, TextStyle};
 use std::sync::OnceLock;
 
@@ -54,15 +55,6 @@ const HEX_BYTE_WIDTH: f32 = 24.0;
 /// Number of rows to scroll above target when jumping to an offset
 const SCROLL_BUFFER_ROWS: usize = 5;
 
-/// Cursor highlight colors — bright (active nibble / active mode)
-const CURSOR_BRIGHT_OVERWRITE: egui::Color32 = egui::Color32::from_rgb(80, 80, 160);
-/// Cursor highlight colors — dim (inactive nibble / inactive mode)
-const CURSOR_DIM_OVERWRITE: egui::Color32 = egui::Color32::from_rgb(40, 40, 80);
-/// Cursor highlight colors — bright in insert mode (green tint)
-const CURSOR_BRIGHT_INSERT: egui::Color32 = egui::Color32::from_rgb(80, 160, 80);
-/// Cursor highlight colors — dim in insert mode (green tint)
-const CURSOR_DIM_INSERT: egui::Color32 = egui::Color32::from_rgb(40, 80, 40);
-
 /// Pre-computed highlight state for a single byte
 struct ByteHighlight {
     is_cursor: bool,
@@ -83,6 +75,7 @@ fn render_hex_byte(
     cursor_nibble: NibblePosition,
     edit_mode: EditMode,
     write_mode: WriteMode,
+    colors: &AppColors,
 ) -> egui::Response {
     let hex = hex_table()[byte as usize];
 
@@ -95,9 +88,9 @@ fn render_hex_byte(
         let half_width = rect.width() / 2.0;
 
         let (bright, dim) = if write_mode == WriteMode::Insert {
-            (CURSOR_BRIGHT_INSERT, CURSOR_DIM_INSERT)
+            (colors.cursor_bright_insert, colors.cursor_dim_insert)
         } else {
-            (CURSOR_BRIGHT_OVERWRITE, CURSOR_DIM_OVERWRITE)
+            (colors.cursor_bright_overwrite, colors.cursor_dim_overwrite)
         };
         let (high_bg, low_bg) = if edit_mode == EditMode::Ascii {
             (dim, dim)
@@ -123,24 +116,34 @@ fn render_hex_byte(
             egui::Align2::CENTER_CENTER,
             hex,
             egui::TextStyle::Monospace.resolve(ui.style()),
-            egui::Color32::WHITE,
+            colors.cursor_text,
         );
 
         response
     } else {
         let mut rich_text = RichText::new(hex).monospace();
+        let mut has_bg = false;
 
         // Apply background color priority: selection > current_match > search_match > bookmark > section
         if highlight.is_selected {
-            rich_text = rich_text.background_color(egui::Color32::from_rgb(40, 80, 40));
+            rich_text = rich_text.background_color(colors.selection_bg);
+            has_bg = true;
         } else if highlight.is_current_match {
-            rich_text = rich_text.background_color(egui::Color32::from_rgb(200, 120, 40));
+            rich_text = rich_text.background_color(colors.current_match_bg);
+            has_bg = true;
         } else if highlight.is_search_match {
-            rich_text = rich_text.background_color(egui::Color32::from_rgb(180, 180, 60));
+            rich_text = rich_text.background_color(colors.search_match_bg);
+            has_bg = true;
         } else if highlight.has_bookmark {
-            rich_text = rich_text.background_color(egui::Color32::from_rgb(60, 160, 180));
+            rich_text = rich_text.background_color(colors.bookmark_bg);
+            has_bg = true;
         } else if let Some(bg) = highlight.section_bg {
             rich_text = rich_text.background_color(bg);
+            has_bg = true;
+        }
+
+        if has_bg {
+            rich_text = rich_text.color(colors.hex_byte_text);
         }
 
         if highlight.is_protected {
@@ -160,6 +163,7 @@ fn render_ascii_char(
     is_selected: bool,
     edit_mode: EditMode,
     write_mode: WriteMode,
+    colors: &AppColors,
 ) -> egui::Response {
     let display_char = if is_printable_ascii(byte) {
         byte as char
@@ -171,9 +175,9 @@ fn render_ascii_char(
 
     if is_cursor {
         let (bright, dim) = if write_mode == WriteMode::Insert {
-            (CURSOR_BRIGHT_INSERT, CURSOR_DIM_INSERT)
+            (colors.cursor_bright_insert, colors.cursor_dim_insert)
         } else {
-            (CURSOR_BRIGHT_OVERWRITE, CURSOR_DIM_OVERWRITE)
+            (colors.cursor_bright_overwrite, colors.cursor_dim_overwrite)
         };
         if edit_mode == EditMode::Ascii {
             rich_text = rich_text.background_color(bright);
@@ -181,7 +185,7 @@ fn render_ascii_char(
             rich_text = rich_text.background_color(dim);
         }
     } else if is_selected {
-        rich_text = rich_text.background_color(egui::Color32::from_rgb(40, 80, 40));
+        rich_text = rich_text.background_color(colors.selection_bg);
     }
 
     ui.label(rich_text)
@@ -334,14 +338,16 @@ struct HighlightLookup<'a> {
     app: &'a BendApp,
     current_match_offset: Option<usize>,
     pattern_len: usize,
+    dark_mode: bool,
 }
 
 impl<'a> HighlightLookup<'a> {
-    fn new(app: &'a BendApp) -> Self {
+    fn new(app: &'a BendApp, dark_mode: bool) -> Self {
         Self {
             current_match_offset: app.search_state.current_match_offset(),
             pattern_len: app.search_state.pattern_length(),
             app,
+            dark_mode,
         }
     }
 
@@ -362,7 +368,9 @@ impl<'a> HighlightLookup<'a> {
                 .as_ref()
                 .is_some_and(|e| e.has_bookmark_at(byte_offset)),
             is_protected: self.app.is_offset_protected(byte_offset),
-            section_bg: self.app.section_color_for_offset(byte_offset),
+            section_bg: self
+                .app
+                .section_color_for_offset(byte_offset, self.dark_mode),
         }
     }
 }
@@ -427,7 +435,9 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
         (target_row.saturating_sub(SCROLL_BUFFER_ROWS) as f32 * row_height).max(0.0)
     });
 
-    let highlights = HighlightLookup::new(app);
+    let dark_mode = ui.visuals().dark_mode;
+    let colors = AppColors::new(dark_mode);
+    let highlights = HighlightLookup::new(app, dark_mode);
 
     let mut scroll_area = egui::ScrollArea::both().auto_shrink([false; 2]);
     if let Some(offset_y) = initial_scroll_offset {
@@ -462,7 +472,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                 ui.label(
                     RichText::new(format!("{:08X}", offset))
                         .monospace()
-                        .color(egui::Color32::GRAY),
+                        .color(ui.visuals().weak_text_color()),
                 );
                 ui.add_space(OFFSET_HEX_SPACING);
 
@@ -480,6 +490,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                         state.cursor_nibble,
                         state.edit_mode,
                         state.write_mode,
+                        &colors,
                     );
                     if response.clicked() {
                         clicked_offset = Some(byte_offset);
@@ -498,11 +509,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
 
                 // ASCII column
                 ui.spacing_mut().item_spacing.x = 0.0;
-                ui.label(
-                    RichText::new("|")
-                        .monospace()
-                        .color(egui::Color32::DARK_GRAY),
-                );
+                ui.label(RichText::new("|").monospace().color(colors.ascii_delimiter));
                 for (i, byte) in row_bytes.iter().enumerate() {
                     let byte_offset = offset + i;
                     let is_cursor = byte_offset == state.cursor_pos;
@@ -517,6 +524,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                         is_selected,
                         state.edit_mode,
                         state.write_mode,
+                        &colors,
                     );
                     if response.clicked() {
                         clicked_ascii_offset = Some(byte_offset);
@@ -525,11 +533,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                         context_menu_offset = Some(byte_offset);
                     }
                 }
-                ui.label(
-                    RichText::new("|")
-                        .monospace()
-                        .color(egui::Color32::DARK_GRAY),
-                );
+                ui.label(RichText::new("|").monospace().color(colors.ascii_delimiter));
             });
 
             if should_scroll_to_this_row {

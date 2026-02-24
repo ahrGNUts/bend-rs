@@ -2,6 +2,7 @@
 
 use crate::app::BendApp;
 use crate::editor::search::{parse_hex_replace, SearchMessage, SearchMode};
+use crate::ui::theme::AppColors;
 use eframe::egui;
 
 /// Show the search dialog (modal window)
@@ -92,7 +93,7 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
                     ui.label(
                         egui::RichText::new("Tip: Use ?? for wildcard bytes")
                             .small()
-                            .color(egui::Color32::GRAY),
+                            .color(ui.visuals().weak_text_color()),
                     );
                 }
             });
@@ -131,12 +132,13 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
 
             // Results status
             if let Some(msg) = &app.search_state.message {
+                let colors = AppColors::new(ui.visuals().dark_mode);
                 match msg {
                     SearchMessage::Error(text) => {
-                        ui.colored_label(egui::Color32::RED, text);
+                        ui.colored_label(colors.error_text, text);
                     }
                     SearchMessage::Info(text) => {
-                        ui.colored_label(egui::Color32::YELLOW, text);
+                        ui.colored_label(colors.warning_text, text);
                     }
                 }
             } else if !app.search_state.query.is_empty() {

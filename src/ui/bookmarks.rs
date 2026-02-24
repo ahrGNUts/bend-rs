@@ -46,7 +46,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
                 "Click \"+ Add Bookmark\" to add one at the current cursor position",
             )
             .small()
-            .color(egui::Color32::GRAY),
+            .color(ui.visuals().weak_text_color()),
         );
         return;
     }
@@ -99,7 +99,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
                 ui.label(
                     egui::RichText::new(format!("Offset: 0x{:08X}", bookmark.offset))
                         .small()
-                        .color(egui::Color32::GRAY),
+                        .color(ui.visuals().weak_text_color()),
                 );
 
                 // Annotation (editable if editing)
@@ -129,7 +129,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
                         egui::RichText::new(&bookmark.annotation)
                             .small()
                             .italics()
-                            .color(egui::Color32::LIGHT_GRAY),
+                            .color(ui.visuals().weak_text_color()),
                     );
                 }
 

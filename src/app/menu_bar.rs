@@ -1,3 +1,4 @@
+use crate::ui::theme::AppColors;
 use eframe::egui;
 
 use super::BendApp;
@@ -15,17 +16,16 @@ fn modifier_key() -> &'static str {
 /// Uses a horizontal layout with the shortcut text aligned right.
 /// Shortcut text is dimmer when not hovered, brighter when hovered.
 fn menu_item_with_shortcut(ui: &mut egui::Ui, label: &str, shortcut: &str, enabled: bool) -> bool {
+    let colors = AppColors::new(ui.visuals().dark_mode);
+    let text_color = ui.visuals().text_color();
+
     // Calculate label and shortcut widths for proper sizing
-    let label_galley = ui.painter().layout_no_wrap(
-        label.to_string(),
-        egui::FontId::default(),
-        egui::Color32::WHITE,
-    );
-    let shortcut_galley = ui.painter().layout_no_wrap(
-        shortcut.to_string(),
-        egui::FontId::default(),
-        egui::Color32::WHITE,
-    );
+    let label_galley =
+        ui.painter()
+            .layout_no_wrap(label.to_string(), egui::FontId::default(), text_color);
+    let shortcut_galley =
+        ui.painter()
+            .layout_no_wrap(shortcut.to_string(), egui::FontId::default(), text_color);
 
     // Width = label + gap + shortcut + padding
     let desired_width = label_galley.size().x + 40.0 + shortcut_galley.size().x + 8.0;
@@ -38,9 +38,9 @@ fn menu_item_with_shortcut(ui: &mut egui::Ui, label: &str, shortcut: &str, enabl
     // Paint shortcut with brightness based on hover state
     if !shortcut.is_empty() {
         let shortcut_color = if response.hovered() {
-            egui::Color32::from_gray(200) // Brighter when hovered
+            colors.shortcut_hover
         } else {
-            egui::Color32::from_gray(120) // Dimmer when not hovered
+            colors.shortcut_normal
         };
 
         let shortcut_galley = ui.painter().layout_no_wrap(
