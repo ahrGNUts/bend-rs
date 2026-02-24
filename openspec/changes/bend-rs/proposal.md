@@ -110,7 +110,7 @@ A cross-platform desktop application (built with Rust and egui) that provides:
 - Branching history (tree of states)
 - Batch operations
 - Randomization tools and presets
-- Additional format support (PNG, etc.)
+- Additional format support (TIFF, WebP, GIF, etc.)
 - Minimap visualization
 - Heatmap overlay for recent changes
 

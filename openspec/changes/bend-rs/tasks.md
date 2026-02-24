@@ -98,18 +98,6 @@
 - [x] 8.6 Mark scan data as high risk for warnings
 - [x] 8.7 Handle malformed JPEG files gracefully
 
-## 8b. Format Parsing - PNG (P1)
-- [x] 8b.1 Implement PNG signature detection (8-byte magic: 89 50 4E 47 0D 0A 1A 0A)
-- [x] 8b.2 Implement chunk-based parsing (Length + Type + Data + CRC per chunk)
-- [x] 8b.3 Identify critical chunks: IHDR, PLTE, IDAT, IEND
-- [x] 8b.4 Identify ancillary chunks: tEXt, zTXt, iTXt, gAMA, cHRM, sRGB, iCCP, bKGD, pHYs, tIME, tRNS
-- [x] 8b.5 Parse IHDR data fields (width, height, bit depth, color type, compression, filter, interlace)
-- [x] 8b.6 Assign risk levels per chunk type (IHDR/IEND=Critical, PLTE=High, IDAT=Caution, text=Safe)
-- [x] 8b.7 Handle malformed/truncated PNG files gracefully
-- [x] 8b.8 Register PNG parser in format detection chain
-- [x] 8b.9 Update file extension validation and UI strings to include .png
-- [x] 8b.10 Write comprehensive parser tests
-
 ## 9. Structure Visualization (P1)
 Prerequisites: Sections 7-8 (Format Parsing)
 

@@ -3,7 +3,7 @@
 ## ADDED Requirements
 
 ### Requirement: File Structure Parsing
-The application SHALL parse BMP, JPEG, and PNG files to identify structural sections (headers, metadata, image data).
+The application SHALL parse BMP and JPEG files to identify structural sections (headers, metadata, image data).
 
 #### Scenario: Parse BMP structure
 - **WHEN** a BMP file is loaded
@@ -14,12 +14,6 @@ The application SHALL parse BMP, JPEG, and PNG files to identify structural sect
 - **WHEN** a JPEG file is loaded
 - **THEN** the application identifies marker segments: SOI, APP markers, DQT, SOF, DHT, SOS, and image data
 - **AND** each segment's byte offset and size are determined
-
-#### Scenario: Parse PNG structure
-- **WHEN** a PNG file is loaded
-- **THEN** the application identifies the 8-byte signature and chunk sequence: IHDR, PLTE, IDAT, IEND, and ancillary chunks
-- **AND** each chunk's byte offset, type, data length, and CRC are determined
-- **AND** IHDR fields (width, height, bit depth, color type, compression, filter, interlace) are parsed
 
 #### Scenario: Handle malformed files
 - **WHEN** a file cannot be fully parsed due to corruption or non-standard structure

@@ -190,7 +190,7 @@ impl BendApp {
 
         if let Some(path) = rfd::FileDialog::new()
             .set_file_name(format!("{}.{}", default_name, extension))
-            .add_filter("Images", &["bmp", "jpg", "jpeg", "png"])
+            .add_filter("Images", &["bmp", "jpg", "jpeg"])
             .add_filter("All files", &["*"])
             .save_file()
         {
@@ -208,10 +208,7 @@ impl BendApp {
     /// Check if a file extension is a supported format
     fn is_supported_extension(path: &std::path::Path) -> bool {
         match path.extension().and_then(|e| e.to_str()) {
-            Some(ext) => matches!(
-                ext.to_ascii_lowercase().as_str(),
-                "bmp" | "jpg" | "jpeg" | "png"
-            ),
+            Some(ext) => matches!(ext.to_ascii_lowercase().as_str(), "bmp" | "jpg" | "jpeg"),
             None => false,
         }
     }
@@ -220,7 +217,7 @@ impl BendApp {
     pub fn open_file(&mut self, path: PathBuf) {
         if !Self::is_supported_extension(&path) {
             self.preview.decode_error = Some(
-                "Unsupported file format. Bend supports BMP (.bmp), JPEG (.jpg, .jpeg), and PNG (.png) files."
+                "Unsupported file format. Bend supports BMP (.bmp) and JPEG (.jpg, .jpeg) files."
                     .to_string(),
             );
             return;
@@ -252,7 +249,7 @@ impl BendApp {
     /// Open file dialog and load selected file
     pub fn open_file_dialog(&mut self) {
         if let Some(path) = rfd::FileDialog::new()
-            .add_filter("Images", &["bmp", "jpg", "jpeg", "png"])
+            .add_filter("Images", &["bmp", "jpg", "jpeg"])
             .add_filter("All files", &["*"])
             .pick_file()
         {
@@ -383,7 +380,7 @@ impl BendApp {
                     ui.vertical_centered(|ui| {
                         ui.heading("Welcome to bend-rs");
                         ui.add_space(20.0);
-                        ui.label("Open a BMP, JPEG, or PNG file to begin databending.");
+                        ui.label("Open a BMP or JPEG file to begin databending.");
                         ui.add_space(10.0);
                         ui.label("Drag and drop a file here, or use File > Open");
                         ui.add_space(20.0);
@@ -474,13 +471,6 @@ mod tests {
         assert!(BendApp::is_supported_extension(std::path::Path::new(
             "photo.JPG"
         )));
-        assert!(BendApp::is_supported_extension(std::path::Path::new(
-            "photo.png"
-        )));
-        assert!(BendApp::is_supported_extension(std::path::Path::new(
-            "photo.PNG"
-        )));
-
         assert!(!BendApp::is_supported_extension(std::path::Path::new(
             "photo.gif"
         )));

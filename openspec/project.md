@@ -41,14 +41,14 @@ Bend is a cross-platform desktop application for **databending** -- the art of d
 3. **Virtual Scrolling:** Hex editor renders only visible rows + small buffer for performance with large files.
 4. **Operation Coalescing:** Adjacent single-byte edits within 500ms are merged into one undo operation.
 5. **Incremental Save Point Diffs:** Save points store only byte-level changes from previous state, not full copies.
-6. **Trait-Based Format Support:** `ImageFormat` trait allows extensible format parsers (currently BMP, JPEG, and PNG).
+6. **Trait-Based Format Support:** `ImageFormat` trait allows extensible format parsers (currently BMP and JPEG).
 7. **Risk-Level Coloring:** File sections are classified as Safe/Caution/High/Critical/Unknown and color-coded in the hex view.
 8. **Debounced Preview Updates:** Image preview re-renders after a short delay to avoid lag during rapid editing.
 
 ### Testing Strategy
 
 - Unit tests embedded in source files using `#[cfg(test)]` modules
-- Tests cover: file extension validation, settings save/load, format parsing (BMP, JPEG, PNG), gap filling, search functionality, edit operations, printable ASCII detection, unsupported format handling, settings sync
+- Tests cover: file extension validation, settings save/load, format parsing (BMP, JPEG), gap filling, search functionality, edit operations, printable ASCII detection, unsupported format handling, settings sync
 - All tests must pass before committing (`cargo test`)
 - Run `cargo fmt` before staging
 
@@ -88,8 +88,6 @@ Databending is a creative art form where artists deliberately edit the raw binar
 
 **JPEG:** Marker-based structure -- SOI (FF D8) + marker segments (APP, DQT, SOF, DHT, SOS) + entropy-coded data + EOI (FF D9). Editing entropy-coded data produces interesting glitch effects.
 
-**PNG:** Chunk-based structure -- 8-byte signature + sequence of typed chunks (IHDR, PLTE, IDAT, IEND, plus ancillary chunks). Each chunk has a 4-byte length, 4-byte type, variable data, and 4-byte CRC. Editing IDAT (compressed pixel data) produces glitch effects; editing IHDR or IEND is likely to break the file.
-
 ### UI Layout
 
 ```
@@ -121,7 +119,7 @@ Databending is a creative art form where artists deliberately edit the raw binar
 ## External Dependencies
 
 - **egui/eframe:** Cross-platform immediate-mode GUI framework. No external runtime required.
-- **image crate:** Used only for decoding (BMP, JPEG, PNG, ICO) to render previews, not for encoding.
+- **image crate:** Used only for decoding (BMP, JPEG, ICO) to render previews, not for encoding. PNG feature kept for app icon loading.
 - **rfd:** Native OS file dialogs (open/save).
 - **dirs:** Platform-appropriate config directory resolution (macOS: `~/Library/Application Support/bend-rs/`, Windows: `%APPDATA%/bend-rs/`, Linux: `~/.config/bend-rs/`).
 - **arboard:** System clipboard access for copy/paste.
