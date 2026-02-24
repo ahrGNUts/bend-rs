@@ -17,7 +17,7 @@ fn show_section(
 
     // Color the section name based on risk level
     let color = colors.risk_color(section.risk);
-    let mut name = RichText::new(&section.name).color(color);
+    let mut name = RichText::new(&*section.name).color(color);
 
     if is_cursor_in_section {
         name = name.strong();

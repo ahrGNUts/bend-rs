@@ -6,25 +6,11 @@
 //! - Optional Color Table: palette for indexed color images
 //! - Pixel Data: the actual image pixels
 
-use super::traits::{FileSection, ImageFormat, RiskLevel};
+use super::bytes;
+use super::traits::{FileSection, ImageFormat, ParseError, RiskLevel};
 
 /// BMP format parser
 pub struct BmpParser;
-
-impl BmpParser {
-    /// Read a little-endian u32 from data
-    fn read_u32(data: &[u8], offset: usize) -> Option<u32> {
-        if offset + 4 > data.len() {
-            return None;
-        }
-        Some(u32::from_le_bytes([
-            data[offset],
-            data[offset + 1],
-            data[offset + 2],
-            data[offset + 3],
-        ]))
-    }
-}
 
 impl ImageFormat for BmpParser {
     fn can_parse(&self, data: &[u8]) -> bool {
@@ -32,9 +18,9 @@ impl ImageFormat for BmpParser {
         data.len() >= 2 && data[0] == b'B' && data[1] == b'M'
     }
 
-    fn parse(&self, data: &[u8]) -> Result<Vec<FileSection>, String> {
+    fn parse(&self, data: &[u8]) -> Result<Vec<FileSection>, ParseError> {
         if !self.can_parse(data) {
-            return Err("Not a valid BMP file".to_string());
+            return Err(ParseError::InvalidSignature);
         }
 
         let mut sections = Vec::new();
@@ -66,7 +52,7 @@ impl ImageFormat for BmpParser {
         sections.push(file_header);
 
         // Read pixel data offset — return partial on failure
-        let Some(pixel_offset) = Self::read_u32(data, 10).map(|v| v as usize) else {
+        let Some(pixel_offset) = bytes::read_u32_le(data, 10).map(|v| v as usize) else {
             return Ok(sections);
         };
 
@@ -75,7 +61,7 @@ impl ImageFormat for BmpParser {
             return Ok(sections);
         }
 
-        let Some(dib_header_size) = Self::read_u32(data, 14).map(|v| v as usize) else {
+        let Some(dib_header_size) = bytes::read_u32_le(data, 14).map(|v| v as usize) else {
             return Ok(sections);
         };
 

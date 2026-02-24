@@ -9,28 +9,265 @@
 //! - APNG chunks: acTL, fcTL, fdAT
 //! - Registered extensions: oFFs, pCAL, sCAL, gIFg, gIFx, sTER, dSIG
 
-use super::traits::{FileSection, ImageFormat, RiskLevel};
+use std::borrow::Cow;
+
+use super::bytes;
+use super::traits::{FileSection, ImageFormat, ParseError, RiskLevel};
 
 /// PNG signature bytes
 const PNG_SIGNATURE: [u8; 8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+
+/// Metadata for a known PNG chunk type (one source of truth).
+struct ChunkInfo {
+    chunk_type: &'static [u8; 4],
+    name: &'static str,
+    risk: RiskLevel,
+    description: &'static str,
+}
+
+/// All known PNG chunk types with their name, risk level, and description.
+const KNOWN_CHUNKS: &[ChunkInfo] = &[
+    // Critical chunks
+    ChunkInfo {
+        chunk_type: b"IHDR",
+        name: "IHDR (Image Header)",
+        risk: RiskLevel::Critical,
+        description: "Image dimensions, bit depth, and color type",
+    },
+    ChunkInfo {
+        chunk_type: b"PLTE",
+        name: "PLTE (Palette)",
+        risk: RiskLevel::High,
+        description: "Palette data for indexed-color images",
+    },
+    ChunkInfo {
+        chunk_type: b"IDAT",
+        name: "IDAT (Image Data)",
+        risk: RiskLevel::Caution,
+        description: "Compressed image data - the fun part to glitch",
+    },
+    ChunkInfo {
+        chunk_type: b"IEND",
+        name: "IEND (Image End)",
+        risk: RiskLevel::Critical,
+        description: "End of PNG data stream",
+    },
+    // Ancillary chunks
+    ChunkInfo {
+        chunk_type: b"tEXt",
+        name: "tEXt (Text)",
+        risk: RiskLevel::Safe,
+        description: "Uncompressed text metadata - safe to edit",
+    },
+    ChunkInfo {
+        chunk_type: b"zTXt",
+        name: "zTXt (Compressed Text)",
+        risk: RiskLevel::Safe,
+        description: "Compressed text metadata",
+    },
+    ChunkInfo {
+        chunk_type: b"iTXt",
+        name: "iTXt (International Text)",
+        risk: RiskLevel::Safe,
+        description: "International text metadata",
+    },
+    ChunkInfo {
+        chunk_type: b"gAMA",
+        name: "gAMA (Gamma)",
+        risk: RiskLevel::Caution,
+        description: "Image gamma value",
+    },
+    ChunkInfo {
+        chunk_type: b"cHRM",
+        name: "cHRM (Chromaticities)",
+        risk: RiskLevel::Caution,
+        description: "Primary chromaticities and white point",
+    },
+    ChunkInfo {
+        chunk_type: b"sRGB",
+        name: "sRGB (Standard RGB)",
+        risk: RiskLevel::Caution,
+        description: "Standard RGB color space indicator",
+    },
+    ChunkInfo {
+        chunk_type: b"iCCP",
+        name: "iCCP (ICC Profile)",
+        risk: RiskLevel::Caution,
+        description: "Embedded ICC profile",
+    },
+    ChunkInfo {
+        chunk_type: b"bKGD",
+        name: "bKGD (Background)",
+        risk: RiskLevel::Caution,
+        description: "Default background color",
+    },
+    ChunkInfo {
+        chunk_type: b"pHYs",
+        name: "pHYs (Physical Dimensions)",
+        risk: RiskLevel::Safe,
+        description: "Physical pixel dimensions",
+    },
+    ChunkInfo {
+        chunk_type: b"tIME",
+        name: "tIME (Timestamp)",
+        risk: RiskLevel::Safe,
+        description: "Last modification time",
+    },
+    ChunkInfo {
+        chunk_type: b"tRNS",
+        name: "tRNS (Transparency)",
+        risk: RiskLevel::Caution,
+        description: "Transparency information",
+    },
+    ChunkInfo {
+        chunk_type: b"sBIT",
+        name: "sBIT (Significant Bits)",
+        risk: RiskLevel::Caution,
+        description: "Number of significant bits per channel",
+    },
+    ChunkInfo {
+        chunk_type: b"hIST",
+        name: "hIST (Histogram)",
+        risk: RiskLevel::Safe,
+        description: "Frequency of each palette color",
+    },
+    ChunkInfo {
+        chunk_type: b"sPLT",
+        name: "sPLT (Suggested Palette)",
+        risk: RiskLevel::Safe,
+        description: "Suggested palette for display",
+    },
+    ChunkInfo {
+        chunk_type: b"eXIf",
+        name: "eXIf (Exif Metadata)",
+        risk: RiskLevel::Safe,
+        description: "Exchangeable image file (Exif) metadata",
+    },
+    // APNG chunks
+    ChunkInfo {
+        chunk_type: b"acTL",
+        name: "acTL (Animation Control)",
+        risk: RiskLevel::High,
+        description: "APNG animation control - frame count and loop info",
+    },
+    ChunkInfo {
+        chunk_type: b"fcTL",
+        name: "fcTL (Frame Control)",
+        risk: RiskLevel::High,
+        description: "APNG frame control - dimensions, offsets, timing",
+    },
+    ChunkInfo {
+        chunk_type: b"fdAT",
+        name: "fdAT (Frame Data)",
+        risk: RiskLevel::Caution,
+        description: "APNG frame data - compressed frame image data",
+    },
+    // PNG Third/Fourth Edition
+    ChunkInfo {
+        chunk_type: b"cICP",
+        name: "cICP (Coding-Independent Code Points)",
+        risk: RiskLevel::Caution,
+        description: "HDR color space via coding-independent code points",
+    },
+    ChunkInfo {
+        chunk_type: b"mDCv",
+        name: "mDCv (Mastering Display Color Volume)",
+        risk: RiskLevel::Caution,
+        description: "HDR mastering display color volume",
+    },
+    ChunkInfo {
+        chunk_type: b"cLLi",
+        name: "cLLi (Content Light Level)",
+        risk: RiskLevel::Caution,
+        description: "HDR content light level information",
+    },
+    ChunkInfo {
+        chunk_type: b"caBX",
+        name: "caBX (Content Credentials Box)",
+        risk: RiskLevel::Safe,
+        description: "Content credentials (C2PA) provenance box",
+    },
+    // Registered extensions
+    ChunkInfo {
+        chunk_type: b"oFFs",
+        name: "oFFs (Image Offset)",
+        risk: RiskLevel::Safe,
+        description: "Image offset from page origin",
+    },
+    ChunkInfo {
+        chunk_type: b"pCAL",
+        name: "pCAL (Pixel Calibration)",
+        risk: RiskLevel::Safe,
+        description: "Calibration of pixel values to physical units",
+    },
+    ChunkInfo {
+        chunk_type: b"sCAL",
+        name: "sCAL (Physical Scale)",
+        risk: RiskLevel::Safe,
+        description: "Physical scale of image subject",
+    },
+    ChunkInfo {
+        chunk_type: b"gIFg",
+        name: "gIFg (GIF Graphic Control)",
+        risk: RiskLevel::Safe,
+        description: "GIF graphic control extension data",
+    },
+    ChunkInfo {
+        chunk_type: b"gIFx",
+        name: "gIFx (GIF Application Extension)",
+        risk: RiskLevel::Safe,
+        description: "GIF application extension data",
+    },
+    ChunkInfo {
+        chunk_type: b"sTER",
+        name: "sTER (Stereo Image)",
+        risk: RiskLevel::Safe,
+        description: "Stereo image indicator",
+    },
+    ChunkInfo {
+        chunk_type: b"dSIG",
+        name: "dSIG (Digital Signature)",
+        risk: RiskLevel::High,
+        description: "Digital signature for integrity verification",
+    },
+    // Common private chunks (Apple, Adobe, ImageMagick)
+    ChunkInfo {
+        chunk_type: b"iDOT",
+        name: "iDOT (Apple Optimization Data)",
+        risk: RiskLevel::Safe,
+        description: "Apple PNG optimization hints",
+    },
+    ChunkInfo {
+        chunk_type: b"CgBI",
+        name: "CgBI (Apple CoreGraphics)",
+        risk: RiskLevel::High,
+        description: "Apple CoreGraphics premultiplied BGR format marker",
+    },
+    ChunkInfo {
+        chunk_type: b"vpAg",
+        name: "vpAg (Virtual Page)",
+        risk: RiskLevel::Safe,
+        description: "Virtual page size information",
+    },
+    ChunkInfo {
+        chunk_type: b"orNT",
+        name: "orNT (Orientation)",
+        risk: RiskLevel::Safe,
+        description: "Image orientation metadata",
+    },
+];
+
+/// Look up metadata for a known chunk type.
+fn chunk_info(chunk_type: &[u8; 4]) -> Option<&'static ChunkInfo> {
+    KNOWN_CHUNKS
+        .iter()
+        .find(|info| info.chunk_type == chunk_type)
+}
 
 /// PNG format parser
 pub struct PngParser;
 
 impl PngParser {
-    /// Read a big-endian u32 from data
-    fn read_u32_be(data: &[u8], offset: usize) -> Option<u32> {
-        if offset + 4 > data.len() {
-            return None;
-        }
-        Some(u32::from_be_bytes([
-            data[offset],
-            data[offset + 1],
-            data[offset + 2],
-            data[offset + 3],
-        ]))
-    }
-
     /// Extract 4-byte chunk type from data at offset
     fn chunk_type_bytes(data: &[u8], offset: usize) -> Option<[u8; 4]> {
         if offset + 4 > data.len() {
@@ -46,54 +283,14 @@ impl PngParser {
 
     /// Get human-readable name for a chunk type.
     ///
-    /// For unrecognized chunk types, uses PNG's chunk type byte conventions
-    /// (bit 5 of each byte encodes ancillary/critical, public/private, safe-to-copy)
-    /// to produce a descriptive fallback label.
-    fn chunk_name(chunk_type: &[u8; 4]) -> String {
-        match chunk_type {
-            b"IHDR" => "IHDR (Image Header)",
-            b"PLTE" => "PLTE (Palette)",
-            b"IDAT" => "IDAT (Image Data)",
-            b"IEND" => "IEND (Image End)",
-            b"tEXt" => "tEXt (Text)",
-            b"zTXt" => "zTXt (Compressed Text)",
-            b"iTXt" => "iTXt (International Text)",
-            b"gAMA" => "gAMA (Gamma)",
-            b"cHRM" => "cHRM (Chromaticities)",
-            b"sRGB" => "sRGB (Standard RGB)",
-            b"iCCP" => "iCCP (ICC Profile)",
-            b"bKGD" => "bKGD (Background)",
-            b"pHYs" => "pHYs (Physical Dimensions)",
-            b"tIME" => "tIME (Timestamp)",
-            b"tRNS" => "tRNS (Transparency)",
-            b"sBIT" => "sBIT (Significant Bits)",
-            b"hIST" => "hIST (Histogram)",
-            b"sPLT" => "sPLT (Suggested Palette)",
-            b"eXIf" => "eXIf (Exif Metadata)",
-            b"acTL" => "acTL (Animation Control)",
-            b"fcTL" => "fcTL (Frame Control)",
-            b"fdAT" => "fdAT (Frame Data)",
-            // PNG Third/Fourth Edition
-            b"cICP" => "cICP (Coding-Independent Code Points)",
-            b"mDCv" => "mDCv (Mastering Display Color Volume)",
-            b"cLLi" => "cLLi (Content Light Level)",
-            b"caBX" => "caBX (Content Credentials Box)",
-            // Registered extensions
-            b"oFFs" => "oFFs (Image Offset)",
-            b"pCAL" => "pCAL (Pixel Calibration)",
-            b"sCAL" => "sCAL (Physical Scale)",
-            b"gIFg" => "gIFg (GIF Graphic Control)",
-            b"gIFx" => "gIFx (GIF Application Extension)",
-            b"sTER" => "sTER (Stereo Image)",
-            b"dSIG" => "dSIG (Digital Signature)",
-            // Common private chunks (Apple, Adobe, ImageMagick)
-            b"iDOT" => "iDOT (Apple Optimization Data)",
-            b"CgBI" => "CgBI (Apple CoreGraphics)",
-            b"vpAg" => "vpAg (Virtual Page)",
-            b"orNT" => "orNT (Orientation)",
-            _ => return Self::fallback_chunk_name(chunk_type),
+    /// Known chunks return a borrowed `&'static str` (zero allocation).
+    /// Unknown chunks produce an owned `String` via fallback labeling.
+    fn chunk_name(chunk_type: &[u8; 4]) -> Cow<'static, str> {
+        if let Some(info) = chunk_info(chunk_type) {
+            Cow::Borrowed(info.name)
+        } else {
+            Cow::Owned(Self::fallback_chunk_name(chunk_type))
         }
-        .into()
     }
 
     /// Produce a descriptive name for an unrecognized chunk type using PNG byte conventions.
@@ -122,67 +319,19 @@ impl PngParser {
     /// For unrecognized chunks, uses PNG byte conventions: ancillary chunks default
     /// to Safe (decoders can skip them), critical chunks default to High.
     fn chunk_risk(chunk_type: &[u8; 4]) -> RiskLevel {
-        match chunk_type {
-            b"IHDR" | b"IEND" => RiskLevel::Critical,
-            b"PLTE" | b"acTL" | b"fcTL" | b"dSIG" | b"CgBI" => RiskLevel::High,
-            b"IDAT" | b"fdAT" | b"gAMA" | b"cHRM" | b"sRGB" | b"iCCP" | b"bKGD" | b"tRNS"
-            | b"sBIT" | b"cICP" | b"mDCv" | b"cLLi" => RiskLevel::Caution,
-            b"tEXt" | b"zTXt" | b"iTXt" | b"tIME" | b"pHYs" | b"eXIf" | b"hIST" | b"sPLT"
-            | b"oFFs" | b"pCAL" | b"sCAL" | b"gIFg" | b"gIFx" | b"sTER" | b"caBX" | b"iDOT"
-            | b"vpAg" | b"orNT" => RiskLevel::Safe,
-            _ => {
-                // Ancillary chunks (bit 5 of first byte set) are safe to skip
-                if chunk_type[0] & 0x20 != 0 {
-                    RiskLevel::Safe
-                } else {
-                    RiskLevel::High
-                }
-            }
+        if let Some(info) = chunk_info(chunk_type) {
+            info.risk
+        } else if chunk_type[0] & 0x20 != 0 {
+            // Ancillary chunks are safe to skip
+            RiskLevel::Safe
+        } else {
+            RiskLevel::High
         }
     }
 
     /// Get description for a chunk type
     fn chunk_description(chunk_type: &[u8; 4]) -> &'static str {
-        match chunk_type {
-            b"IHDR" => "Image dimensions, bit depth, and color type",
-            b"PLTE" => "Palette data for indexed-color images",
-            b"IDAT" => "Compressed image data - the fun part to glitch",
-            b"IEND" => "End of PNG data stream",
-            b"tEXt" => "Uncompressed text metadata - safe to edit",
-            b"zTXt" => "Compressed text metadata",
-            b"iTXt" => "International text metadata",
-            b"gAMA" => "Image gamma value",
-            b"cHRM" => "Primary chromaticities and white point",
-            b"sRGB" => "Standard RGB color space indicator",
-            b"iCCP" => "Embedded ICC profile",
-            b"bKGD" => "Default background color",
-            b"pHYs" => "Physical pixel dimensions",
-            b"tIME" => "Last modification time",
-            b"tRNS" => "Transparency information",
-            b"sBIT" => "Number of significant bits per channel",
-            b"hIST" => "Frequency of each palette color",
-            b"sPLT" => "Suggested palette for display",
-            b"eXIf" => "Exchangeable image file (Exif) metadata",
-            b"acTL" => "APNG animation control - frame count and loop info",
-            b"fcTL" => "APNG frame control - dimensions, offsets, timing",
-            b"fdAT" => "APNG frame data - compressed frame image data",
-            b"cICP" => "HDR color space via coding-independent code points",
-            b"mDCv" => "HDR mastering display color volume",
-            b"cLLi" => "HDR content light level information",
-            b"caBX" => "Content credentials (C2PA) provenance box",
-            b"oFFs" => "Image offset from page origin",
-            b"pCAL" => "Calibration of pixel values to physical units",
-            b"sCAL" => "Physical scale of image subject",
-            b"gIFg" => "GIF graphic control extension data",
-            b"gIFx" => "GIF application extension data",
-            b"sTER" => "Stereo image indicator",
-            b"dSIG" => "Digital signature for integrity verification",
-            b"iDOT" => "Apple PNG optimization hints",
-            b"CgBI" => "Apple CoreGraphics premultiplied BGR format marker",
-            b"vpAg" => "Virtual page size information",
-            b"orNT" => "Image orientation metadata",
-            _ => "",
-        }
+        chunk_info(chunk_type).map_or("", |info| info.description)
     }
 
     /// Build child sections for IHDR chunk data (13 bytes)
@@ -237,9 +386,9 @@ impl ImageFormat for PngParser {
         data.len() >= 8 && data[..8] == PNG_SIGNATURE
     }
 
-    fn parse(&self, data: &[u8]) -> Result<Vec<FileSection>, String> {
+    fn parse(&self, data: &[u8]) -> Result<Vec<FileSection>, ParseError> {
         if !self.can_parse(data) {
-            return Err("Not a valid PNG file".to_string());
+            return Err(ParseError::InvalidSignature);
         }
 
         let mut sections = Vec::new();
@@ -257,7 +406,7 @@ impl ImageFormat for PngParser {
             let chunk_start = pos;
 
             // Read chunk length (4 bytes)
-            let Some(data_length) = Self::read_u32_be(data, pos) else {
+            let Some(data_length) = bytes::read_u32_be(data, pos) else {
                 // Truncated: can't read length
                 break;
             };
@@ -465,7 +614,7 @@ mod tests {
         let child_names: Vec<&str> = data_child
             .children
             .iter()
-            .map(|c| c.name.as_str())
+            .map(|c| c.name.as_ref())
             .collect();
         assert!(child_names.contains(&"Width"));
         assert!(child_names.contains(&"Height"));
@@ -789,5 +938,54 @@ mod tests {
         // vpAg, orNT — ImageMagick and other tools
         assert_eq!(PngParser::chunk_risk(b"vpAg"), RiskLevel::Safe);
         assert_eq!(PngParser::chunk_risk(b"orNT"), RiskLevel::Safe);
+    }
+
+    #[test]
+    fn test_parse_multiple_idat_chunks() {
+        let parser = PngParser;
+        let ihdr = ihdr_data();
+        let idat1 = vec![0x78, 0x9C]; // first IDAT
+        let idat2 = vec![0x01, 0x02, 0x03]; // second IDAT
+        let png = build_png(&[
+            (b"IHDR", &ihdr),
+            (b"IDAT", &idat1),
+            (b"IDAT", &idat2),
+            (b"IEND", &[]),
+        ]);
+
+        let sections = parser.parse(&png).unwrap();
+
+        // Signature + IHDR + IDAT + IDAT + IEND
+        assert_eq!(sections.len(), 5);
+
+        // Both IDAT sections should be present with correct names and contiguous ranges
+        let idat_sections: Vec<_> = sections
+            .iter()
+            .filter(|s| s.name.contains("IDAT"))
+            .collect();
+        assert_eq!(idat_sections.len(), 2);
+        assert_eq!(idat_sections[0].risk, RiskLevel::Caution);
+        assert_eq!(idat_sections[1].risk, RiskLevel::Caution);
+
+        // Second IDAT starts where first IDAT ends
+        assert_eq!(idat_sections[1].start, idat_sections[0].end);
+    }
+
+    #[test]
+    fn test_overflow_chunk_length_handled() {
+        let parser = PngParser;
+        // Build a PNG with a chunk whose data_length is u32::MAX.
+        // The parser should not panic — checked_add detects the overflow and breaks.
+        let mut png = PNG_SIGNATURE.to_vec();
+        png.extend_from_slice(&u32::MAX.to_be_bytes()); // length = u32::MAX
+        png.extend_from_slice(b"IDAT"); // type
+        png.extend_from_slice(&[0xAA; 8]); // some data (nowhere near u32::MAX)
+
+        let sections = parser.parse(&png).unwrap();
+
+        // Parser should produce the Signature section. The IDAT chunk's
+        // data_start + data_length + 4 overflows, so the loop breaks cleanly.
+        assert!(sections.len() >= 1);
+        assert_eq!(sections[0].name, "PNG Signature");
     }
 }

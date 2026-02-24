@@ -10,20 +10,13 @@
 //! - Entropy-coded data
 //! - EOI (End of Image): FF D9
 
-use super::traits::{FileSection, ImageFormat, RiskLevel};
+use super::bytes;
+use super::traits::{FileSection, ImageFormat, ParseError, RiskLevel};
 
 /// JPEG format parser
 pub struct JpegParser;
 
 impl JpegParser {
-    /// Read a big-endian u16 from data (JPEG uses big-endian)
-    fn read_u16_be(data: &[u8], offset: usize) -> Option<u16> {
-        if offset + 2 > data.len() {
-            return None;
-        }
-        Some(u16::from_be_bytes([data[offset], data[offset + 1]]))
-    }
-
     /// Get human-readable name for a marker
     fn marker_name(marker: u8) -> &'static str {
         match marker {
@@ -68,9 +61,9 @@ impl ImageFormat for JpegParser {
         data.len() >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF
     }
 
-    fn parse(&self, data: &[u8]) -> Result<Vec<FileSection>, String> {
+    fn parse(&self, data: &[u8]) -> Result<Vec<FileSection>, ParseError> {
         if !self.can_parse(data) {
-            return Err("Not a valid JPEG file".to_string());
+            return Err(ParseError::InvalidSignature);
         }
 
         let mut sections = Vec::new();
@@ -129,7 +122,7 @@ impl ImageFormat for JpegParser {
                     if pos + 2 > data.len() {
                         break;
                     }
-                    let segment_len = Self::read_u16_be(data, pos).unwrap_or(0) as usize;
+                    let segment_len = bytes::read_u16_be(data, pos).unwrap_or(0) as usize;
                     let segment_start = pos - 2;
                     let segment_end = pos + segment_len;
 
@@ -183,7 +176,7 @@ impl ImageFormat for JpegParser {
                         break;
                     }
 
-                    let segment_len = Self::read_u16_be(data, pos).unwrap_or(0) as usize;
+                    let segment_len = bytes::read_u16_be(data, pos).unwrap_or(0) as usize;
                     let segment_start = pos - 2;
                     let segment_end = pos + segment_len;
 
@@ -197,18 +190,18 @@ impl ImageFormat for JpegParser {
                     let mut section = FileSection::new(name, segment_start, segment_end, risk);
 
                     // Add descriptions for common markers
-                    section.description = Some(
-                        match marker {
-                            0xE0 => "JFIF application data",
-                            0xE1 => "EXIF metadata or XMP data",
-                            0xDB => "Quantization tables - affects image quality",
-                            0xC4 => "Huffman tables - required for decoding",
-                            0xC0 => "Image dimensions and color components",
-                            0xFE => "Comment - safe to edit",
-                            _ => "",
-                        }
-                        .to_string(),
-                    );
+                    let desc = match marker {
+                        0xE0 => "JFIF application data",
+                        0xE1 => "EXIF metadata or XMP data",
+                        0xDB => "Quantization tables - affects image quality",
+                        0xC4 => "Huffman tables - required for decoding",
+                        0xC0 => "Image dimensions and color components",
+                        0xFE => "Comment - safe to edit",
+                        _ => "",
+                    };
+                    if !desc.is_empty() {
+                        section = section.with_description(desc);
+                    }
 
                     sections.push(section);
                     pos = segment_end;

@@ -4,6 +4,7 @@
 //! (headers, metadata, pixel data) for visualization and safe editing zones.
 
 mod bmp;
+mod bytes;
 mod jpeg;
 mod png;
 pub mod traits;

@@ -1,5 +1,23 @@
 //! Traits for image format parsing
 
+use std::borrow::Cow;
+use std::fmt;
+
+/// Error returned when a parser cannot parse the given data.
+#[derive(Debug, Clone)]
+pub enum ParseError {
+    /// The file signature does not match the expected format.
+    InvalidSignature,
+}
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ParseError::InvalidSignature => write!(f, "Invalid file signature"),
+        }
+    }
+}
+
 /// Risk level for editing a section
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RiskLevel {
@@ -32,7 +50,7 @@ impl RiskLevel {
 #[derive(Clone, Debug)]
 pub struct FileSection {
     /// Human-readable name for this section
-    pub name: String,
+    pub name: Cow<'static, str>,
     /// Start offset in bytes
     pub start: usize,
     /// End offset in bytes (exclusive)
@@ -47,7 +65,12 @@ pub struct FileSection {
 
 impl FileSection {
     /// Create a new section
-    pub fn new(name: impl Into<String>, start: usize, end: usize, risk: RiskLevel) -> Self {
+    pub fn new(
+        name: impl Into<Cow<'static, str>>,
+        start: usize,
+        end: usize,
+        risk: RiskLevel,
+    ) -> Self {
         Self {
             name: name.into(),
             start,
@@ -74,7 +97,7 @@ impl FileSection {
 /// Trait for image format parsers
 pub trait ImageFormat {
     /// Parse the file structure and return sections
-    fn parse(&self, data: &[u8]) -> Result<Vec<FileSection>, String>;
+    fn parse(&self, data: &[u8]) -> Result<Vec<FileSection>, ParseError>;
 
     /// Check if this parser can handle the given data
     fn can_parse(&self, data: &[u8]) -> bool;
