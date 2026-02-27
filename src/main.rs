@@ -15,7 +15,11 @@ use settings::AppSettings;
 use std::sync::Arc;
 
 fn load_icon() -> Option<egui::IconData> {
+    #[cfg(target_os = "macos")]
+    let icon_bytes = include_bytes!("../assets/icon_256x256_macos.png");
+    #[cfg(not(target_os = "macos"))]
     let icon_bytes = include_bytes!("../assets/icon_32x32.png");
+
     let image = image::load_from_memory(icon_bytes).ok()?.into_rgba8();
     let (width, height) = image.dimensions();
     Some(egui::IconData {
