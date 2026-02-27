@@ -185,12 +185,13 @@ Prerequisites: Sections 7-8 (format parsing to identify header regions)
 - [x] 17.8 BUG: Settings should be persistent between application restarts
 - [x] 17.9 ENHANCEMENT: Switch from updating image on keystroke in hex editor to an unsaved changes/reload bytes model
 - [x] 17.10a Switch from using placeholder app icon to databent base_converted_glitched.bmp
-- [ ] 17.10b Test application on windows to ensure icon displays as expected
+- [x] 17.10b Test application on windows to ensure icon displays as expected
 - [ ] 17.10c Test application on different Linux desktop envs to ensure icon displays as expected
-  - [ ] KDE Plasma
-  - [ ] GNOME
-  - [ ] Cinnamon
-  - [ ] XFCE
+  - [x] KDE Plasma (X11) 
+  - [ ] KDE Plasma (Wayland) (default wayland icon displays here instead of app icon)
+  - [ ] GNOME (default app icon shows in openSUSE and debian. OpenSUSE shows the application name as 'unknown' in the dock while debian shows bend-rs. Showing Unknown might be a wayland thing? Debian behaves the same when I boot into GNOME on Wayland)
+  - [x] Cinnamon
+  - [x] XFCE (fine on debian)
 - [x] 17.11 ENHANCEMENT: Implement an insert/overwrite mode when editing bytes and ascii
 - [x] 17.12 BUG: typing in the find and replace modal should capture the cursor and not cause input in the hex or ascii editors
 - [x] 17.13 BUG: shortcuts dialog title should be visible at all times and not grow vertically out of view of the user
