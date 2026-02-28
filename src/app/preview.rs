@@ -608,13 +608,17 @@ mod tests {
 
     // --- Test GIF builders ---
 
-    fn build_test_animated_gif() -> Vec<u8> {
+    /// GIF89a header + LSD + 2-entry GCT for a 1x1 canvas (19 bytes total).
+    fn gif_header_1x1() -> Vec<u8> {
         let mut gif = Vec::new();
         gif.extend_from_slice(b"GIF89a");
-        // LSD: 1x1, GCT with 2 entries
         gif.extend_from_slice(&[0x01, 0x00, 0x01, 0x00, 0x80, 0x00, 0x00]);
-        // GCT: black + white
         gif.extend_from_slice(&[0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF]);
+        gif
+    }
+
+    fn build_test_animated_gif() -> Vec<u8> {
+        let mut gif = gif_header_1x1();
         // NETSCAPE extension for looping
         gif.extend_from_slice(&[0x21, 0xFF, 0x0B]);
         gif.extend_from_slice(b"NETSCAPE2.0");
@@ -641,10 +645,7 @@ mod tests {
     }
 
     fn build_test_single_frame_gif() -> Vec<u8> {
-        let mut gif = Vec::new();
-        gif.extend_from_slice(b"GIF89a");
-        gif.extend_from_slice(&[0x01, 0x00, 0x01, 0x00, 0x80, 0x00, 0x00]);
-        gif.extend_from_slice(&[0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF]);
+        let mut gif = gif_header_1x1();
         gif.extend_from_slice(&[0x2C, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00]);
         gif.push(0x02);
         gif.push(0x02);
@@ -655,10 +656,7 @@ mod tests {
     }
 
     fn build_test_zero_delay_gif() -> Vec<u8> {
-        let mut gif = Vec::new();
-        gif.extend_from_slice(b"GIF89a");
-        gif.extend_from_slice(&[0x01, 0x00, 0x01, 0x00, 0x80, 0x00, 0x00]);
-        gif.extend_from_slice(&[0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF]);
+        let mut gif = gif_header_1x1();
         gif.extend_from_slice(&[0x21, 0xFF, 0x0B]);
         gif.extend_from_slice(b"NETSCAPE2.0");
         gif.extend_from_slice(&[0x03, 0x01, 0x00, 0x00, 0x00]);
