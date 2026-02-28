@@ -108,6 +108,43 @@ fn upload_frame(ctx: &egui::Context, image: &egui::ColorImage, name: &str) -> eg
     ctx.load_texture(name, image.clone(), egui::TextureOptions::LINEAR)
 }
 
+/// Advance a single animation by one frame if playing and the delay has elapsed.
+/// Returns `true` if the frame index changed (caller should update the displayed texture).
+fn advance_single_animation(anim: &mut AnimationState) -> bool {
+    if !anim.playing {
+        return false;
+    }
+    if anim.last_frame_time.elapsed() >= anim.delays[anim.current_frame] {
+        anim.current_frame = (anim.current_frame + 1) % anim.frames.len();
+        anim.last_frame_time = Instant::now();
+        true
+    } else {
+        false
+    }
+}
+
+/// Compute the remaining time before the current frame's delay expires,
+/// clamped to `MIN_FRAME_DELAY_MS` to prevent busy-looping.
+fn remaining_frame_delay(anim: &AnimationState) -> Duration {
+    let remaining = anim.delays[anim.current_frame].saturating_sub(anim.last_frame_time.elapsed());
+    remaining.max(Duration::from_millis(MIN_FRAME_DELAY_MS))
+}
+
+/// Poll a pending background animation decode channel.
+/// Returns `Some(result)` if a decode completed, and sets the receiver to `None`.
+fn poll_animation_decode(
+    rx: &mut Option<mpsc::Receiver<AnimationDecodeResult>>,
+) -> Option<AnimationDecodeResult> {
+    let receiver = rx.as_ref()?;
+    match receiver.try_recv() {
+        Ok(result) => {
+            *rx = None;
+            Some(result)
+        }
+        Err(_) => None,
+    }
+}
+
 impl BendApp {
     /// Mark the preview as needing update (with debounce timestamp)
     pub fn mark_preview_dirty(&mut self) {
@@ -132,119 +169,87 @@ impl BendApp {
     /// Advance animation frame if playing and delay has elapsed.
     /// Must be called unconditionally from BendApp::update() — not guarded by dirty flag.
     pub fn advance_animation(&mut self, ctx: &egui::Context) {
-        // Poll pending background animation decode
-        if let Some(rx) = &self.preview.pending_animation {
-            if let Ok(result) = rx.try_recv() {
-                self.preview.pending_animation = None;
-                match result {
-                    Ok((frames, delays)) => {
-                        if frames.len() > 1 {
-                            // Preserve playback state
-                            let (current_frame, playing) = self
-                                .preview
-                                .animation
-                                .as_ref()
-                                .map(|a| (a.current_frame.min(frames.len() - 1), a.playing))
-                                .unwrap_or((0, true));
+        // Poll pending background animation decode (working buffer)
+        if let Some(result) = poll_animation_decode(&mut self.preview.pending_animation) {
+            match result {
+                Ok((frames, delays)) => {
+                    if frames.len() > 1 {
+                        // Preserve playback state from previous animation
+                        let (current_frame, playing) = self
+                            .preview
+                            .animation
+                            .as_ref()
+                            .map(|a| (a.current_frame.min(frames.len() - 1), a.playing))
+                            .unwrap_or((0, true));
 
-                            let texture = upload_frame(ctx, &frames[current_frame], "preview_anim");
-                            self.preview.texture = Some(texture);
-                            self.preview.animation = Some(AnimationState {
-                                frames,
-                                delays,
-                                current_frame,
-                                playing,
-                                last_frame_time: Instant::now(),
-                            });
-                        } else if frames.len() == 1 {
-                            // Single frame — treat as static
-                            let texture = upload_frame(ctx, &frames[0], "preview");
-                            self.preview.texture = Some(texture);
-                            self.preview.animation = None;
-                        }
-                        self.preview.decode_error = None;
+                        let texture = upload_frame(ctx, &frames[current_frame], "preview_anim");
+                        self.preview.texture = Some(texture);
+                        self.preview.animation = Some(AnimationState {
+                            frames,
+                            delays,
+                            current_frame,
+                            playing,
+                            last_frame_time: Instant::now(),
+                        });
+                    } else if frames.len() == 1 {
+                        // Single frame — treat as static
+                        let texture = upload_frame(ctx, &frames[0], "preview");
+                        self.preview.texture = Some(texture);
+                        self.preview.animation = None;
                     }
-                    Err(e) => {
-                        log::warn!("Background animated GIF decode failed: {}", e);
-                        self.preview.decode_error = Some(format!("Decode error: {}", e));
-                        // Keep last valid animation state
-                    }
+                    self.preview.decode_error = None;
+                }
+                Err(e) => {
+                    log::warn!("Background animated GIF decode failed: {}", e);
+                    self.preview.decode_error = Some(format!("Decode error: {}", e));
                 }
             }
         }
 
         // Poll pending background original animation decode
-        if let Some(rx) = &self.preview.pending_original_animation {
-            if let Ok(result) = rx.try_recv() {
-                self.preview.pending_original_animation = None;
-                match result {
-                    Ok((frames, delays)) => {
-                        if frames.len() > 1 {
-                            let texture = upload_frame(ctx, &frames[0], "original_anim");
-                            self.preview.original_texture = Some(texture);
-                            self.preview.original_animation = Some(AnimationState {
-                                frames,
-                                delays,
-                                current_frame: 0,
-                                playing: true,
-                                last_frame_time: Instant::now(),
-                            });
-                        } else if frames.len() == 1 {
-                            let texture = upload_frame(ctx, &frames[0], "original");
-                            self.preview.original_texture = Some(texture);
-                        }
+        if let Some(result) = poll_animation_decode(&mut self.preview.pending_original_animation) {
+            match result {
+                Ok((frames, delays)) => {
+                    if frames.len() > 1 {
+                        let texture = upload_frame(ctx, &frames[0], "original_anim");
+                        self.preview.original_texture = Some(texture);
+                        self.preview.original_animation = Some(AnimationState {
+                            frames,
+                            delays,
+                            current_frame: 0,
+                            playing: true,
+                            last_frame_time: Instant::now(),
+                        });
+                    } else if frames.len() == 1 {
+                        let texture = upload_frame(ctx, &frames[0], "original");
+                        self.preview.original_texture = Some(texture);
                     }
-                    Err(e) => {
-                        log::warn!("Background original GIF decode failed: {}", e);
-                    }
+                }
+                Err(e) => {
+                    log::warn!("Background original GIF decode failed: {}", e);
                 }
             }
         }
 
         // Advance working buffer animation
         if let Some(anim) = &mut self.preview.animation {
+            if advance_single_animation(anim) {
+                let texture = upload_frame(ctx, &anim.frames[anim.current_frame], "preview_anim");
+                self.preview.texture = Some(texture);
+            }
             if anim.playing {
-                let elapsed = anim.last_frame_time.elapsed();
-                let current_delay = anim.delays[anim.current_frame];
-
-                if elapsed >= current_delay {
-                    // Advance to next frame (wrap around)
-                    anim.current_frame = (anim.current_frame + 1) % anim.frames.len();
-                    anim.last_frame_time = Instant::now();
-
-                    // Upload the new frame
-                    let texture =
-                        upload_frame(ctx, &anim.frames[anim.current_frame], "preview_anim");
-                    self.preview.texture = Some(texture);
-                }
-
-                // Schedule repaint for next frame advance
-                let anim = self.preview.animation.as_ref().unwrap();
-                let remaining =
-                    anim.delays[anim.current_frame].saturating_sub(anim.last_frame_time.elapsed());
-                ctx.request_repaint_after(remaining);
+                ctx.request_repaint_after(remaining_frame_delay(anim));
             }
         }
 
         // Advance original buffer animation (comparison mode)
         if let Some(anim) = &mut self.preview.original_animation {
+            if advance_single_animation(anim) {
+                let texture = upload_frame(ctx, &anim.frames[anim.current_frame], "original_anim");
+                self.preview.original_texture = Some(texture);
+            }
             if anim.playing {
-                let elapsed = anim.last_frame_time.elapsed();
-                let current_delay = anim.delays[anim.current_frame];
-
-                if elapsed >= current_delay {
-                    anim.current_frame = (anim.current_frame + 1) % anim.frames.len();
-                    anim.last_frame_time = Instant::now();
-
-                    let texture =
-                        upload_frame(ctx, &anim.frames[anim.current_frame], "original_anim");
-                    self.preview.original_texture = Some(texture);
-                }
-
-                let anim = self.preview.original_animation.as_ref().unwrap();
-                let remaining =
-                    anim.delays[anim.current_frame].saturating_sub(anim.last_frame_time.elapsed());
-                ctx.request_repaint_after(remaining);
+                ctx.request_repaint_after(remaining_frame_delay(anim));
             }
         }
     }
@@ -283,6 +288,10 @@ impl BendApp {
                 let result = decode_animated_gif(&data);
                 let _ = tx.send(result);
             });
+            // TODO: Consider adding Arc<AtomicBool> cancellation for long-running decodes
+            if self.preview.pending_animation.is_some() {
+                log::debug!("Superseding in-flight animation decode with new request");
+            }
             self.preview.pending_animation = Some(rx);
 
             // Also decode original for comparison if needed (on background thread)
@@ -457,6 +466,96 @@ mod tests {
         };
         assert!(anim.playing);
         assert_eq!(anim.current_frame, 0);
+    }
+
+    #[test]
+    fn test_advance_single_animation_wraps_frame() {
+        let mut anim = AnimationState {
+            frames: vec![
+                egui::ColorImage::new([1, 1], egui::Color32::BLACK),
+                egui::ColorImage::new([1, 1], egui::Color32::WHITE),
+            ],
+            delays: vec![Duration::from_millis(10), Duration::from_millis(10)],
+            current_frame: 0,
+            playing: true,
+            last_frame_time: Instant::now() - Duration::from_millis(20),
+        };
+
+        assert!(advance_single_animation(&mut anim));
+        assert_eq!(anim.current_frame, 1);
+
+        // Reset timer to past so next advance triggers
+        anim.last_frame_time = Instant::now() - Duration::from_millis(20);
+        assert!(advance_single_animation(&mut anim));
+        assert_eq!(anim.current_frame, 0); // wraps around
+    }
+
+    #[test]
+    fn test_advance_single_animation_no_advance_when_paused() {
+        let mut anim = AnimationState {
+            frames: vec![egui::ColorImage::new([1, 1], egui::Color32::BLACK)],
+            delays: vec![Duration::from_millis(10)],
+            current_frame: 0,
+            playing: false,
+            last_frame_time: Instant::now() - Duration::from_millis(100),
+        };
+        assert!(!advance_single_animation(&mut anim));
+    }
+
+    #[test]
+    fn test_advance_single_animation_no_advance_before_delay() {
+        let mut anim = AnimationState {
+            frames: vec![
+                egui::ColorImage::new([1, 1], egui::Color32::BLACK),
+                egui::ColorImage::new([1, 1], egui::Color32::WHITE),
+            ],
+            delays: vec![Duration::from_secs(10), Duration::from_secs(10)],
+            current_frame: 0,
+            playing: true,
+            last_frame_time: Instant::now(), // just started
+        };
+        assert!(!advance_single_animation(&mut anim));
+        assert_eq!(anim.current_frame, 0);
+    }
+
+    #[test]
+    fn test_remaining_frame_delay_clamps_to_minimum() {
+        let anim = AnimationState {
+            frames: vec![egui::ColorImage::new([1, 1], egui::Color32::BLACK)],
+            delays: vec![Duration::from_millis(5)], // less than MIN_FRAME_DELAY_MS
+            current_frame: 0,
+            playing: true,
+            last_frame_time: Instant::now() - Duration::from_millis(100),
+        };
+        let delay = remaining_frame_delay(&anim);
+        assert!(delay >= Duration::from_millis(MIN_FRAME_DELAY_MS));
+    }
+
+    #[test]
+    fn test_poll_animation_decode_empty_receiver() {
+        let mut rx: Option<mpsc::Receiver<AnimationDecodeResult>> = None;
+        assert!(poll_animation_decode(&mut rx).is_none());
+    }
+
+    #[test]
+    fn test_poll_animation_decode_ready() {
+        let (tx, rx_val) = mpsc::channel();
+        let frames = vec![egui::ColorImage::new([1, 1], egui::Color32::BLACK)];
+        let delays = vec![Duration::from_millis(100)];
+        tx.send(Ok((frames, delays))).unwrap();
+
+        let mut rx = Some(rx_val);
+        let result = poll_animation_decode(&mut rx);
+        assert!(result.is_some());
+        assert!(rx.is_none()); // receiver consumed
+    }
+
+    #[test]
+    fn test_poll_animation_decode_not_ready() {
+        let (_tx, rx_val) = mpsc::channel::<AnimationDecodeResult>();
+        let mut rx = Some(rx_val);
+        assert!(poll_animation_decode(&mut rx).is_none());
+        assert!(rx.is_some()); // receiver still present
     }
 
     #[test]
