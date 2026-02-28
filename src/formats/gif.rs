@@ -19,6 +19,16 @@ use super::traits::{FileSection, ImageFormat, ParseError, RiskLevel};
 /// GIF format parser
 pub struct GifParser;
 
+/// Section name constant for Graphics Control Extension (used in parser and frame detection).
+const GCE_SECTION_NAME: &str = "Graphics Control Extension";
+
+/// Compute the byte size of a GIF color table from the packed flags byte.
+/// Extracts the low 3 bits as size exponent: `3 * 2^(bits + 1)`.
+fn color_table_byte_size(packed: u8) -> usize {
+    let size_bits = (packed & 0x07) as u32;
+    3 * (1 << (size_bits + 1))
+}
+
 /// Skip a sequence of GIF sub-blocks (size-prefixed chunks terminated by a 0x00 byte).
 /// Returns the position after the 0x00 terminator, or None if data is truncated.
 fn skip_sub_blocks(data: &[u8], mut pos: usize) -> Option<usize> {
@@ -41,13 +51,8 @@ fn parse_graphics_control_ext(data: &[u8], pos: usize) -> (FileSection, usize) {
     // Standard GCE is 8 bytes: 21 F9 04 <packed> <delay_lo> <delay_hi> <trans_idx> 00
     let block_end = (pos + 8).min(data.len());
 
-    let mut section = FileSection::new(
-        "Graphics Control Extension",
-        pos,
-        block_end,
-        RiskLevel::Caution,
-    )
-    .with_description("Controls frame delay, disposal method, and transparency");
+    let mut section = FileSection::new(GCE_SECTION_NAME, pos, block_end, RiskLevel::Caution)
+        .with_description("Controls frame delay, disposal method, and transparency");
 
     // Introducer + label (2 bytes)
     section = section.with_child(FileSection::new(
@@ -218,9 +223,7 @@ fn parse_image_block(data: &[u8], pos: usize) -> (Vec<FileSection>, usize) {
         let packed = data[pos + 9];
         let has_lct = packed & 0x80 != 0;
         if has_lct {
-            let lct_size_bits = (packed & 0x07) as usize;
-            let lct_entries = 1 << (lct_size_bits + 1);
-            let lct_bytes = lct_entries * 3;
+            let lct_bytes = color_table_byte_size(packed);
             let lct_end = (current_pos + lct_bytes).min(data.len());
 
             children.push(
@@ -265,7 +268,7 @@ fn flush_frame(
         return;
     }
     let fs = frame_start.unwrap_or(fallback_pos);
-    let prev_end = frame_children.last().map(|s| s.end).unwrap_or(fallback_pos);
+    let prev_end = frame_children.last().expect("non-empty after guard").end;
     *frame_number += 1;
     let mut frame_section = FileSection::new(
         format!("Frame {}", *frame_number),
@@ -281,11 +284,7 @@ fn flush_frame(
 
 impl ImageFormat for GifParser {
     fn can_parse(&self, data: &[u8]) -> bool {
-        data.len() >= 6
-            && data[0] == b'G'
-            && data[1] == b'I'
-            && data[2] == b'F'
-            && (data[3..6] == *b"87a" || data[3..6] == *b"89a")
+        data.starts_with(b"GIF87a") || data.starts_with(b"GIF89a")
     }
 
     fn parse(&self, data: &[u8]) -> Result<Vec<FileSection>, ParseError> {
@@ -342,9 +341,7 @@ impl ImageFormat for GifParser {
         let packed = data[10];
         let has_gct = packed & 0x80 != 0;
         if has_gct {
-            let gct_size_bits = (packed & 0x07) as usize;
-            let gct_entries = 1 << (gct_size_bits + 1);
-            let gct_bytes = gct_entries * 3;
+            let gct_bytes = color_table_byte_size(packed);
             let gct_end = (pos + gct_bytes).min(data.len());
 
             sections.push(
@@ -437,10 +434,7 @@ impl ImageFormat for GifParser {
 
                     // If no GCE preceded this image, flush as a standalone frame
                     // (This handles GIF87a files and frames without GCE)
-                    if frame_children
-                        .iter()
-                        .all(|s| s.name != "Graphics Control Extension")
-                    {
+                    if frame_children.iter().all(|s| s.name != GCE_SECTION_NAME) {
                         flush_frame(
                             &mut frame_children,
                             frame_start,
@@ -495,15 +489,20 @@ impl ImageFormat for GifParser {
 mod tests {
     use super::*;
 
-    /// Build a minimal valid GIF89a with a single 1x1 frame.
-    /// Returns a byte vector that is a valid, parseable GIF.
-    fn minimal_gif89a() -> Vec<u8> {
+    #[test]
+    fn test_color_table_byte_size() {
+        // packed 0x00 → size bits = 0 → 3 * 2^1 = 6
+        assert_eq!(color_table_byte_size(0x00), 6);
+        // packed 0x07 → size bits = 7 → 3 * 2^8 = 768
+        assert_eq!(color_table_byte_size(0x07), 768);
+        // packed 0x83 → size bits = 3 (ignore high bits) → 3 * 2^4 = 48
+        assert_eq!(color_table_byte_size(0x83), 48);
+    }
+
+    /// GIF89a header + LSD + 2-entry GCT for a 1x1 canvas (19 bytes total).
+    fn gif_header_1x1() -> Vec<u8> {
         let mut gif = Vec::new();
-
-        // Header
         gif.extend_from_slice(b"GIF89a");
-
-        // Logical Screen Descriptor
         gif.extend_from_slice(&[
             0x01, 0x00, // width = 1
             0x01, 0x00, // height = 1
@@ -511,12 +510,14 @@ mod tests {
             0x00, // background color index
             0x00, // pixel aspect ratio
         ]);
+        // GCT: black + white
+        gif.extend_from_slice(&[0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF]);
+        gif
+    }
 
-        // Global Color Table (2 entries × 3 bytes = 6 bytes)
-        gif.extend_from_slice(&[
-            0x00, 0x00, 0x00, // color 0: black
-            0xFF, 0xFF, 0xFF, // color 1: white
-        ]);
+    /// Build a minimal valid GIF89a with a single 1x1 frame.
+    fn minimal_gif89a() -> Vec<u8> {
+        let mut gif = gif_header_1x1();
 
         // Image Descriptor
         gif.extend_from_slice(&[
@@ -542,21 +543,7 @@ mod tests {
 
     /// Build a minimal 2-frame animated GIF89a.
     fn minimal_animated_gif() -> Vec<u8> {
-        let mut gif = Vec::new();
-
-        // Header
-        gif.extend_from_slice(b"GIF89a");
-
-        // Logical Screen Descriptor
-        gif.extend_from_slice(&[
-            0x01, 0x00, // width = 1
-            0x01, 0x00, // height = 1
-            0x80, // packed: GCT flag=1, color res=0, sort=0, GCT size=0
-            0x00, 0x00,
-        ]);
-
-        // Global Color Table (2 entries)
-        gif.extend_from_slice(&[0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF]);
+        let mut gif = gif_header_1x1();
 
         // Application Extension (NETSCAPE2.0 for looping)
         gif.extend_from_slice(&[
