@@ -14,6 +14,12 @@ pub use gif::GifParser;
 pub use jpeg::JpegParser;
 pub use traits::{FileSection, ImageFormat, RiskLevel};
 
+/// Returns `true` if the data is in an animated-capable format (currently GIF).
+/// Future-proofs preview code: adding APNG/WebP only requires updating this function.
+pub fn is_animated_format(data: &[u8]) -> bool {
+    GifParser.can_parse(data)
+}
+
 /// Detect the format of a file and return the appropriate parser
 pub fn detect_format(data: &[u8]) -> Option<Box<dyn ImageFormat>> {
     let bmp = BmpParser;
@@ -97,6 +103,29 @@ pub fn parse_file(data: &[u8]) -> Option<Vec<FileSection>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_is_animated_format_gif() {
+        let mut data = b"GIF89a".to_vec();
+        data.extend_from_slice(&[0; 20]);
+        assert!(is_animated_format(&data));
+    }
+
+    #[test]
+    fn test_is_animated_format_non_gif() {
+        // BMP header
+        let mut bmp = vec![0u8; 20];
+        bmp[0] = b'B';
+        bmp[1] = b'M';
+        assert!(!is_animated_format(&bmp));
+
+        // JPEG header
+        let jpeg = vec![0xFF, 0xD8, 0xFF, 0xE0];
+        assert!(!is_animated_format(&jpeg));
+
+        // Empty
+        assert!(!is_animated_format(&[]));
+    }
 
     #[test]
     fn test_fill_gaps_no_gaps() {

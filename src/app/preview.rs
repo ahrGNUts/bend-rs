@@ -3,8 +3,6 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use super::BendApp;
-use crate::formats::GifParser;
-use crate::formats::ImageFormat;
 
 /// Debounce delay for preview updates (milliseconds)
 const PREVIEW_DEBOUNCE_MS: u64 = 150;
@@ -309,7 +307,7 @@ impl BendApp {
         let working = editor.working();
 
         // Check if this is a GIF
-        if GifParser.can_parse(working) {
+        if crate::formats::is_animated_format(working) {
             // Spawn background decode for animated GIF
             let data = working.to_vec();
             let (tx, rx) = mpsc::channel();
@@ -329,7 +327,7 @@ impl BendApp {
                 && self.preview.pending_original_animation.is_none()
             {
                 let original_data = editor.original().to_vec();
-                if GifParser.can_parse(&original_data) {
+                if crate::formats::is_animated_format(&original_data) {
                     let (tx, rx) = mpsc::channel();
                     std::thread::spawn(move || {
                         let result = decode_animated_gif(&original_data);
