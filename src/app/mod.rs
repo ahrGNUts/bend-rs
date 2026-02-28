@@ -270,6 +270,7 @@ impl BendApp {
                 self.preview.animation = None;
                 self.preview.original_animation = None;
                 self.preview.pending_animation = None;
+                self.preview.pending_original_animation = None;
                 // Add to recent files and save settings
                 self.settings.add_recent_file(path);
                 self.settings.save();

@@ -3,6 +3,8 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use super::BendApp;
+use crate::formats::GifParser;
+use crate::formats::ImageFormat;
 
 /// Debounce delay for preview updates (milliseconds)
 const PREVIEW_DEBOUNCE_MS: u64 = 150;
@@ -47,6 +49,8 @@ pub struct PreviewState {
     pub original_animation: Option<AnimationState>,
     /// Pending background decode for animated GIF re-decode on edits
     pub pending_animation: Option<mpsc::Receiver<AnimationDecodeResult>>,
+    /// Pending background decode for original animated GIF (comparison mode)
+    pub pending_original_animation: Option<mpsc::Receiver<AnimationDecodeResult>>,
 }
 
 impl Default for PreviewState {
@@ -61,17 +65,9 @@ impl Default for PreviewState {
             animation: None,
             original_animation: None,
             pending_animation: None,
+            pending_original_animation: None,
         }
     }
-}
-
-/// Check if data starts with a GIF signature
-fn is_gif(data: &[u8]) -> bool {
-    data.len() >= 6
-        && data[0] == b'G'
-        && data[1] == b'I'
-        && data[2] == b'F'
-        && (data[3..6] == *b"87a" || data[3..6] == *b"89a")
 }
 
 /// Decode an animated GIF into per-frame ColorImages and delay durations.
@@ -179,53 +175,79 @@ impl BendApp {
             }
         }
 
+        // Poll pending background original animation decode
+        if let Some(rx) = &self.preview.pending_original_animation {
+            if let Ok(result) = rx.try_recv() {
+                self.preview.pending_original_animation = None;
+                match result {
+                    Ok((frames, delays)) => {
+                        if frames.len() > 1 {
+                            let texture = upload_frame(ctx, &frames[0], "original_anim");
+                            self.preview.original_texture = Some(texture);
+                            self.preview.original_animation = Some(AnimationState {
+                                frames,
+                                delays,
+                                current_frame: 0,
+                                playing: true,
+                                last_frame_time: Instant::now(),
+                            });
+                        } else if frames.len() == 1 {
+                            let texture = upload_frame(ctx, &frames[0], "original");
+                            self.preview.original_texture = Some(texture);
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("Background original GIF decode failed: {}", e);
+                    }
+                }
+            }
+        }
+
         // Advance working buffer animation
         if let Some(anim) = &mut self.preview.animation {
-            if !anim.playing {
-                return;
+            if anim.playing {
+                let elapsed = anim.last_frame_time.elapsed();
+                let current_delay = anim.delays[anim.current_frame];
+
+                if elapsed >= current_delay {
+                    // Advance to next frame (wrap around)
+                    anim.current_frame = (anim.current_frame + 1) % anim.frames.len();
+                    anim.last_frame_time = Instant::now();
+
+                    // Upload the new frame
+                    let texture =
+                        upload_frame(ctx, &anim.frames[anim.current_frame], "preview_anim");
+                    self.preview.texture = Some(texture);
+                }
+
+                // Schedule repaint for next frame advance
+                let anim = self.preview.animation.as_ref().unwrap();
+                let remaining =
+                    anim.delays[anim.current_frame].saturating_sub(anim.last_frame_time.elapsed());
+                ctx.request_repaint_after(remaining);
             }
-
-            let elapsed = anim.last_frame_time.elapsed();
-            let current_delay = anim.delays[anim.current_frame];
-
-            if elapsed >= current_delay {
-                // Advance to next frame (wrap around)
-                anim.current_frame = (anim.current_frame + 1) % anim.frames.len();
-                anim.last_frame_time = Instant::now();
-
-                // Upload the new frame
-                let texture = upload_frame(ctx, &anim.frames[anim.current_frame], "preview_anim");
-                self.preview.texture = Some(texture);
-            }
-
-            // Schedule repaint for next frame advance
-            let anim = self.preview.animation.as_ref().unwrap();
-            let remaining =
-                anim.delays[anim.current_frame].saturating_sub(anim.last_frame_time.elapsed());
-            ctx.request_repaint_after(remaining);
         }
 
         // Advance original buffer animation (comparison mode)
         if let Some(anim) = &mut self.preview.original_animation {
-            if !anim.playing {
-                return;
+            if anim.playing {
+                let elapsed = anim.last_frame_time.elapsed();
+                let current_delay = anim.delays[anim.current_frame];
+
+                if elapsed >= current_delay {
+                    anim.current_frame = (anim.current_frame + 1) % anim.frames.len();
+                    anim.last_frame_time = Instant::now();
+
+                    let texture =
+                        upload_frame(ctx, &anim.frames[anim.current_frame], "original_anim");
+                    self.preview.original_texture = Some(texture);
+                }
+
+                let anim = self.preview.original_animation.as_ref().unwrap();
+                let remaining =
+                    anim.delays[anim.current_frame].saturating_sub(anim.last_frame_time.elapsed());
+                ctx.request_repaint_after(remaining);
             }
-
-            let elapsed = anim.last_frame_time.elapsed();
-            let current_delay = anim.delays[anim.current_frame];
-
-            if elapsed >= current_delay {
-                anim.current_frame = (anim.current_frame + 1) % anim.frames.len();
-                anim.last_frame_time = Instant::now();
-
-                let texture = upload_frame(ctx, &anim.frames[anim.current_frame], "original_anim");
-                self.preview.original_texture = Some(texture);
-            }
-
-            let anim = self.preview.original_animation.as_ref().unwrap();
-            let remaining =
-                anim.delays[anim.current_frame].saturating_sub(anim.last_frame_time.elapsed());
-            ctx.request_repaint_after(remaining);
         }
     }
 
@@ -255,7 +277,7 @@ impl BendApp {
         let working = editor.working();
 
         // Check if this is a GIF
-        if is_gif(working) {
+        if GifParser.can_parse(working) {
             // Spawn background decode for animated GIF
             let data = working.to_vec();
             let (tx, rx) = mpsc::channel();
@@ -265,31 +287,19 @@ impl BendApp {
             });
             self.preview.pending_animation = Some(rx);
 
-            // Also decode original for comparison if needed
-            if self.preview.comparison_mode && self.preview.original_animation.is_none() {
+            // Also decode original for comparison if needed (on background thread)
+            if self.preview.comparison_mode
+                && self.preview.original_animation.is_none()
+                && self.preview.pending_original_animation.is_none()
+            {
                 let original_data = editor.original().to_vec();
-                if is_gif(&original_data) {
-                    match decode_animated_gif(&original_data) {
-                        Ok((frames, delays)) => {
-                            if frames.len() > 1 {
-                                let texture = upload_frame(ctx, &frames[0], "original_anim");
-                                self.preview.original_texture = Some(texture);
-                                self.preview.original_animation = Some(AnimationState {
-                                    frames,
-                                    delays,
-                                    current_frame: 0,
-                                    playing: true,
-                                    last_frame_time: Instant::now(),
-                                });
-                            } else if frames.len() == 1 {
-                                let texture = upload_frame(ctx, &frames[0], "original");
-                                self.preview.original_texture = Some(texture);
-                            }
-                        }
-                        Err(e) => {
-                            log::warn!("Failed to decode original GIF: {}", e);
-                        }
-                    }
+                if GifParser.can_parse(&original_data) {
+                    let (tx, rx) = mpsc::channel();
+                    std::thread::spawn(move || {
+                        let result = decode_animated_gif(&original_data);
+                        let _ = tx.send(result);
+                    });
+                    self.preview.pending_original_animation = Some(rx);
                 }
             }
         } else {
@@ -373,21 +383,6 @@ impl BendApp {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_is_gif_valid_signatures() {
-        assert!(is_gif(b"GIF89a\x00\x00"));
-        assert!(is_gif(b"GIF87a\x00\x00"));
-    }
-
-    #[test]
-    fn test_is_gif_invalid() {
-        assert!(!is_gif(b"GIF90a"));
-        assert!(!is_gif(b"PNG"));
-        assert!(!is_gif(b"BM"));
-        assert!(!is_gif(b""));
-        assert!(!is_gif(b"GIF"));
-    }
 
     #[test]
     fn test_decode_animated_gif_minimal() {

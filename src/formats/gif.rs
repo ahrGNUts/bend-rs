@@ -111,7 +111,6 @@ fn parse_comment_ext(data: &[u8], pos: usize) -> (FileSection, usize) {
 /// `pos` points to the 0x21 introducer byte.
 fn parse_application_ext(data: &[u8], pos: usize) -> (FileSection, usize) {
     // 21 FF 0B <8-byte app id> <3-byte auth code> <sub-blocks> 00
-    let _header_end = (pos + 14).min(data.len()); // 2 + 1 + 8 + 3 = 14 bytes for the fixed part
     let sub_block_start = if data.len() >= pos + 14 {
         pos + 14
     } else {
@@ -152,7 +151,6 @@ fn parse_application_ext(data: &[u8], pos: usize) -> (FileSection, usize) {
 /// `pos` points to the 0x21 introducer byte.
 fn parse_plain_text_ext(data: &[u8], pos: usize) -> (FileSection, usize) {
     // 21 01 0C <12 bytes fixed> <sub-blocks> 00
-    let _fixed_end = (pos + 15).min(data.len()); // 2 + 1 + 12 = 15
     let sub_block_start = if data.len() >= pos + 15 {
         pos + 15
     } else {
@@ -254,6 +252,33 @@ fn parse_image_block(data: &[u8], pos: usize) -> (Vec<FileSection>, usize) {
     (children, current_pos)
 }
 
+/// Flush accumulated `frame_children` into a "Frame N" section and push it to `sections`.
+/// No-op if `frame_children` is empty.
+fn flush_frame(
+    frame_children: &mut Vec<FileSection>,
+    frame_start: Option<usize>,
+    fallback_pos: usize,
+    frame_number: &mut usize,
+    sections: &mut Vec<FileSection>,
+) {
+    if frame_children.is_empty() {
+        return;
+    }
+    let fs = frame_start.unwrap_or(fallback_pos);
+    let prev_end = frame_children.last().map(|s| s.end).unwrap_or(fallback_pos);
+    *frame_number += 1;
+    let mut frame_section = FileSection::new(
+        format!("Frame {}", *frame_number),
+        fs,
+        prev_end,
+        RiskLevel::Caution,
+    );
+    for child in frame_children.drain(..) {
+        frame_section = frame_section.with_child(child);
+    }
+    sections.push(frame_section);
+}
+
 impl ImageFormat for GifParser {
     fn can_parse(&self, data: &[u8]) -> bool {
         data.len() >= 6
@@ -351,21 +376,13 @@ impl ImageFormat for GifParser {
                         // Graphics Control Extension — starts a new frame
                         0xF9 => {
                             // If we have accumulated frame children, flush the previous frame
-                            if !frame_children.is_empty() {
-                                let fs = frame_start.unwrap_or(pos);
-                                let prev_end = frame_children.last().map(|s| s.end).unwrap_or(pos);
-                                frame_number += 1;
-                                let mut frame_section = FileSection::new(
-                                    format!("Frame {}", frame_number),
-                                    fs,
-                                    prev_end,
-                                    RiskLevel::Caution,
-                                );
-                                for child in frame_children.drain(..) {
-                                    frame_section = frame_section.with_child(child);
-                                }
-                                sections.push(frame_section);
-                            }
+                            flush_frame(
+                                &mut frame_children,
+                                frame_start,
+                                pos,
+                                &mut frame_number,
+                                &mut sections,
+                            );
                             frame_start = Some(pos);
 
                             let (gce_section, new_pos) = parse_graphics_control_ext(data, pos);
@@ -424,19 +441,13 @@ impl ImageFormat for GifParser {
                         .iter()
                         .all(|s| s.name != "Graphics Control Extension")
                     {
-                        let fs = frame_start.unwrap_or(pos);
-                        let prev_end = frame_children.last().map(|s| s.end).unwrap_or(pos);
-                        frame_number += 1;
-                        let mut frame_section = FileSection::new(
-                            format!("Frame {}", frame_number),
-                            fs,
-                            prev_end,
-                            RiskLevel::Caution,
+                        flush_frame(
+                            &mut frame_children,
+                            frame_start,
+                            pos,
+                            &mut frame_number,
+                            &mut sections,
                         );
-                        for child in frame_children.drain(..) {
-                            frame_section = frame_section.with_child(child);
-                        }
-                        sections.push(frame_section);
                         frame_start = None;
                     }
                 }
@@ -444,21 +455,13 @@ impl ImageFormat for GifParser {
                 // Trailer
                 0x3B => {
                     // Flush any accumulated frame children
-                    if !frame_children.is_empty() {
-                        let fs = frame_start.unwrap_or(pos);
-                        let prev_end = frame_children.last().map(|s| s.end).unwrap_or(pos);
-                        frame_number += 1;
-                        let mut frame_section = FileSection::new(
-                            format!("Frame {}", frame_number),
-                            fs,
-                            prev_end,
-                            RiskLevel::Caution,
-                        );
-                        for child in frame_children.drain(..) {
-                            frame_section = frame_section.with_child(child);
-                        }
-                        sections.push(frame_section);
-                    }
+                    flush_frame(
+                        &mut frame_children,
+                        frame_start,
+                        pos,
+                        &mut frame_number,
+                        &mut sections,
+                    );
 
                     sections.push(
                         FileSection::new("Trailer", pos, pos + 1, RiskLevel::Critical)
@@ -476,21 +479,13 @@ impl ImageFormat for GifParser {
         }
 
         // Flush remaining frame children if trailer was missing
-        if !frame_children.is_empty() {
-            let fs = frame_start.unwrap_or(pos);
-            let prev_end = frame_children.last().map(|s| s.end).unwrap_or(pos);
-            frame_number += 1;
-            let mut frame_section = FileSection::new(
-                format!("Frame {}", frame_number),
-                fs,
-                prev_end,
-                RiskLevel::Caution,
-            );
-            for child in frame_children.drain(..) {
-                frame_section = frame_section.with_child(child);
-            }
-            sections.push(frame_section);
-        }
+        flush_frame(
+            &mut frame_children,
+            frame_start,
+            pos,
+            &mut frame_number,
+            &mut sections,
+        );
 
         Ok(sections)
     }
@@ -925,5 +920,102 @@ mod tests {
         assert!(child_names.contains(&"Delay Time"));
         assert!(child_names.contains(&"Packed Byte"));
         assert!(child_names.contains(&"Transparent Color Index"));
+    }
+
+    #[test]
+    fn test_local_color_table() {
+        let parser = GifParser;
+        let mut data = b"GIF89a".to_vec();
+        // LSD: 1x1, no GCT
+        data.extend_from_slice(&[0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00]);
+
+        // Image Descriptor with LCT flag set (packed byte 0x80 = LCT present, size=0 → 2 entries)
+        data.extend_from_slice(&[0x2C, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x80]);
+
+        // Local Color Table (2 entries × 3 bytes = 6 bytes)
+        data.extend_from_slice(&[0xFF, 0x00, 0x00, 0x00, 0xFF, 0x00]);
+
+        // Image Data
+        data.push(0x02); // LZW minimum code size
+        data.push(0x02); // sub-block size
+        data.extend_from_slice(&[0x4C, 0x01]);
+        data.push(0x00); // terminator
+
+        data.push(0x3B); // Trailer
+
+        let sections = parser.parse(&data).unwrap();
+        let frame = sections.iter().find(|s| s.name == "Frame 1").unwrap();
+        let child_names: Vec<&str> = frame.children.iter().map(|c| c.name.as_ref()).collect();
+        assert!(
+            child_names.contains(&"Local Color Table"),
+            "Expected Local Color Table in frame children, got: {:?}",
+            child_names
+        );
+    }
+
+    #[test]
+    fn test_plain_text_extension() {
+        let parser = GifParser;
+        let mut data = b"GIF89a".to_vec();
+        // LSD: 1x1, no GCT
+        data.extend_from_slice(&[0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00]);
+
+        // GCE to start a frame
+        data.extend_from_slice(&[0x21, 0xF9, 0x04, 0x00, 0x0A, 0x00, 0x00, 0x00]);
+
+        // Plain Text Extension: 21 01 0C <12 bytes fixed> <sub-blocks> 00
+        data.push(0x21);
+        data.push(0x01);
+        data.push(0x0C); // block size = 12
+        data.extend_from_slice(&[0; 12]); // 12 fixed bytes
+        data.push(0x05); // sub-block size
+        data.extend_from_slice(b"Hello");
+        data.push(0x00); // terminator
+
+        // Image Descriptor + data to complete the frame
+        data.extend_from_slice(&[0x2C, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00]);
+        data.push(0x02);
+        data.push(0x02);
+        data.extend_from_slice(&[0x4C, 0x01]);
+        data.push(0x00);
+
+        data.push(0x3B); // Trailer
+
+        let sections = parser.parse(&data).unwrap();
+        let frame = sections.iter().find(|s| s.name == "Frame 1").unwrap();
+        let child_names: Vec<&str> = frame.children.iter().map(|c| c.name.as_ref()).collect();
+        assert!(
+            child_names.contains(&"Plain Text Extension"),
+            "Expected Plain Text Extension in frame children, got: {:?}",
+            child_names
+        );
+    }
+
+    #[test]
+    fn test_unknown_extension() {
+        let parser = GifParser;
+        let mut data = b"GIF89a".to_vec();
+        // LSD: 1x1, no GCT
+        data.extend_from_slice(&[0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00]);
+
+        // Unknown extension with label 0x42
+        data.push(0x21); // extension introducer
+        data.push(0x42); // unknown label
+        data.push(0x03); // sub-block size
+        data.extend_from_slice(&[0xAA, 0xBB, 0xCC]);
+        data.push(0x00); // terminator
+
+        data.push(0x3B); // Trailer
+
+        let sections = parser.parse(&data).unwrap();
+        let unknown = sections
+            .iter()
+            .find(|s| s.name == "Unknown Extension (0x42)");
+        assert!(
+            unknown.is_some(),
+            "Expected Unknown Extension (0x42), got sections: {:?}",
+            sections.iter().map(|s| &s.name).collect::<Vec<_>>()
+        );
+        assert_eq!(unknown.unwrap().risk, RiskLevel::Caution);
     }
 }
