@@ -216,7 +216,7 @@ impl BendApp {
         std::thread::spawn(move || {
             let result = if let Some(path) = rfd::FileDialog::new()
                 .set_file_name(format!("{}.{}", default_name, extension))
-                .add_filter("Images", &["bmp", "jpg", "jpeg"])
+                .add_filter("Images", &["bmp", "jpg", "jpeg", "gif"])
                 .add_filter("All files", &["*"])
                 .save_file()
             {
@@ -237,7 +237,10 @@ impl BendApp {
     /// Check if a file extension is a supported format
     fn is_supported_extension(path: &std::path::Path) -> bool {
         match path.extension().and_then(|e| e.to_str()) {
-            Some(ext) => matches!(ext.to_ascii_lowercase().as_str(), "bmp" | "jpg" | "jpeg"),
+            Some(ext) => matches!(
+                ext.to_ascii_lowercase().as_str(),
+                "bmp" | "jpg" | "jpeg" | "gif"
+            ),
             None => false,
         }
     }
@@ -246,7 +249,7 @@ impl BendApp {
     pub fn open_file(&mut self, path: PathBuf) {
         if !Self::is_supported_extension(&path) {
             self.preview.decode_error = Some(
-                "Unsupported file format. Bend supports BMP (.bmp) and JPEG (.jpg, .jpeg) files."
+                "Unsupported file format. Bend supports BMP (.bmp), JPEG (.jpg, .jpeg), and GIF (.gif) files."
                     .to_string(),
             );
             return;
@@ -286,7 +289,7 @@ impl BendApp {
 
         std::thread::spawn(move || {
             let result = if let Some(path) = rfd::FileDialog::new()
-                .add_filter("Images", &["bmp", "jpg", "jpeg"])
+                .add_filter("Images", &["bmp", "jpg", "jpeg", "gif"])
                 .add_filter("All files", &["*"])
                 .pick_file()
             {
@@ -424,7 +427,7 @@ impl BendApp {
                     ui.vertical_centered(|ui| {
                         ui.heading("Welcome to bend-rs");
                         ui.add_space(20.0);
-                        ui.label("Open a BMP or JPEG file to begin databending.");
+                        ui.label("Open a BMP, JPEG, or GIF file to begin databending.");
                         ui.add_space(10.0);
                         ui.label("Drag and drop a file here, or use File > Open");
                         ui.add_space(20.0);
@@ -539,8 +542,11 @@ mod tests {
         assert!(BendApp::is_supported_extension(std::path::Path::new(
             "photo.JPG"
         )));
-        assert!(!BendApp::is_supported_extension(std::path::Path::new(
+        assert!(BendApp::is_supported_extension(std::path::Path::new(
             "photo.gif"
+        )));
+        assert!(BendApp::is_supported_extension(std::path::Path::new(
+            "photo.GIF"
         )));
         assert!(!BendApp::is_supported_extension(std::path::Path::new(
             "document.txt"
@@ -553,7 +559,7 @@ mod tests {
     #[test]
     fn test_open_file_unsupported_extension_sets_error() {
         let mut app = BendApp::default();
-        app.open_file(PathBuf::from("/tmp/test.gif"));
+        app.open_file(PathBuf::from("/tmp/test.tiff"));
 
         // Should set an error message
         assert!(app.preview.decode_error.is_some());

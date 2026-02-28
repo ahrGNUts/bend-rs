@@ -6,6 +6,12 @@ pub fn read_u16_be(data: &[u8], offset: usize) -> Option<u16> {
     Some(u16::from_be_bytes(bytes))
 }
 
+/// Read a little-endian u16 from `data` at `offset`.
+pub fn read_u16_le(data: &[u8], offset: usize) -> Option<u16> {
+    let bytes: [u8; 2] = data.get(offset..offset + 2)?.try_into().ok()?;
+    Some(u16::from_le_bytes(bytes))
+}
+
 /// Read a little-endian u32 from `data` at `offset`.
 pub fn read_u32_le(data: &[u8], offset: usize) -> Option<u32> {
     let bytes: [u8; 4] = data.get(offset..offset + 4)?.try_into().ok()?;
@@ -23,6 +29,15 @@ mod tests {
         assert_eq!(read_u16_be(&data, 2), Some(0x0304));
         assert_eq!(read_u16_be(&data, 3), None); // not enough bytes
         assert_eq!(read_u16_be(&data, 4), None); // out of bounds
+    }
+
+    #[test]
+    fn test_read_u16_le() {
+        let data = [0x04, 0x03, 0x02, 0x01];
+        assert_eq!(read_u16_le(&data, 0), Some(0x0304));
+        assert_eq!(read_u16_le(&data, 2), Some(0x0102));
+        assert_eq!(read_u16_le(&data, 3), None); // not enough bytes
+        assert_eq!(read_u16_le(&data, 4), None); // out of bounds
     }
 
     #[test]

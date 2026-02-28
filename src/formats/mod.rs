@@ -5,10 +5,12 @@
 
 mod bmp;
 mod bytes;
+mod gif;
 mod jpeg;
 pub mod traits;
 
 pub use bmp::BmpParser;
+pub use gif::GifParser;
 pub use jpeg::JpegParser;
 pub use traits::{FileSection, ImageFormat, RiskLevel};
 
@@ -22,6 +24,11 @@ pub fn detect_format(data: &[u8]) -> Option<Box<dyn ImageFormat>> {
     let jpeg = JpegParser;
     if jpeg.can_parse(data) {
         return Some(Box::new(jpeg));
+    }
+
+    let gif = GifParser;
+    if gif.can_parse(data) {
+        return Some(Box::new(gif));
     }
 
     None
