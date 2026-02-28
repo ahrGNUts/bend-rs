@@ -30,6 +30,7 @@ pub struct AnimationState {
 type AnimationDecodeResult = Result<(Vec<egui::ColorImage>, Vec<Duration>), image::ImageError>;
 
 /// State for image preview rendering and comparison
+#[derive(Default)]
 pub struct PreviewState {
     /// Texture handle for the rendered image preview
     pub texture: Option<egui::TextureHandle>,
@@ -53,20 +54,17 @@ pub struct PreviewState {
     pub pending_original_animation: Option<mpsc::Receiver<AnimationDecodeResult>>,
 }
 
-impl Default for PreviewState {
-    fn default() -> Self {
-        Self {
-            texture: None,
-            original_texture: None,
-            dirty: false,
-            decode_error: None,
-            comparison_mode: false,
-            last_edit_time: None,
-            animation: None,
-            original_animation: None,
-            pending_animation: None,
-            pending_original_animation: None,
-        }
+impl PreviewState {
+    /// Clear texture and animation fields for a new file load.
+    /// Preserves `comparison_mode`, `dirty`, `last_edit_time`, and `decode_error`
+    /// — the caller manages those independently.
+    pub fn reset_for_new_file(&mut self) {
+        self.texture = None;
+        self.original_texture = None;
+        self.animation = None;
+        self.original_animation = None;
+        self.pending_animation = None;
+        self.pending_original_animation = None;
     }
 }
 
@@ -383,6 +381,31 @@ impl BendApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_reset_for_new_file_clears_textures_preserves_mode() {
+        let mut state = PreviewState::default();
+        state.comparison_mode = true;
+        state.dirty = true;
+        state.last_edit_time = Some(Instant::now());
+        state.decode_error = Some("old error".to_string());
+
+        state.reset_for_new_file();
+
+        // Cleared fields
+        assert!(state.texture.is_none());
+        assert!(state.original_texture.is_none());
+        assert!(state.animation.is_none());
+        assert!(state.original_animation.is_none());
+        assert!(state.pending_animation.is_none());
+        assert!(state.pending_original_animation.is_none());
+
+        // Preserved fields
+        assert!(state.comparison_mode);
+        assert!(state.dirty);
+        assert!(state.last_edit_time.is_some());
+        assert!(state.decode_error.is_some());
+    }
 
     #[test]
     fn test_decode_animated_gif_minimal() {

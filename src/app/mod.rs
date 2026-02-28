@@ -265,12 +265,7 @@ impl BendApp {
                 self.mark_preview_dirty();
                 self.preview.decode_error = None;
                 // Clear existing textures and animation state
-                self.preview.texture = None;
-                self.preview.original_texture = None;
-                self.preview.animation = None;
-                self.preview.original_animation = None;
-                self.preview.pending_animation = None;
-                self.preview.pending_original_animation = None;
+                self.preview.reset_for_new_file();
                 // Add to recent files and save settings
                 self.settings.add_recent_file(path);
                 self.settings.save();
