@@ -27,20 +27,18 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
 
 /// Show animation controls when an animated GIF is loaded
 fn show_animation_controls(ui: &mut egui::Ui, app: &mut BendApp) {
-    // Only show controls if we have an animation with multiple frames
-    let (frame_count, current_frame, is_playing) = match &app.preview.animation {
-        Some(anim) if anim.frames.len() > 1 => {
-            (anim.frames.len(), anim.current_frame, anim.playing)
-        }
-        _ => return,
-    };
-
-    // Get original frame count for display in comparison mode
-    let original_frame_count = app
+    // Guard: only show controls if we have a multi-frame animation
+    let has_animation = app
         .preview
-        .original_animation
+        .animation
         .as_ref()
-        .map(|a| a.frames.len());
+        .is_some_and(|a| a.frames.len() > 1);
+    if !has_animation {
+        return;
+    }
+
+    // Read frame_count once (immutable for the duration of this function)
+    let frame_count = app.preview.animation.as_ref().unwrap().frames.len();
 
     ui.add_space(2.0);
     ui.horizontal(|ui| {
@@ -53,15 +51,17 @@ fn show_animation_controls(ui: &mut egui::Ui, app: &mut BendApp) {
         // Previous frame button
         if ui.button("<").on_hover_text("Previous frame").clicked() {
             app.pause_animation();
-            let prev = if current_frame == 0 {
+            let current = app.preview.animation.as_ref().unwrap().current_frame;
+            let prev = if current == 0 {
                 frame_count - 1
             } else {
-                current_frame - 1
+                current - 1
             };
             app.set_animation_frame(prev);
         }
 
-        // Play/Pause toggle
+        // Play/Pause toggle — read fresh playing state
+        let is_playing = app.preview.animation.as_ref().unwrap().playing;
         let play_label = if is_playing { "Pause" } else { "Play" };
         if ui.button(play_label).clicked() {
             app.toggle_animation_playback();
@@ -70,7 +70,8 @@ fn show_animation_controls(ui: &mut egui::Ui, app: &mut BendApp) {
         // Next frame button
         if ui.button(">").on_hover_text("Next frame").clicked() {
             app.pause_animation();
-            let next = (current_frame + 1) % frame_count;
+            let current = app.preview.animation.as_ref().unwrap().current_frame;
+            let next = (current + 1) % frame_count;
             app.set_animation_frame(next);
         }
 
@@ -82,26 +83,19 @@ fn show_animation_controls(ui: &mut egui::Ui, app: &mut BendApp) {
 
         ui.separator();
 
-        // Frame counter
-        let frame_label = if app.preview.comparison_mode {
-            if let Some(orig_count) = original_frame_count {
-                if orig_count != frame_count {
-                    format!(
-                        "Frame {} / {} (original: {})",
-                        current_frame + 1,
-                        frame_count,
-                        orig_count
-                    )
-                } else {
-                    format!("Frame {} / {}", current_frame + 1, frame_count)
+        // Frame label — read fresh current_frame after all button mutations
+        let current_frame = app.preview.animation.as_ref().unwrap().current_frame;
+        let mut label = format!("Frame {} / {}", current_frame + 1, frame_count);
+
+        // Only append original count when it differs (comparison mode)
+        if app.preview.comparison_mode {
+            if let Some(orig) = app.preview.original_animation.as_ref() {
+                if orig.frames.len() != frame_count {
+                    label.push_str(&format!(" (original: {})", orig.frames.len()));
                 }
-            } else {
-                format!("Frame {} / {}", current_frame + 1, frame_count)
             }
-        } else {
-            format!("Frame {} / {}", current_frame + 1, frame_count)
-        };
-        ui.label(frame_label);
+        }
+        ui.label(label);
     });
 }
 
