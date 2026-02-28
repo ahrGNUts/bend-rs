@@ -264,9 +264,12 @@ impl BendApp {
                 self.current_file = Some(path.clone());
                 self.mark_preview_dirty();
                 self.preview.decode_error = None;
-                // Clear existing textures - they'll be recreated on next frame
+                // Clear existing textures and animation state
                 self.preview.texture = None;
                 self.preview.original_texture = None;
+                self.preview.animation = None;
+                self.preview.original_animation = None;
+                self.preview.pending_animation = None;
                 // Add to recent files and save settings
                 self.settings.add_recent_file(path);
                 self.settings.save();
@@ -505,6 +508,9 @@ impl eframe::App for BendApp {
         // Handle input and process actions
         let input_actions = self.handle_input(ctx);
         self.process_input_actions(input_actions, ctx);
+
+        // Advance animation frames (unconditional — runs independently of edits)
+        self.advance_animation(ctx);
 
         // Update preview if needed
         self.update_preview(ctx);

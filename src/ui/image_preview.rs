@@ -11,6 +11,9 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
         ui.checkbox(&mut app.preview.comparison_mode, "Compare with Original");
     });
 
+    // Animation controls (if animated GIF is loaded)
+    show_animation_controls(ui, app);
+
     ui.add_space(4.0);
 
     if app.preview.comparison_mode {
@@ -20,6 +23,86 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
         // Single preview view (current working buffer)
         show_single_preview(ui, app);
     }
+}
+
+/// Show animation controls when an animated GIF is loaded
+fn show_animation_controls(ui: &mut egui::Ui, app: &mut BendApp) {
+    // Only show controls if we have an animation with multiple frames
+    let (frame_count, current_frame, is_playing) = match &app.preview.animation {
+        Some(anim) if anim.frames.len() > 1 => {
+            (anim.frames.len(), anim.current_frame, anim.playing)
+        }
+        _ => return,
+    };
+
+    // Get original frame count for display in comparison mode
+    let original_frame_count = app
+        .preview
+        .original_animation
+        .as_ref()
+        .map(|a| a.frames.len());
+
+    ui.add_space(2.0);
+    ui.horizontal(|ui| {
+        // First frame button
+        if ui.button("|<").on_hover_text("First frame").clicked() {
+            app.pause_animation();
+            app.set_animation_frame(ui.ctx(), 0);
+        }
+
+        // Previous frame button
+        if ui.button("<").on_hover_text("Previous frame").clicked() {
+            app.pause_animation();
+            let prev = if current_frame == 0 {
+                frame_count - 1
+            } else {
+                current_frame - 1
+            };
+            app.set_animation_frame(ui.ctx(), prev);
+        }
+
+        // Play/Pause toggle
+        let play_label = if is_playing { "Pause" } else { "Play" };
+        if ui.button(play_label).clicked() {
+            app.toggle_animation_playback();
+        }
+
+        // Next frame button
+        if ui.button(">").on_hover_text("Next frame").clicked() {
+            app.pause_animation();
+            let next = (current_frame + 1) % frame_count;
+            app.set_animation_frame(ui.ctx(), next);
+        }
+
+        // Last frame button
+        if ui.button(">|").on_hover_text("Last frame").clicked() {
+            app.pause_animation();
+            app.set_animation_frame(ui.ctx(), frame_count - 1);
+        }
+
+        ui.separator();
+
+        // Frame counter
+        let frame_label = if app.preview.comparison_mode {
+            if let Some(orig_count) = original_frame_count {
+                if orig_count != frame_count {
+                    format!(
+                        "Frame {} / {} (original: {})",
+                        current_frame + 1,
+                        frame_count,
+                        orig_count
+                    )
+                } else {
+                    format!("Frame {} / {}", current_frame + 1, frame_count)
+                }
+            } else {
+                format!("Frame {} / {}", current_frame + 1, frame_count)
+            }
+        } else {
+            format!("Frame {} / {}", current_frame + 1, frame_count)
+        };
+        ui.label(frame_label);
+    });
 }
 
 /// Show the comparison view with original and current images side-by-side
