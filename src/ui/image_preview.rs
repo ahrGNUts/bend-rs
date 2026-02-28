@@ -47,7 +47,7 @@ fn show_animation_controls(ui: &mut egui::Ui, app: &mut BendApp) {
         // First frame button
         if ui.button("|<").on_hover_text("First frame").clicked() {
             app.pause_animation();
-            app.set_animation_frame(ui.ctx(), 0);
+            app.set_animation_frame(0);
         }
 
         // Previous frame button
@@ -58,7 +58,7 @@ fn show_animation_controls(ui: &mut egui::Ui, app: &mut BendApp) {
             } else {
                 current_frame - 1
             };
-            app.set_animation_frame(ui.ctx(), prev);
+            app.set_animation_frame(prev);
         }
 
         // Play/Pause toggle
@@ -71,13 +71,13 @@ fn show_animation_controls(ui: &mut egui::Ui, app: &mut BendApp) {
         if ui.button(">").on_hover_text("Next frame").clicked() {
             app.pause_animation();
             let next = (current_frame + 1) % frame_count;
-            app.set_animation_frame(ui.ctx(), next);
+            app.set_animation_frame(next);
         }
 
         // Last frame button
         if ui.button(">|").on_hover_text("Last frame").clicked() {
             app.pause_animation();
-            app.set_animation_frame(ui.ctx(), frame_count - 1);
+            app.set_animation_frame(frame_count - 1);
         }
 
         ui.separator();

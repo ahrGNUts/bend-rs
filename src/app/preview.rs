@@ -14,7 +14,9 @@ const MIN_FRAME_DELAY_MS: u64 = 10;
 
 /// State for animated GIF playback
 pub struct AnimationState {
-    /// Per-frame decoded images (CPU memory, not GPU textures)
+    /// Pre-uploaded GPU texture handles (one per frame, Arc-backed — cheap to clone)
+    pub textures: Vec<egui::TextureHandle>,
+    /// Per-frame decoded images (CPU backup for re-decode after hex edits)
     pub frames: Vec<egui::ColorImage>,
     /// Per-frame delay durations (clamped to minimum 10ms)
     pub delays: Vec<Duration>,
@@ -103,11 +105,6 @@ fn decode_animated_gif(
     Ok((images, delays))
 }
 
-/// Upload a ColorImage to a GPU texture handle
-fn upload_frame(ctx: &egui::Context, image: &egui::ColorImage, name: &str) -> egui::TextureHandle {
-    ctx.load_texture(name, image.clone(), egui::TextureOptions::LINEAR)
-}
-
 /// Advance a single animation by one frame if playing and the delay has elapsed.
 /// Returns `true` if the frame index changed (caller should update the displayed texture).
 fn advance_single_animation(anim: &mut AnimationState) -> bool {
@@ -174,6 +171,19 @@ impl BendApp {
             match result {
                 Ok((frames, delays)) => {
                     if frames.len() > 1 {
+                        // Pre-upload all frames as GPU textures
+                        let textures: Vec<egui::TextureHandle> = frames
+                            .iter()
+                            .enumerate()
+                            .map(|(i, frame)| {
+                                ctx.load_texture(
+                                    format!("anim_frame_{i}"),
+                                    frame.clone(),
+                                    egui::TextureOptions::LINEAR,
+                                )
+                            })
+                            .collect();
+
                         // Preserve playback state from previous animation
                         let (current_frame, playing) = self
                             .preview
@@ -182,9 +192,9 @@ impl BendApp {
                             .map(|a| (a.current_frame.min(frames.len() - 1), a.playing))
                             .unwrap_or((0, true));
 
-                        let texture = upload_frame(ctx, &frames[current_frame], "preview_anim");
-                        self.preview.texture = Some(texture);
+                        self.preview.texture = Some(textures[current_frame].clone());
                         self.preview.animation = Some(AnimationState {
+                            textures,
                             frames,
                             delays,
                             current_frame,
@@ -192,8 +202,12 @@ impl BendApp {
                             last_frame_time: Instant::now(),
                         });
                     } else if frames.len() == 1 {
-                        // Single frame — treat as static
-                        let texture = upload_frame(ctx, &frames[0], "preview");
+                        // Single frame — treat as static (one-shot upload)
+                        let texture = ctx.load_texture(
+                            "preview",
+                            frames[0].clone(),
+                            egui::TextureOptions::LINEAR,
+                        );
                         self.preview.texture = Some(texture);
                         self.preview.animation = None;
                     }
@@ -211,9 +225,22 @@ impl BendApp {
             match result {
                 Ok((frames, delays)) => {
                     if frames.len() > 1 {
-                        let texture = upload_frame(ctx, &frames[0], "original_anim");
-                        self.preview.original_texture = Some(texture);
+                        // Pre-upload with distinct names to avoid collisions
+                        let textures: Vec<egui::TextureHandle> = frames
+                            .iter()
+                            .enumerate()
+                            .map(|(i, frame)| {
+                                ctx.load_texture(
+                                    format!("orig_anim_frame_{i}"),
+                                    frame.clone(),
+                                    egui::TextureOptions::LINEAR,
+                                )
+                            })
+                            .collect();
+
+                        self.preview.original_texture = Some(textures[0].clone());
                         self.preview.original_animation = Some(AnimationState {
+                            textures,
                             frames,
                             delays,
                             current_frame: 0,
@@ -221,7 +248,11 @@ impl BendApp {
                             last_frame_time: Instant::now(),
                         });
                     } else if frames.len() == 1 {
-                        let texture = upload_frame(ctx, &frames[0], "original");
+                        let texture = ctx.load_texture(
+                            "original",
+                            frames[0].clone(),
+                            egui::TextureOptions::LINEAR,
+                        );
                         self.preview.original_texture = Some(texture);
                     }
                 }
@@ -231,11 +262,10 @@ impl BendApp {
             }
         }
 
-        // Advance working buffer animation
+        // Advance working buffer animation — swap pre-uploaded texture handle (Arc clone)
         if let Some(anim) = &mut self.preview.animation {
             if advance_single_animation(anim) {
-                let texture = upload_frame(ctx, &anim.frames[anim.current_frame], "preview_anim");
-                self.preview.texture = Some(texture);
+                self.preview.texture = Some(anim.textures[anim.current_frame].clone());
             }
             if anim.playing {
                 ctx.request_repaint_after(remaining_frame_delay(anim));
@@ -245,8 +275,7 @@ impl BendApp {
         // Advance original buffer animation (comparison mode)
         if let Some(anim) = &mut self.preview.original_animation {
             if advance_single_animation(anim) {
-                let texture = upload_frame(ctx, &anim.frames[anim.current_frame], "original_anim");
-                self.preview.original_texture = Some(texture);
+                self.preview.original_texture = Some(anim.textures[anim.current_frame].clone());
             }
             if anim.playing {
                 ctx.request_repaint_after(remaining_frame_delay(anim));
@@ -338,15 +367,14 @@ impl BendApp {
         self.preview.dirty = false;
     }
 
-    /// Set the animation to a specific frame (used by UI controls)
-    pub fn set_animation_frame(&mut self, ctx: &egui::Context, frame_index: usize) {
+    /// Set the animation to a specific frame (used by UI controls).
+    /// Uses pre-uploaded GPU texture handles — no per-frame upload needed.
+    pub fn set_animation_frame(&mut self, frame_index: usize) {
         if let Some(anim) = &mut self.preview.animation {
             let idx = frame_index.min(anim.frames.len().saturating_sub(1));
             anim.current_frame = idx;
             anim.last_frame_time = Instant::now();
-
-            let texture = upload_frame(ctx, &anim.frames[idx], "preview_anim");
-            self.preview.texture = Some(texture);
+            self.preview.texture = Some(anim.textures[idx].clone());
         }
 
         // Sync original animation if in comparison mode
@@ -354,9 +382,7 @@ impl BendApp {
             let idx = frame_index.min(anim.frames.len().saturating_sub(1));
             anim.current_frame = idx;
             anim.last_frame_time = Instant::now();
-
-            let texture = upload_frame(ctx, &anim.frames[idx], "original_anim");
-            self.preview.original_texture = Some(texture);
+            self.preview.original_texture = Some(anim.textures[idx].clone());
         }
     }
 
@@ -458,6 +484,7 @@ mod tests {
     #[test]
     fn test_animation_state_defaults() {
         let anim = AnimationState {
+            textures: vec![],
             frames: vec![],
             delays: vec![],
             current_frame: 0,
@@ -466,11 +493,13 @@ mod tests {
         };
         assert!(anim.playing);
         assert_eq!(anim.current_frame, 0);
+        assert!(anim.textures.is_empty());
     }
 
     #[test]
     fn test_advance_single_animation_wraps_frame() {
         let mut anim = AnimationState {
+            textures: vec![],
             frames: vec![
                 egui::ColorImage::new([1, 1], egui::Color32::BLACK),
                 egui::ColorImage::new([1, 1], egui::Color32::WHITE),
@@ -493,6 +522,7 @@ mod tests {
     #[test]
     fn test_advance_single_animation_no_advance_when_paused() {
         let mut anim = AnimationState {
+            textures: vec![],
             frames: vec![egui::ColorImage::new([1, 1], egui::Color32::BLACK)],
             delays: vec![Duration::from_millis(10)],
             current_frame: 0,
@@ -505,6 +535,7 @@ mod tests {
     #[test]
     fn test_advance_single_animation_no_advance_before_delay() {
         let mut anim = AnimationState {
+            textures: vec![],
             frames: vec![
                 egui::ColorImage::new([1, 1], egui::Color32::BLACK),
                 egui::ColorImage::new([1, 1], egui::Color32::WHITE),
@@ -521,6 +552,7 @@ mod tests {
     #[test]
     fn test_remaining_frame_delay_clamps_to_minimum() {
         let anim = AnimationState {
+            textures: vec![],
             frames: vec![egui::ColorImage::new([1, 1], egui::Color32::BLACK)],
             delays: vec![Duration::from_millis(5)], // less than MIN_FRAME_DELAY_MS
             current_frame: 0,
