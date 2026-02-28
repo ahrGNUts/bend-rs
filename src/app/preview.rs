@@ -279,6 +279,31 @@ impl BendApp {
                 ctx.request_repaint_after(remaining_frame_delay(anim));
             }
         }
+
+        // Ensure original is loaded when comparison mode is enabled
+        // (handles the case where comparison is toggled on after initial load)
+        if self.preview.comparison_mode
+            && self.preview.original_animation.is_none()
+            && self.preview.pending_original_animation.is_none()
+            && self.preview.original_texture.is_none()
+        {
+            if let Some(editor) = &self.editor {
+                let original_data = editor.original().to_vec();
+                if crate::formats::is_animated_format(&original_data) {
+                    let (tx, rx) = mpsc::channel();
+                    std::thread::spawn(move || {
+                        let result = decode_animated_gif(&original_data);
+                        let _ = tx.send(result);
+                    });
+                    self.preview.pending_original_animation = Some(rx);
+                } else {
+                    // Static original — decode directly
+                    if let Ok(texture) = Self::decode_to_texture(ctx, &original_data, "original") {
+                        self.preview.original_texture = Some(texture);
+                    }
+                }
+            }
+        }
     }
 
     /// Update the image preview texture from the working buffer
