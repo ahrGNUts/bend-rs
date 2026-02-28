@@ -98,6 +98,34 @@
 - [x] 8.6 Mark scan data as high risk for warnings
 - [x] 8.7 Handle malformed JPEG files gracefully
 
+## 8b. Format Parsing - GIF (P1)
+- [x] 8b.1 Enable GIF feature in image crate dependency (Cargo.toml)
+- [x] 8b.2 Add read_u16_le helper to src/formats/bytes.rs
+- [x] 8b.3 Implement GIF header and Logical Screen Descriptor parsing
+- [x] 8b.4 Implement Global Color Table parsing
+- [x] 8b.5 Implement extension block parsing (Graphics Control, Comment, Application, Plain Text)
+- [x] 8b.6 Implement Image Descriptor and Local Color Table parsing
+- [x] 8b.7 Implement Image Data (LZW sub-blocks) boundary parsing
+- [x] 8b.8 Implement animated GIF multi-frame structure parsing
+- [x] 8b.9 Handle malformed/truncated GIF files gracefully
+- [x] 8b.10 Register GifParser in detect_format() and module exports
+- [x] 8b.11 Add GIF extension to file dialogs and is_supported_extension()
+- [x] 8b.12 Write unit and integration tests for GIF parser
+
+## 8c. Animated GIF Playback (P1)
+Prerequisites: 8b (GIF format support must be working first)
+
+- [x] 8c.1 Add AnimationState struct (CPU-side ColorImage frames, delays, playback state) and integrate into PreviewState
+- [x] 8c.2 Implement animated GIF frame decoding with GifDecoder + AnimationDecoder; verify frame compositing handles disposal methods; clamp zero-delay frames to 10ms minimum
+- [x] 8c.3 Detect GIF signature in update_preview(), attempt animated decode, branch on frame count (>1 = animated, =1 = static)
+- [x] 8c.4 Implement advance_animation() with per-frame delay timer; call unconditionally from BendApp::update() (independent of dirty flag)
+- [x] 8c.5 Add animation controls to preview panel: play/pause, frame forward/back (auto-pauses), first/last frame jump buttons
+- [x] 8c.6 Add frame counter display (Frame X / Y)
+- [x] 8c.7 Update comparison mode: sync frame index, clamp to min frame count on mismatch, show both frame counts
+- [x] 8c.8 Handle preview re-decode on buffer changes: background thread decode, preserve frame index and play state, graceful failure
+- [x] 8c.9 Clear animation and original_animation state in open_file() when loading a new file
+- [x] 8c.10 Write tests for AnimationState and frame decoding (hand-crafted minimal GIF byte arrays)
+
 ## 9. Structure Visualization (P1)
 Prerequisites: Sections 7-8 (Format Parsing)
 
