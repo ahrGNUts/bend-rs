@@ -240,15 +240,33 @@ fn parse_image_block(data: &[u8], pos: usize) -> (Vec<FileSection>, usize) {
         current_pos += 1; // LZW minimum code size byte
         let img_data_end = skip_sub_blocks(data, current_pos).unwrap_or(data.len());
 
-        children.push(
+        let mut img_data =
+            FileSection::new("Image Data", img_data_start, img_data_end, RiskLevel::High)
+                .with_description("LZW-compressed pixel data");
+
+        img_data = img_data.with_child(
             FileSection::new(
-                "Image Data",
+                "LZW Minimum Code Size",
                 img_data_start,
-                img_data_end,
-                RiskLevel::Caution,
+                img_data_start + 1,
+                RiskLevel::Critical,
             )
-            .with_description("LZW-compressed pixel data"),
+            .with_description("Initial LZW code width — changing this breaks decompression"),
         );
+
+        if img_data_end > img_data_start + 1 {
+            img_data = img_data.with_child(
+                FileSection::new(
+                    "Image Data Blocks",
+                    img_data_start + 1,
+                    img_data_end,
+                    RiskLevel::High,
+                )
+                .with_description("LZW-compressed pixel data in sub-blocks"),
+            );
+        }
+
+        children.push(img_data);
         current_pos = img_data_end;
     }
 
@@ -718,6 +736,21 @@ mod tests {
                 "Frame {} missing Image Data",
                 frame.name
             );
+
+            // Image Data should have 2 children: LZW Minimum Code Size + Image Data Blocks
+            let img_data = frame
+                .children
+                .iter()
+                .find(|c| c.name == "Image Data")
+                .unwrap();
+            assert_eq!(
+                img_data.children.len(),
+                2,
+                "Frame {} Image Data should have 2 children",
+                frame.name
+            );
+            assert_eq!(img_data.children[0].name, "LZW Minimum Code Size");
+            assert_eq!(img_data.children[1].name, "Image Data Blocks");
         }
     }
 
@@ -976,6 +1009,36 @@ mod tests {
             "Expected Plain Text Extension in frame children, got: {:?}",
             child_names
         );
+    }
+
+    #[test]
+    fn test_image_data_children() {
+        let parser = GifParser;
+        let data = minimal_gif89a();
+        let sections = parser.parse(&data).unwrap();
+
+        let frame = sections.iter().find(|s| s.name == "Frame 1").unwrap();
+        let img_data = frame
+            .children
+            .iter()
+            .find(|c| c.name == "Image Data")
+            .unwrap();
+
+        // Parent "Image Data" should be High risk
+        assert_eq!(img_data.risk, RiskLevel::High);
+
+        // Child 1: LZW Minimum Code Size — Critical, spans 1 byte
+        let lzw_min = &img_data.children[0];
+        assert_eq!(lzw_min.name, "LZW Minimum Code Size");
+        assert_eq!(lzw_min.risk, RiskLevel::Critical);
+        assert_eq!(lzw_min.end - lzw_min.start, 1);
+
+        // Child 2: Image Data Blocks — High, spans remaining bytes
+        let data_blocks = &img_data.children[1];
+        assert_eq!(data_blocks.name, "Image Data Blocks");
+        assert_eq!(data_blocks.risk, RiskLevel::High);
+        assert_eq!(data_blocks.start, lzw_min.end);
+        assert_eq!(data_blocks.end, img_data.end);
     }
 
     #[test]
