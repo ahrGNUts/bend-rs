@@ -38,7 +38,8 @@ fn main() -> eframe::Result<()> {
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([settings.window_width, settings.window_height])
         .with_min_inner_size([800.0, 600.0])
-        .with_drag_and_drop(true);
+        .with_drag_and_drop(true)
+        .with_app_id("com.bend.databending");
 
     if let Some(icon) = load_icon() {
         viewport = viewport.with_icon(Arc::new(icon));
