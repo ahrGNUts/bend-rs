@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Bend
+GenericName=Databending Studio
+Comment=A cross-platform databending application for creating glitch art
+Exec=bend-rs
+Icon=com.bend.databending
+Terminal=false
+Categories=Graphics;2DGraphics;RasterGraphics;
+StartupWMClass=com.bend.databending
+StartupNotify=true
