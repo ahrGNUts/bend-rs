@@ -188,8 +188,8 @@ Prerequisites: Sections 7-8 (format parsing to identify header regions)
 - [x] 17.10b Test application on windows to ensure icon displays as expected
 - [x] 17.10c Test application on different Linux desktop envs to ensure icon displays as expected
   - [x] KDE Plasma (X11) 
-  - [x] KDE Plasma (Wayland) (default wayland icon displays here instead of app icon)
-  - [ ] GNOME (default app icon shows in openSUSE and debian. OpenSUSE shows the application name as 'unknown' in the dock while debian shows bend-rs. Showing Unknown might be a wayland thing? Debian behaves the same when I boot into GNOME on Wayland)
+  - [x] KDE Plasma (Wayland)
+  - [x] GNOME (Wayland; tested on Debian and openSUSE)
   - [x] Cinnamon
   - [x] XFCE (fine on debian)
 - [x] 17.11 ENHANCEMENT: Implement an insert/overwrite mode when editing bytes and ascii
