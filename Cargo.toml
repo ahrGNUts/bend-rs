@@ -3,7 +3,7 @@ name = "bend-rs"
 version = "0.1.0"
 edition = "2021"
 description = "A cross-platform databending application for glitch art"
-license = "MIT"
+license = "GPL-3.0-only"
 
 [dependencies]
 # GUI framework
