@@ -34,6 +34,20 @@ enum FileDialogResult {
     Cancelled,
 }
 
+/// Spawn a file dialog on a background thread, returning a receiver for the result.
+fn spawn_file_dialog<F>(ctx: &egui::Context, dialog_fn: F) -> mpsc::Receiver<FileDialogResult>
+where
+    F: FnOnce() -> FileDialogResult + Send + 'static,
+{
+    let (tx, rx) = mpsc::channel();
+    let ctx = ctx.clone();
+    std::thread::spawn(move || {
+        let _ = tx.send(dialog_fn());
+        ctx.request_repaint();
+    });
+    rx
+}
+
 /// Threshold for detecting window size changes (pixels)
 const WINDOW_RESIZE_THRESHOLD: f32 = 1.0;
 
@@ -210,10 +224,7 @@ impl BendApp {
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| "bmp".to_string());
 
-        let (tx, rx) = mpsc::channel();
-        let ctx = ctx.clone();
-
-        std::thread::spawn(move || {
+        let rx = spawn_file_dialog(ctx, move || {
             // Use AsyncFileDialog to avoid NSSavePanel::runModal on macOS,
             // which enters a nested event loop that can trigger a winit panic
             // when drag events fire during the modal dialog.
@@ -225,7 +236,7 @@ impl BendApp {
                     .save_file()
                     .await
             });
-            let file_result = if let Some(handle) = result {
+            if let Some(handle) = result {
                 let path = handle.path().to_path_buf();
                 match std::fs::write(&path, &buffer) {
                     Ok(()) => FileDialogResult::ExportSuccess(path),
@@ -233,9 +244,7 @@ impl BendApp {
                 }
             } else {
                 FileDialogResult::Cancelled
-            };
-            let _ = tx.send(file_result);
-            ctx.request_repaint();
+            }
         });
 
         self.export_dialog_rx = Some(rx);
@@ -290,10 +299,7 @@ impl BendApp {
             return;
         }
 
-        let (tx, rx) = mpsc::channel();
-        let ctx = ctx.clone();
-
-        std::thread::spawn(move || {
+        let rx = spawn_file_dialog(ctx, || {
             // Use AsyncFileDialog to avoid NSSavePanel::runModal on macOS,
             // which enters a nested event loop that can trigger a winit panic
             // when drag events fire during the modal dialog.
@@ -304,13 +310,11 @@ impl BendApp {
                     .pick_file()
                     .await
             });
-            let file_result = if let Some(handle) = result {
+            if let Some(handle) = result {
                 FileDialogResult::OpenFile(handle.path().to_path_buf())
             } else {
                 FileDialogResult::Cancelled
-            };
-            let _ = tx.send(file_result);
-            ctx.request_repaint();
+            }
         });
 
         self.open_dialog_rx = Some(rx);
