@@ -27,6 +27,9 @@ env_logger = "0.11"
 # Clipboard
 arboard = "3.4"
 
+# Async runtime (for rfd::AsyncFileDialog to avoid macOS runModal panics)
+pollster = "0.4"
+
 # Platform directories
 dirs = "5.0"
 

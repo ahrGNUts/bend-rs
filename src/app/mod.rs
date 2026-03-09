@@ -214,12 +214,19 @@ impl BendApp {
         let ctx = ctx.clone();
 
         std::thread::spawn(move || {
-            let result = if let Some(path) = rfd::FileDialog::new()
-                .set_file_name(format!("{}.{}", default_name, extension))
-                .add_filter("Images", &["bmp", "jpg", "jpeg", "gif"])
-                .add_filter("All files", &["*"])
-                .save_file()
-            {
+            // Use AsyncFileDialog to avoid NSSavePanel::runModal on macOS,
+            // which enters a nested event loop that can trigger a winit panic
+            // when drag events fire during the modal dialog.
+            let result = pollster::block_on(async {
+                rfd::AsyncFileDialog::new()
+                    .set_file_name(format!("{}.{}", default_name, extension))
+                    .add_filter("Images", &["bmp", "jpg", "jpeg", "gif"])
+                    .add_filter("All files", &["*"])
+                    .save_file()
+                    .await
+            });
+            let file_result = if let Some(handle) = result {
+                let path = handle.path().to_path_buf();
                 match std::fs::write(&path, &buffer) {
                     Ok(()) => FileDialogResult::ExportSuccess(path),
                     Err(e) => FileDialogResult::ExportError(e.to_string()),
@@ -227,7 +234,7 @@ impl BendApp {
             } else {
                 FileDialogResult::Cancelled
             };
-            let _ = tx.send(result);
+            let _ = tx.send(file_result);
             ctx.request_repaint();
         });
 
@@ -287,16 +294,22 @@ impl BendApp {
         let ctx = ctx.clone();
 
         std::thread::spawn(move || {
-            let result = if let Some(path) = rfd::FileDialog::new()
-                .add_filter("Images", &["bmp", "jpg", "jpeg", "gif"])
-                .add_filter("All files", &["*"])
-                .pick_file()
-            {
-                FileDialogResult::OpenFile(path)
+            // Use AsyncFileDialog to avoid NSSavePanel::runModal on macOS,
+            // which enters a nested event loop that can trigger a winit panic
+            // when drag events fire during the modal dialog.
+            let result = pollster::block_on(async {
+                rfd::AsyncFileDialog::new()
+                    .add_filter("Images", &["bmp", "jpg", "jpeg", "gif"])
+                    .add_filter("All files", &["*"])
+                    .pick_file()
+                    .await
+            });
+            let file_result = if let Some(handle) = result {
+                FileDialogResult::OpenFile(handle.path().to_path_buf())
             } else {
                 FileDialogResult::Cancelled
             };
-            let _ = tx.send(result);
+            let _ = tx.send(file_result);
             ctx.request_repaint();
         });
 
