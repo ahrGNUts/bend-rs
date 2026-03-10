@@ -242,6 +242,7 @@ Prerequisites: Sections 7-8 (format parsing to identify header regions)
 - [x] 17.30 BUG: Ctrl+Z/Ctrl+Shift+Z fires undo/redo twice per keypress (duplicate handling in input.rs and hex_editor.rs)
 - [x] 17.31 ENHANCEMENT: Add theme toggle (Dark / Light / System) to Preferences dialog with persistence
 - [x] 17.32 BUG: app sometimes panics when opening an image file via dragging it onto the application
+- [x] 17.33 POLISH: Create Save Point and Add Bookmark should be added to the Edit menu
 
 ## 18. Settings and Persistence (P3)
 - [x] 18.1 Design settings data structure (window size, recent files, preferences)

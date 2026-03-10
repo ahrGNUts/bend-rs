@@ -162,6 +162,27 @@ impl BendApp {
             ui.close_menu();
         }
         ui.separator();
+
+        let save_point_shortcut = format!("{}S", mod_str);
+        let bookmark_shortcut = format!("{}D", mod_str);
+
+        if menu_item_with_shortcut(ui, "Create Save Point", &save_point_shortcut, has_file) {
+            if let Some(editor) = &mut self.editor {
+                let count = editor.save_points().len();
+                let name = format!("Save Point {}", count + 1);
+                editor.create_save_point(name);
+            }
+            ui.close_menu();
+        }
+        if menu_item_with_shortcut(ui, "Add Bookmark", &bookmark_shortcut, has_file) {
+            if let Some(editor) = &mut self.editor {
+                let cursor_pos = editor.cursor();
+                let name = format!("Bookmark at 0x{:08X}", cursor_pos);
+                editor.add_bookmark(cursor_pos, name);
+            }
+            ui.close_menu();
+        }
+        ui.separator();
         if menu_item_with_shortcut(ui, "Refresh Preview", &refresh_shortcut, has_file) {
             self.mark_preview_dirty();
             ui.close_menu();
