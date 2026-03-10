@@ -126,6 +126,8 @@ impl BendApp {
             }
             if self.dialogs.high_risk_dont_show {
                 self.dialogs.suppress_high_risk_warnings = true;
+                self.settings.show_high_risk_warnings = false;
+                self.settings.save();
             }
             self.dialogs.high_risk_dont_show = false;
             self.dialogs.pending_high_risk_edit = None;

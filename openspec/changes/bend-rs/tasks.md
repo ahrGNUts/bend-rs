@@ -243,6 +243,7 @@ Prerequisites: Sections 7-8 (format parsing to identify header regions)
 - [x] 17.31 ENHANCEMENT: Add theme toggle (Dark / Light / System) to Preferences dialog with persistence
 - [x] 17.32 BUG: app sometimes panics when opening an image file via dragging it onto the application
 - [x] 17.33 POLISH: Create Save Point and Add Bookmark should be added to the Edit menu
+- [x] 17.34 BUG: settings persistence issue when toggling high risk warnings
 
 ## 18. Settings and Persistence (P3)
 - [x] 18.1 Design settings data structure (window size, recent files, preferences)

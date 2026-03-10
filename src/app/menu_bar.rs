@@ -202,6 +202,8 @@ impl BendApp {
         if self.dialogs.suppress_high_risk_warnings {
             if ui.button("Re-enable High-Risk Warnings").clicked() {
                 self.dialogs.suppress_high_risk_warnings = false;
+                self.settings.show_high_risk_warnings = true;
+                self.settings.save();
                 ui.close_menu();
             }
         } else {
