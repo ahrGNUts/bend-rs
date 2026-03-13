@@ -45,8 +45,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
             egui::RichText::new(
                 "Click \"+ Add Bookmark\" to add one at the current cursor position",
             )
-            .small()
-            .color(ui.visuals().weak_text_color()),
+            .small(),
         );
         return;
     }
@@ -96,11 +95,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
                 }
 
                 // Offset display
-                ui.label(
-                    egui::RichText::new(format!("Offset: 0x{:08X}", bookmark.offset))
-                        .small()
-                        .color(ui.visuals().weak_text_color()),
-                );
+                ui.label(egui::RichText::new(format!("Offset: 0x{:08X}", bookmark.offset)).small());
 
                 // Annotation (editable if editing)
                 if state.editing_annotation == Some(bookmark.id) {
@@ -125,12 +120,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
                         }
                     });
                 } else if !bookmark.annotation.is_empty() {
-                    ui.label(
-                        egui::RichText::new(&bookmark.annotation)
-                            .small()
-                            .italics()
-                            .color(ui.visuals().weak_text_color()),
-                    );
+                    ui.label(egui::RichText::new(&bookmark.annotation).small().italics());
                 }
 
                 // Action buttons

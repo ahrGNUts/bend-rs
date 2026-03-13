@@ -27,8 +27,18 @@ fn show_section(
     if section.children.is_empty() {
         // Leaf node - just show as clickable label
         ui.horizontal(|ui| {
-            if ui.selectable_label(is_cursor_in_section, name).clicked() {
+            let response = ui.selectable_label(is_cursor_in_section, name);
+            if response.clicked() {
                 *clicked_offset = Some(section.start);
+            }
+            // Draw an accent outline around the selected section label
+            if is_cursor_in_section {
+                let rect = response.rect.expand(1.0);
+                ui.painter().rect_stroke(
+                    rect,
+                    egui::Rounding::same(3.0),
+                    egui::Stroke::new(1.0, colors.accent),
+                );
             }
 
             // Show offset and size
@@ -39,8 +49,7 @@ fn show_section(
                     section.end,
                     section.end - section.start
                 ))
-                .small()
-                .color(ui.visuals().weak_text_color()),
+                .small(),
             );
         });
 
@@ -67,8 +76,7 @@ fn show_section(
                             section.end,
                             section.end - section.start
                         ))
-                        .small()
-                        .color(ui.visuals().weak_text_color()),
+                        .small(),
                     );
                     if ui.small_button("Go").clicked() {
                         *clicked_offset = Some(section.start);

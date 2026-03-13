@@ -136,6 +136,7 @@ pub struct BendApp {
 impl BendApp {
     pub fn new(cc: &eframe::CreationContext<'_>, settings: AppSettings) -> Self {
         settings.theme.apply(&cc.egui_ctx);
+        crate::ui::theme::apply_custom_visuals(&cc.egui_ctx);
 
         // Apply settings to initial state
         let header_protection = settings.default_header_protection;
