@@ -15,9 +15,9 @@ fn show_section(
 ) {
     let is_cursor_in_section = current_cursor >= section.start && current_cursor < section.end;
 
-    // Color the section name based on risk level
-    let color = colors.risk_color(section.risk);
-    let mut name = RichText::new(&*section.name).color(color);
+    // Color the section name with a background badge matching the hex editor style
+    let bg = colors.risk_bg_color(section.risk);
+    let mut name = RichText::new(&*section.name).color(colors.hex_byte_text);
 
     if is_cursor_in_section {
         name = name.strong();
@@ -27,17 +27,23 @@ fn show_section(
     if section.children.is_empty() {
         // Leaf node - just show as clickable label
         ui.horizontal(|ui| {
-            let response = ui.selectable_label(is_cursor_in_section, name);
+            let bg_idx = ui.painter().add(egui::Shape::Noop);
+            let response = ui.selectable_label(false, name);
+            let rounding = ui.visuals().widgets.inactive.rounding;
+            ui.painter().set(
+                bg_idx,
+                egui::Shape::rect_filled(response.rect, rounding, bg),
+            );
             if response.clicked() {
                 *clicked_offset = Some(section.start);
             }
-            // Draw an accent outline around the selected section label
+            // Draw a risk-colored outline around the selected section label
             if is_cursor_in_section {
                 let rect = response.rect.expand(1.0);
                 ui.painter().rect_stroke(
                     rect,
                     egui::Rounding::same(3.0),
-                    egui::Stroke::new(1.0, colors.accent),
+                    egui::Stroke::new(1.5, colors.risk_color(section.risk)),
                 );
             }
 
@@ -63,6 +69,7 @@ fn show_section(
         }
     } else {
         // Parent node with children
+        let bg_idx = ui.painter().add(egui::Shape::Noop);
         let header = egui::CollapsingHeader::new(name)
             .id_salt(section.start)
             .default_open(is_cursor_in_section)
@@ -94,6 +101,12 @@ fn show_section(
                     show_section(ui, child, clicked_offset, current_cursor, colors);
                 }
             });
+
+        let rounding = ui.visuals().widgets.inactive.rounding;
+        ui.painter().set(
+            bg_idx,
+            egui::Shape::rect_filled(header.header_response.rect, rounding, bg),
+        );
 
         // Make header clickable too
         if header.header_response.clicked() {
@@ -142,7 +155,13 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                 RiskLevel::High,
                 RiskLevel::Critical,
             ] {
-                ui.colored_label(colors.risk_color(risk), risk.label());
+                egui::Frame::none()
+                    .fill(colors.risk_bg_color(risk))
+                    .rounding(egui::Rounding::same(3.0))
+                    .inner_margin(egui::Margin::symmetric(4.0, 1.0))
+                    .show(ui, |ui| {
+                        ui.label(RichText::new(risk.label()).color(colors.hex_byte_text));
+                    });
             }
         });
 
