@@ -133,8 +133,8 @@ impl AppColors {
             shortcut_normal: Color32::from_rgb(139, 142, 150),
             shortcut_hover: Color32::from_rgb(64, 69, 80),
 
-            accent: Color32::from_rgb(14, 142, 112),
-            accent_muted: Color32::from_rgb(220, 225, 232),
+            accent: Color32::from_rgb(59, 130, 246),
+            accent_muted: Color32::from_rgb(213, 228, 250),
             bg_base: Color32::from_rgb(248, 246, 242),
             bg_surface: Color32::from_rgb(255, 255, 255),
             bg_elevated: Color32::from_rgb(255, 255, 255),
