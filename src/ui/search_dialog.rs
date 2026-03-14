@@ -90,11 +90,7 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
                 if app.search_state.mode == SearchMode::Ascii {
                     ui.checkbox(&mut app.search_state.case_sensitive, "Case sensitive");
                 } else {
-                    ui.label(
-                        egui::RichText::new("Tip: Use ?? for wildcard bytes")
-                            .small()
-                            .color(ui.visuals().weak_text_color()),
-                    );
+                    ui.label(egui::RichText::new("Tip: Use ?? for wildcard bytes").small());
                 }
             });
 

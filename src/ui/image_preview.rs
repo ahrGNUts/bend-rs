@@ -195,11 +195,7 @@ fn show_texture_scaled(
     } else {
         // No texture - show placeholder
         ui.centered_and_justified(|ui| {
-            ui.label(
-                egui::RichText::new("\u{1F5BC}")
-                    .size(48.0)
-                    .color(ui.visuals().weak_text_color()),
-            );
+            ui.label(egui::RichText::new("\u{1F5BC}").size(48.0));
         });
     }
 }
@@ -231,18 +227,10 @@ fn show_single_preview(ui: &mut egui::Ui, app: &BendApp) {
             if app.preview.decode_error.is_some() {
                 ui.vertical_centered(|ui| {
                     // Broken image indicator
-                    ui.label(
-                        egui::RichText::new("\u{1F5BC}")
-                            .size(64.0)
-                            .color(ui.visuals().weak_text_color()),
-                    );
+                    ui.label(egui::RichText::new("\u{1F5BC}").size(64.0));
                     ui.label("Unable to decode image");
                     if let Some(err) = &app.preview.decode_error {
-                        ui.label(
-                            egui::RichText::new(err)
-                                .small()
-                                .color(ui.visuals().weak_text_color()),
-                        );
+                        ui.label(egui::RichText::new(err).small());
                     }
                 });
             } else {

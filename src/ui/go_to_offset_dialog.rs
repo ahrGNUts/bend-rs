@@ -71,8 +71,7 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
                         editor.len(),
                         editor.len()
                     ))
-                    .small()
-                    .color(ui.visuals().weak_text_color()),
+                    .small(),
                 );
             }
 

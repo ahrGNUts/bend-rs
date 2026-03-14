@@ -114,18 +114,13 @@ pub fn show(
             ui.heading("About");
             ui.add_space(4.0);
 
-            ui.label(
-                egui::RichText::new("Settings are saved when this dialog is closed.")
-                    .small()
-                    .color(ui.visuals().weak_text_color()),
-            );
+            ui.label(egui::RichText::new("Settings are saved when this dialog is closed.").small());
 
             if let Some(path) = dirs::config_dir() {
                 let settings_path = path.join("bend-rs").join("settings.json");
                 ui.label(
                     egui::RichText::new(format!("Settings file: {}", settings_path.display()))
-                        .small()
-                        .color(ui.visuals().weak_text_color()),
+                        .small(),
                 );
             }
 
