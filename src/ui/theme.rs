@@ -82,7 +82,7 @@ impl AppColors {
             selection_bg: Color32::from_rgb(30, 72, 112),
             current_match_bg: Color32::from_rgb(212, 144, 48),
             search_match_bg: Color32::from_rgb(160, 160, 64),
-            bookmark_bg: Color32::from_rgb(64, 168, 192),
+            bookmark_bg: Color32::from_rgb(36, 120, 148),
 
             modified_indicator: Color32::from_rgb(224, 168, 48),
             warning_text: Color32::from_rgb(240, 200, 80),

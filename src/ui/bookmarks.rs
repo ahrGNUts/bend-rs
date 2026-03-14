@@ -1,6 +1,7 @@
 //! Bookmarks list UI component
 
 use crate::app::BendApp;
+use crate::ui::theme::AppColors;
 use eframe::egui;
 
 /// State for the bookmarks panel
@@ -81,14 +82,20 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
                         }
                     });
                 } else {
-                    // Normal display mode
+                    // Normal display mode — colored background pill, like structure tree nodes
                     ui.horizontal(|ui| {
-                        // Clickable bookmark name
-                        if ui
-                            .link(&bookmark.name)
-                            .on_hover_text("Click to navigate")
-                            .clicked()
-                        {
+                        let colors = AppColors::new(ui.visuals().dark_mode);
+                        let bg = colors.bookmark_bg;
+                        let bg_idx = ui.painter().add(egui::Shape::Noop);
+                        let label_text =
+                            egui::RichText::new(&bookmark.name).color(colors.hex_byte_text);
+                        let response = ui.selectable_label(false, label_text);
+                        let rounding = ui.visuals().widgets.inactive.rounding;
+                        ui.painter().set(
+                            bg_idx,
+                            egui::Shape::rect_filled(response.rect, rounding, bg),
+                        );
+                        if response.on_hover_text("Click to navigate").clicked() {
                             action = Some(BookmarkAction::Navigate(bookmark.offset));
                         }
                     });
