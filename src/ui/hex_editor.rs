@@ -582,8 +582,8 @@ fn handle_keyboard_input(
     cursor_pos: usize,
     cursor_protected: bool,
 ) -> KeyboardResult {
-    // Don't process hex editor input when a text-input dialog is open
-    if app.search_state.dialog_open || app.go_to_offset_state.dialog_open {
+    // Don't process hex editor input when any egui widget (text field, etc.) has focus
+    if ui.ctx().memory(|m| m.focused().is_some()) {
         return KeyboardResult {
             pending_high_risk_edit: None,
         };

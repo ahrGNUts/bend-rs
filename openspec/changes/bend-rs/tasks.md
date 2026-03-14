@@ -245,6 +245,7 @@ Prerequisites: Sections 7-8 (format parsing to identify header regions)
 - [x] 17.33 POLISH: Create Save Point and Add Bookmark should be added to the Edit menu
 - [x] 17.34 BUG: settings persistence issue when toggling high risk warnings
 - [x] 17.35 BUG: clicking rename for a save point causes the rename input to appear, but rename/revert/delete save point buttons render over the input
+- [x] 17.36 BUG: editor doesn't block text input when the save point input is focused
 
 ## 18. Settings and Persistence (P3)
 - [x] 18.1 Design settings data structure (window size, recent files, preferences)
