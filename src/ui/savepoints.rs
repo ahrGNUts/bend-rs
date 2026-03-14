@@ -72,10 +72,8 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut SavePointsPanelSta
 
     // Create save point dialog
     if state.show_create_dialog {
-        ui.horizontal(|ui| {
-            ui.label("Name:");
-            ui.text_edit_singleline(&mut state.new_name_buffer);
-        });
+        ui.label("Name:");
+        ui.text_edit_singleline(&mut state.new_name_buffer);
         ui.horizontal(|ui| {
             if ui.button("Create").clicked() {
                 state.pending_create = true;

@@ -58,19 +58,19 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
             ui.group(|ui| {
                 // Bookmark name (editable if renaming)
                 if state.renaming == Some(bookmark.id) {
-                    ui.horizontal(|ui| {
-                        let response = ui.text_edit_singleline(&mut state.rename_text);
-                        if response.lost_focus() {
-                            if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                                action = Some(BookmarkAction::FinishRename(
-                                    bookmark.id,
-                                    std::mem::take(&mut state.rename_text),
-                                ));
-                            } else if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                                action = Some(BookmarkAction::CancelRename);
-                            }
+                    let response = ui.text_edit_singleline(&mut state.rename_text);
+                    if response.lost_focus() {
+                        if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                            action = Some(BookmarkAction::FinishRename(
+                                bookmark.id,
+                                std::mem::take(&mut state.rename_text),
+                            ));
+                        } else if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                            action = Some(BookmarkAction::CancelRename);
                         }
-                        if ui.button("Save").clicked() {
+                    }
+                    ui.horizontal(|ui| {
+                        if ui.button("Rename").clicked() {
                             action = Some(BookmarkAction::FinishRename(
                                 bookmark.id,
                                 std::mem::take(&mut state.rename_text),
@@ -99,24 +99,27 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
 
                 // Annotation (editable if editing)
                 if state.editing_annotation == Some(bookmark.id) {
-                    ui.horizontal(|ui| {
-                        ui.label("Note:");
-                        let response = ui.text_edit_singleline(&mut state.annotation_text);
-                        if response.lost_focus() {
-                            if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                                action = Some(BookmarkAction::FinishAnnotation(
-                                    bookmark.id,
-                                    std::mem::take(&mut state.annotation_text),
-                                ));
-                            } else if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                                action = Some(BookmarkAction::CancelAnnotation);
-                            }
+                    ui.label("Note:");
+                    let response = ui.text_edit_singleline(&mut state.annotation_text);
+                    if response.lost_focus() {
+                        if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                            action = Some(BookmarkAction::FinishAnnotation(
+                                bookmark.id,
+                                std::mem::take(&mut state.annotation_text),
+                            ));
+                        } else if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                            action = Some(BookmarkAction::CancelAnnotation);
                         }
+                    }
+                    ui.horizontal(|ui| {
                         if ui.button("Save").clicked() {
                             action = Some(BookmarkAction::FinishAnnotation(
                                 bookmark.id,
                                 std::mem::take(&mut state.annotation_text),
                             ));
+                        }
+                        if ui.button("Cancel").clicked() {
+                            action = Some(BookmarkAction::CancelAnnotation);
                         }
                     });
                 } else if !bookmark.annotation.is_empty() {
