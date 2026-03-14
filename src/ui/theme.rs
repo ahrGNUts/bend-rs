@@ -37,7 +37,6 @@ pub struct AppColors {
     pub error_text: Color32,
 
     // -- Editor chrome --
-    pub ascii_delimiter: Color32,
     pub cursor_text: Color32,
     /// Text color for hex bytes that sit on a tinted background
     pub hex_byte_text: Color32,
@@ -89,7 +88,6 @@ impl AppColors {
             warning_text: Color32::from_rgb(240, 200, 80),
             error_text: Color32::from_rgb(224, 96, 96),
 
-            ascii_delimiter: Color32::from_rgb(74, 80, 96),
             cursor_text: Color32::WHITE,
             hex_byte_text: Color32::from_rgb(200, 206, 216),
 
@@ -129,7 +127,6 @@ impl AppColors {
             warning_text: Color32::from_rgb(168, 128, 0),
             error_text: Color32::from_rgb(184, 40, 40),
 
-            ascii_delimiter: Color32::from_rgb(192, 189, 184),
             cursor_text: Color32::WHITE,
             hex_byte_text: Color32::from_rgb(40, 44, 52),
 

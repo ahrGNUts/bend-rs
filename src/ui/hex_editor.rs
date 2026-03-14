@@ -469,11 +469,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
 
             let row_response = ui.horizontal(|ui| {
                 // Offset column
-                ui.label(
-                    RichText::new(format!("{:08X}", offset))
-                        .monospace()
-                        .color(ui.visuals().weak_text_color()),
-                );
+                ui.label(RichText::new(format!("{:08X}", offset)).monospace());
                 ui.add_space(OFFSET_HEX_SPACING);
 
                 // Hex bytes
@@ -509,7 +505,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
 
                 // ASCII column
                 ui.spacing_mut().item_spacing.x = 0.0;
-                ui.label(RichText::new("|").monospace().color(colors.ascii_delimiter));
+                ui.label(RichText::new("|").monospace());
                 for (i, byte) in row_bytes.iter().enumerate() {
                     let byte_offset = offset + i;
                     let is_cursor = byte_offset == state.cursor_pos;
@@ -533,7 +529,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                         context_menu_offset = Some(byte_offset);
                     }
                 }
-                ui.label(RichText::new("|").monospace().color(colors.ascii_delimiter));
+                ui.label(RichText::new("|").monospace());
             });
 
             if should_scroll_to_this_row {
