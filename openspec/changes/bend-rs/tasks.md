@@ -247,9 +247,9 @@ Prerequisites: Sections 7-8 (format parsing to identify header regions)
 - [x] 17.35 BUG: clicking rename for a save point causes the rename input to appear, but rename/revert/delete save point buttons render over the input
 - [x] 17.36 BUG: editor doesn't block text input when the save point input is focused
 - [x] 17.37 BUG: clicking the Rename or Add Note buttons for a bookmark causes the left panel to expand suddenly
-- [ ] 17.38 POLISH: bookmark notes
-  - [ ] 17.38a: the 'Add Note' button should read 'Edit Note' when a note has already been added to a bookmark
-  - [ ] 17.38b: there should be a 'Delete Note' button for bookmarks that have notes
+- [x] 17.38 POLISH: bookmark notes
+  - [x] 17.38a: the 'Add Note' button should read 'Edit Note' when a note has already been added to a bookmark
+  - [x] 17.38b: there should be a 'Delete Note' button for bookmarks that have notes
 
 ## 18. Settings and Persistence (P3)
 - [x] 18.1 Design settings data structure (window size, recent files, preferences)

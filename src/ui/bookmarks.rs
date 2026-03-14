@@ -135,11 +135,21 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
                                 bookmark.name.clone(),
                             ));
                         }
-                        if ui.small_button("Add Note").clicked() {
+                        let note_label = if bookmark.annotation.is_empty() {
+                            "Add Note"
+                        } else {
+                            "Edit Note"
+                        };
+                        if ui.small_button(note_label).clicked() {
                             action = Some(BookmarkAction::StartAnnotation(
                                 bookmark.id,
                                 bookmark.annotation.clone(),
                             ));
+                        }
+                        if !bookmark.annotation.is_empty() {
+                            if ui.small_button("Delete Note").clicked() {
+                                action = Some(BookmarkAction::DeleteAnnotation(bookmark.id));
+                            }
                         }
                         if ui.small_button("Delete").clicked() {
                             action = Some(BookmarkAction::Delete(bookmark.id));
@@ -192,6 +202,11 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
                 state.editing_annotation = None;
                 state.annotation_text.clear();
             }
+            BookmarkAction::DeleteAnnotation(id) => {
+                if let Some(editor) = &mut app.editor {
+                    let _ = editor.bookmarks_mut().set_annotation(id, String::new());
+                }
+            }
             BookmarkAction::Delete(id) => {
                 if let Some(editor) = &mut app.editor {
                     let _ = editor.remove_bookmark(id); // #[must_use] result intentionally ignored — bookmark existence already verified by UI
@@ -210,5 +225,6 @@ enum BookmarkAction {
     StartAnnotation(u64, String),
     FinishAnnotation(u64, String),
     CancelAnnotation,
+    DeleteAnnotation(u64),
     Delete(u64),
 }
