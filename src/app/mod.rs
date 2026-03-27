@@ -14,6 +14,7 @@ use crate::editor::buffer::{EditMode, WriteMode};
 use crate::editor::{EditorState, GoToOffsetState, SearchState};
 use crate::formats::{parse_file, FileSection};
 use crate::settings::AppSettings;
+use crate::ui::theme::AppColors;
 use crate::ui::{
     bookmarks, go_to_offset_dialog,
     hex_editor::{self, ContextMenuState},
@@ -110,6 +111,9 @@ pub struct BendApp {
 
     /// Settings/preferences dialog state
     pub settings_dialog_state: SettingsDialogState,
+
+    /// Cached theme-aware color palette, refreshed once per frame in `update()`.
+    pub colors: AppColors,
 
     /// Application settings (persisted to disk)
     pub settings: AppSettings,
@@ -335,8 +339,8 @@ impl BendApp {
 
     /// Render the status bar
     fn render_status_bar(&self, ctx: &egui::Context) {
+        let colors = self.colors;
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
-            let colors = crate::ui::theme::AppColors::new(ui.visuals().dark_mode);
             ui.horizontal(|ui| {
                 // Unsaved changes indicator
                 if self.has_unsaved_changes() {
@@ -466,6 +470,9 @@ impl eframe::App for BendApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
         }
+
+        // Refresh cached color palette for this frame
+        self.colors = AppColors::new(ctx.style().visuals.dark_mode);
 
         // Track window size changes (debounced save)
         let current_size = ctx.screen_rect().size();

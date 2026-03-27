@@ -338,16 +338,14 @@ struct HighlightLookup<'a> {
     app: &'a BendApp,
     current_match_offset: Option<usize>,
     pattern_len: usize,
-    dark_mode: bool,
 }
 
 impl<'a> HighlightLookup<'a> {
-    fn new(app: &'a BendApp, dark_mode: bool) -> Self {
+    fn new(app: &'a BendApp) -> Self {
         Self {
             current_match_offset: app.search_state.current_match_offset(),
             pattern_len: app.search_state.pattern_length(),
             app,
-            dark_mode,
         }
     }
 
@@ -368,9 +366,7 @@ impl<'a> HighlightLookup<'a> {
                 .as_ref()
                 .is_some_and(|e| e.has_bookmark_at(byte_offset)),
             is_protected: self.app.is_offset_protected(byte_offset),
-            section_bg: self
-                .app
-                .section_color_for_offset(byte_offset, self.dark_mode),
+            section_bg: self.app.section_color_for_offset(byte_offset),
         }
     }
 }
@@ -435,9 +431,8 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
         (target_row.saturating_sub(SCROLL_BUFFER_ROWS) as f32 * row_height).max(0.0)
     });
 
-    let dark_mode = ui.visuals().dark_mode;
-    let colors = AppColors::new(dark_mode);
-    let highlights = HighlightLookup::new(app, dark_mode);
+    let colors = app.colors;
+    let highlights = HighlightLookup::new(app);
 
     let mut scroll_area = egui::ScrollArea::both().auto_shrink([false; 2]);
     if let Some(offset_y) = initial_scroll_offset {

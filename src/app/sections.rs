@@ -1,5 +1,4 @@
 use crate::formats::{FileSection, RiskLevel};
-use crate::ui::theme::AppColors;
 use eframe::egui;
 
 use super::BendApp;
@@ -26,15 +25,9 @@ impl BendApp {
     }
 
     /// Get the background color for a byte based on its section's risk level
-    pub fn section_color_for_offset(
-        &self,
-        offset: usize,
-        dark_mode: bool,
-    ) -> Option<egui::Color32> {
-        self.section_at_offset(offset).map(|section| {
-            let colors = AppColors::new(dark_mode);
-            colors.risk_bg_color(section.risk)
-        })
+    pub fn section_color_for_offset(&self, offset: usize) -> Option<egui::Color32> {
+        self.section_at_offset(offset)
+            .map(|section| self.colors.risk_bg_color(section.risk))
     }
 
     /// Check if an offset is in a protected region (header protection enabled + High/Critical risk)
@@ -159,20 +152,20 @@ mod tests {
         let app = create_test_app_with_sections(sections);
 
         // Verify colors are returned for each risk level (dark mode)
-        let color = app.section_color_for_offset(5, true);
+        let color = app.section_color_for_offset(5);
         assert!(color.is_some());
         // Green-ish for Safe
         let c = color.unwrap();
         assert!(c.g() > c.r()); // Green channel should be highest
 
-        let color = app.section_color_for_offset(25, true);
+        let color = app.section_color_for_offset(25);
         assert!(color.is_some());
         // Orange-ish for High
         let c = color.unwrap();
         assert!(c.r() > c.b()); // Red channel higher than blue
 
         // No color for offset outside sections
-        let color = app.section_color_for_offset(100, true);
+        let color = app.section_color_for_offset(100);
         assert!(color.is_none());
     }
 
@@ -182,7 +175,7 @@ mod tests {
 
         // Should return None when no sections cached
         assert!(app.section_at_offset(0).is_none());
-        assert!(app.section_color_for_offset(0, true).is_none());
+        assert!(app.section_color_for_offset(0).is_none());
     }
 
     #[test]

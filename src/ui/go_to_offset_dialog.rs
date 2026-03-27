@@ -2,7 +2,6 @@
 
 use crate::app::BendApp;
 use crate::editor::go_to_offset::parse_offset;
-use crate::ui::theme::AppColors;
 use eframe::egui;
 
 /// Attempt to navigate to the offset specified in the dialog input
@@ -77,7 +76,7 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
 
             // Show error message if any
             if let Some(error) = &app.go_to_offset_state.error {
-                let colors = AppColors::new(ui.visuals().dark_mode);
+                let colors = app.colors;
                 ui.add_space(4.0);
                 ui.colored_label(colors.error_text, error);
             }
