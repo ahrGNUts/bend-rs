@@ -1,5 +1,4 @@
 use crate::formats::RiskLevel;
-use crate::ui::theme::AppColors;
 use eframe::egui;
 
 use super::BendApp;
@@ -53,12 +52,12 @@ impl BendApp {
         let mut should_proceed = false;
         let mut should_cancel = false;
 
+        let colors = self.colors;
         egui::Window::new("High-Risk Edit Warning")
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ctx, |ui| {
-                let colors = AppColors::new(ui.visuals().dark_mode);
                 ui.vertical(|ui| {
                     // Warning icon and message
                     ui.horizontal(|ui| {

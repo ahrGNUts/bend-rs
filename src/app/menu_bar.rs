@@ -15,8 +15,13 @@ fn modifier_key() -> &'static str {
 /// Menu item with shortcut hint that has better contrast than egui's default.
 /// Uses a horizontal layout with the shortcut text aligned right.
 /// Shortcut text is dimmer when not hovered, brighter when hovered.
-fn menu_item_with_shortcut(ui: &mut egui::Ui, label: &str, shortcut: &str, enabled: bool) -> bool {
-    let colors = AppColors::new(ui.visuals().dark_mode);
+fn menu_item_with_shortcut(
+    ui: &mut egui::Ui,
+    label: &str,
+    shortcut: &str,
+    enabled: bool,
+    colors: AppColors,
+) -> bool {
     let text_color = ui.visuals().text_color();
 
     // Calculate label and shortcut widths for proper sizing
@@ -76,13 +81,14 @@ impl BendApp {
         let mod_str = modifier_key();
         let open_shortcut = format!("{}O", mod_str);
         let export_shortcut = format!("{}E", mod_str);
+        let colors = self.colors;
 
-        if menu_item_with_shortcut(ui, "Open...", &open_shortcut, true) {
+        if menu_item_with_shortcut(ui, "Open...", &open_shortcut, true, colors) {
             self.open_file_dialog(ui.ctx());
             ui.close_menu();
         }
         let has_file = self.editor.is_some();
-        if menu_item_with_shortcut(ui, "Export...", &export_shortcut, has_file) {
+        if menu_item_with_shortcut(ui, "Export...", &export_shortcut, has_file, colors) {
             self.export_file(ui.ctx());
             ui.close_menu();
         }
@@ -142,22 +148,23 @@ impl BendApp {
         let find_shortcut = format!("{}F", mod_str);
         let goto_shortcut = format!("{}G", mod_str);
         let refresh_shortcut = format!("{}R", mod_str);
+        let colors = self.colors;
 
-        if menu_item_with_shortcut(ui, "Undo", &undo_shortcut, can_undo) {
+        if menu_item_with_shortcut(ui, "Undo", &undo_shortcut, can_undo, colors) {
             self.do_undo();
             ui.close_menu();
         }
-        if menu_item_with_shortcut(ui, "Redo", &redo_shortcut, can_redo) {
+        if menu_item_with_shortcut(ui, "Redo", &redo_shortcut, can_redo, colors) {
             self.do_redo();
             ui.close_menu();
         }
         ui.separator();
 
-        if menu_item_with_shortcut(ui, "Find & Replace...", &find_shortcut, has_file) {
+        if menu_item_with_shortcut(ui, "Find & Replace...", &find_shortcut, has_file, colors) {
             self.search_state.open_dialog();
             ui.close_menu();
         }
-        if menu_item_with_shortcut(ui, "Go to Offset...", &goto_shortcut, has_file) {
+        if menu_item_with_shortcut(ui, "Go to Offset...", &goto_shortcut, has_file, colors) {
             self.go_to_offset_state.open_dialog();
             ui.close_menu();
         }
@@ -166,7 +173,13 @@ impl BendApp {
         let save_point_shortcut = format!("{}S", mod_str);
         let bookmark_shortcut = format!("{}D", mod_str);
 
-        if menu_item_with_shortcut(ui, "Create Save Point", &save_point_shortcut, has_file) {
+        if menu_item_with_shortcut(
+            ui,
+            "Create Save Point",
+            &save_point_shortcut,
+            has_file,
+            colors,
+        ) {
             if let Some(editor) = &mut self.editor {
                 let count = editor.save_points().len();
                 let name = format!("Save Point {}", count + 1);
@@ -174,7 +187,7 @@ impl BendApp {
             }
             ui.close_menu();
         }
-        if menu_item_with_shortcut(ui, "Add Bookmark", &bookmark_shortcut, has_file) {
+        if menu_item_with_shortcut(ui, "Add Bookmark", &bookmark_shortcut, has_file, colors) {
             if let Some(editor) = &mut self.editor {
                 let cursor_pos = editor.cursor();
                 let name = format!("Bookmark at 0x{:08X}", cursor_pos);
@@ -183,7 +196,7 @@ impl BendApp {
             ui.close_menu();
         }
         ui.separator();
-        if menu_item_with_shortcut(ui, "Refresh Preview", &refresh_shortcut, has_file) {
+        if menu_item_with_shortcut(ui, "Refresh Preview", &refresh_shortcut, has_file, colors) {
             self.mark_preview_dirty();
             ui.close_menu();
         }
@@ -218,7 +231,8 @@ impl BendApp {
 
     /// Render the Help menu contents
     fn render_help_menu(&mut self, ui: &mut egui::Ui) {
-        if menu_item_with_shortcut(ui, "Keyboard Shortcuts", "F1", true) {
+        let colors = self.colors;
+        if menu_item_with_shortcut(ui, "Keyboard Shortcuts", "F1", true, colors) {
             self.shortcuts_dialog_state.open();
             ui.close_menu();
         }

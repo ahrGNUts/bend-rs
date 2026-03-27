@@ -2,7 +2,6 @@
 
 use crate::app::BendApp;
 use crate::editor::search::{parse_hex_replace, SearchMessage, SearchMode};
-use crate::ui::theme::AppColors;
 use eframe::egui;
 
 /// Show the search dialog (modal window)
@@ -128,7 +127,7 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
 
             // Results status
             if let Some(msg) = &app.search_state.message {
-                let colors = AppColors::new(ui.visuals().dark_mode);
+                let colors = app.colors;
                 match msg {
                     SearchMessage::Error(text) => {
                         ui.colored_label(colors.error_text, text);

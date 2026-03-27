@@ -1,7 +1,6 @@
 //! Image preview UI component
 
 use crate::app::BendApp;
-use crate::ui::theme::AppColors;
 use eframe::egui;
 
 /// Show the image preview panel with optional comparison mode
@@ -101,7 +100,7 @@ fn show_animation_controls(ui: &mut egui::Ui, app: &mut BendApp) {
 
 /// Show the comparison view with original and current images side-by-side
 fn show_comparison_view(ui: &mut egui::Ui, app: &BendApp) {
-    let colors = AppColors::new(ui.visuals().dark_mode);
+    let colors = app.colors;
     let available_size = ui.available_size();
 
     // Calculate the maximum size for each image (half the width minus spacing)
@@ -205,7 +204,7 @@ fn show_single_preview(ui: &mut egui::Ui, app: &BendApp) {
     if let Some(texture) = &app.preview.texture {
         // Show decode error indicator if present
         if app.preview.decode_error.is_some() {
-            let colors = AppColors::new(ui.visuals().dark_mode);
+            let colors = app.colors;
             ui.horizontal(|ui| {
                 ui.colored_label(
                     colors.warning_text,

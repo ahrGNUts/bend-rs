@@ -1,13 +1,15 @@
 //! Centralized, theme-aware color palette for the application.
 //!
-//! Every custom color used in the UI lives here. Render sites construct
-//! `AppColors::new(dark_mode)` and read fields instead of using inline RGB literals.
+//! Every custom color used in the UI lives here. The palette is cached on
+//! `BendApp` and refreshed once per frame. UI components access it via
+//! `app.colors` or `self.colors` instead of using inline RGB literals.
 
 use crate::formats::RiskLevel;
 use eframe::egui;
 use eframe::egui::Color32;
 
-/// Theme-aware color palette. Construct via `AppColors::new(dark_mode)`.
+/// Theme-aware color palette. Cached on `BendApp` and refreshed each frame.
+#[derive(Clone, Copy)]
 pub struct AppColors {
     // -- Risk level solid colors (structure tree, legends) --
     pub risk_safe: Color32,
@@ -190,6 +192,12 @@ impl AppColors {
 
         visuals.warn_fg_color = self.warning_text;
         visuals.error_fg_color = self.error_text;
+    }
+}
+
+impl Default for AppColors {
+    fn default() -> Self {
+        Self::dark()
     }
 }
 
