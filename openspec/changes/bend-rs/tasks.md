@@ -251,6 +251,7 @@ Prerequisites: Sections 7-8 (format parsing to identify header regions)
   - [x] 17.38a: the 'Add Note' button should read 'Edit Note' when a note has already been added to a bookmark
   - [x] 17.38b: there should be a 'Delete Note' button for bookmarks that have notes
 - [x] 17.39 POLISH: better visual consistency between clickable bookmark link and byte highlight color for bookmark
+- [x] 17.40 BUG: editing image bytes in insert mode causes immediate image preview update
 
 ## 18. Settings and Persistence (P3)
 - [x] 18.1 Design settings data structure (window size, recent files, preferences)

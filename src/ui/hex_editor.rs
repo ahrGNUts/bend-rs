@@ -636,7 +636,6 @@ fn handle_keyboard_input(
         if editor.take_length_changed() {
             // Re-parse file structure since offsets shifted
             app.cached_sections = crate::formats::parse_file(editor.working());
-            app.mark_preview_dirty();
         }
     }
 
