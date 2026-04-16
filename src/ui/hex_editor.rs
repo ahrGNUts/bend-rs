@@ -49,9 +49,6 @@ const HEX_GROUP_SPACING: f32 = 8.0;
 /// Spacing between hex bytes and ASCII column
 const HEX_ASCII_SPACING: f32 = 16.0;
 
-/// Approximate width of a hex byte display ("XX ")
-const HEX_BYTE_WIDTH: f32 = 24.0;
-
 /// Number of rows to scroll above target when jumping to an offset
 const SCROLL_BUFFER_ROWS: usize = 5;
 
@@ -154,41 +151,112 @@ fn render_hex_byte(
     }
 }
 
-/// Render a single ASCII character with cursor/selection highlighting.
-/// Returns the response for click detection.
-fn render_ascii_char(
+/// Render the entire ASCII row as a single label with painter-based highlighting.
+/// Returns (response, clicked_byte_offset, context_menu_byte_offset).
+fn render_ascii_row(
     ui: &mut egui::Ui,
-    byte: u8,
-    is_cursor: bool,
-    is_selected: bool,
-    edit_mode: EditMode,
-    write_mode: WriteMode,
+    row_bytes: &[u8],
+    row_offset: usize,
+    state: &HexDisplayState,
     colors: &AppColors,
-) -> egui::Response {
-    let display_char = if is_printable_ascii(byte) {
-        byte as char
-    } else {
-        '.'
-    };
-
-    let mut rich_text = RichText::new(display_char.to_string()).monospace();
-
-    if is_cursor {
-        let (bright, dim) = if write_mode == WriteMode::Insert {
-            (colors.cursor_bright_insert, colors.cursor_dim_insert)
+) -> (egui::Response, Option<usize>, Option<usize>) {
+    // Build the full 16-char string: real chars + NBSP padding
+    let mut text = String::with_capacity(BYTES_PER_ROW);
+    for byte in row_bytes {
+        if is_printable_ascii(*byte) {
+            text.push(*byte as char);
         } else {
-            (colors.cursor_bright_overwrite, colors.cursor_dim_overwrite)
-        };
-        if edit_mode == EditMode::Ascii {
-            rich_text = rich_text.background_color(bright);
-        } else {
-            rich_text = rich_text.background_color(dim);
+            text.push('.');
         }
-    } else if is_selected {
-        rich_text = rich_text.background_color(colors.selection_bg);
+    }
+    let missing = BYTES_PER_ROW - row_bytes.len();
+    for _ in 0..missing {
+        text.push('\u{00A0}'); // non-breaking space (not trimmed by text layout)
     }
 
-    ui.label(rich_text)
+    // Render the whole row as one label
+    let response = ui.label(RichText::new(&text).monospace());
+    let rect = response.rect;
+    let char_width = rect.width() / BYTES_PER_ROW as f32;
+    let font_id = TextStyle::Monospace.resolve(ui.style());
+
+    // Draw highlights and re-paint characters on top
+    let (cursor_bright, cursor_dim) = if state.write_mode == WriteMode::Insert {
+        (colors.cursor_bright_insert, colors.cursor_dim_insert)
+    } else {
+        (colors.cursor_bright_overwrite, colors.cursor_dim_overwrite)
+    };
+
+    for (i, byte) in row_bytes.iter().enumerate() {
+        let byte_offset = row_offset + i;
+        let is_cursor = byte_offset == state.cursor_pos;
+        let is_selected = state
+            .selection
+            .map(|(start, end)| byte_offset >= start && byte_offset < end)
+            .unwrap_or(false);
+
+        if !is_cursor && !is_selected {
+            continue;
+        }
+
+        let char_rect = egui::Rect::from_min_size(
+            egui::pos2(rect.min.x + i as f32 * char_width, rect.min.y),
+            egui::vec2(char_width, rect.height()),
+        );
+
+        let display_char = if is_printable_ascii(*byte) {
+            *byte as char
+        } else {
+            '.'
+        };
+
+        if is_cursor {
+            let bg = if state.edit_mode == EditMode::Ascii {
+                cursor_bright
+            } else {
+                cursor_dim
+            };
+            ui.painter().rect_filled(char_rect, 0.0, bg);
+            ui.painter().text(
+                char_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                display_char,
+                font_id.clone(),
+                colors.cursor_text,
+            );
+        } else if is_selected {
+            ui.painter()
+                .rect_filled(char_rect, 0.0, colors.selection_bg);
+            ui.painter().text(
+                char_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                display_char,
+                font_id.clone(),
+                ui.visuals().text_color(),
+            );
+        }
+    }
+
+    // Detect click positions
+    let mut clicked_offset = None;
+    let mut context_offset = None;
+
+    if response.clicked() || response.secondary_clicked() {
+        if let Some(pos) = response.interact_pointer_pos() {
+            let char_idx = ((pos.x - rect.min.x) / char_width).floor() as usize;
+            if char_idx < row_bytes.len() {
+                let byte_offset = row_offset + char_idx;
+                if response.clicked() {
+                    clicked_offset = Some(byte_offset);
+                }
+                if response.secondary_clicked() {
+                    context_offset = Some(byte_offset);
+                }
+            }
+        }
+    }
+
+    (response, clicked_offset, context_offset)
 }
 
 /// Navigation keys that follow the move-by-delta pattern: (key, cursor delta).
@@ -492,37 +560,28 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                 }
 
                 // Pad remaining space if row is incomplete
-                let missing = BYTES_PER_ROW - row_bytes.len();
-                if missing > 0 {
-                    ui.add_space(missing as f32 * HEX_BYTE_WIDTH);
+                for i in row_bytes.len()..BYTES_PER_ROW {
+                    if i == 8 {
+                        ui.add_space(HEX_GROUP_SPACING);
+                    }
+                    ui.label(
+                        RichText::new("  ")
+                            .monospace()
+                            .color(egui::Color32::TRANSPARENT),
+                    );
                 }
                 ui.add_space(HEX_ASCII_SPACING);
 
                 // ASCII column
                 ui.spacing_mut().item_spacing.x = 0.0;
                 ui.label(RichText::new("|").monospace());
-                for (i, byte) in row_bytes.iter().enumerate() {
-                    let byte_offset = offset + i;
-                    let is_cursor = byte_offset == state.cursor_pos;
-                    let is_selected = state
-                        .selection
-                        .map(|(start, end)| byte_offset >= start && byte_offset < end)
-                        .unwrap_or(false);
-                    let response = render_ascii_char(
-                        ui,
-                        *byte,
-                        is_cursor,
-                        is_selected,
-                        state.edit_mode,
-                        state.write_mode,
-                        &colors,
-                    );
-                    if response.clicked() {
-                        clicked_ascii_offset = Some(byte_offset);
-                    }
-                    if response.secondary_clicked() {
-                        context_menu_offset = Some(byte_offset);
-                    }
+                let (_ascii_resp, ascii_click, ascii_ctx) =
+                    render_ascii_row(ui, &row_bytes, offset, &state, &colors);
+                if let Some(off) = ascii_click {
+                    clicked_ascii_offset = Some(off);
+                }
+                if let Some(off) = ascii_ctx {
+                    context_menu_offset = Some(off);
                 }
                 ui.label(RichText::new("|").monospace());
             });
