@@ -253,6 +253,7 @@ Prerequisites: Sections 7-8 (format parsing to identify header regions)
 - [x] 17.39 POLISH: better visual consistency between clickable bookmark link and byte highlight color for bookmark
 - [x] 17.40 BUG: editing image bytes in insert mode causes immediate image preview update
 - [x] 17.41 BUG: last line of ascii display textarea not centered when last line is incomplete
+- [x] 17.42 BUG: pipe border characters of ascii text area are selected when highlighting text
 
 ## 18. Settings and Persistence (P3)
 - [x] 18.1 Design settings data structure (window size, recent files, preferences)

@@ -574,7 +574,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
 
                 // ASCII column
                 ui.spacing_mut().item_spacing.x = 0.0;
-                ui.label(RichText::new("|").monospace());
+                ui.add(egui::Label::new(RichText::new("|").monospace()).selectable(false));
                 let (_ascii_resp, ascii_click, ascii_ctx) =
                     render_ascii_row(ui, &row_bytes, offset, &state, &colors);
                 if let Some(off) = ascii_click {
@@ -583,7 +583,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                 if let Some(off) = ascii_ctx {
                     context_menu_offset = Some(off);
                 }
-                ui.label(RichText::new("|").monospace());
+                ui.add(egui::Label::new(RichText::new("|").monospace()).selectable(false));
             });
 
             if should_scroll_to_this_row {
