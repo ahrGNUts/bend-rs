@@ -75,15 +75,39 @@ fn render_hex_byte(
     colors: &AppColors,
 ) -> egui::Response {
     let hex = hex_table()[byte as usize];
+    let font_id = TextStyle::Monospace.resolve(ui.style());
 
+    // Determine background and text color based on priority:
+    // cursor > selection > current_match > search_match > bookmark > section
+    let bg = if highlight.is_cursor {
+        None // cursor uses split-nibble backgrounds below
+    } else if highlight.is_selected {
+        Some(colors.selection_bg)
+    } else if highlight.is_current_match {
+        Some(colors.current_match_bg)
+    } else if highlight.is_search_match {
+        Some(colors.search_match_bg)
+    } else if highlight.has_bookmark {
+        Some(colors.bookmark_bg)
+    } else {
+        highlight.section_bg
+    };
+
+    let text_color = if highlight.is_cursor {
+        colors.cursor_text
+    } else if bg.is_some() {
+        colors.hex_byte_text
+    } else {
+        ui.visuals().text_color()
+    };
+
+    // Layout text and allocate an interactive rect of exactly that size
+    let galley = ui.fonts(|f| f.layout_no_wrap(hex.to_string(), font_id.clone(), text_color));
+    let (rect, response) = ui.allocate_exact_size(galley.size(), egui::Sense::click_and_drag());
+
+    // Paint backgrounds
     if highlight.is_cursor {
-        let rich_text = RichText::new(hex).monospace();
-        let response = ui.label(rich_text);
-
-        // Draw nibble highlight backgrounds using painter
-        let rect = response.rect;
         let half_width = rect.width() / 2.0;
-
         let (bright, dim) = if write_mode == WriteMode::Insert {
             (colors.cursor_bright_insert, colors.cursor_dim_insert)
         } else {
@@ -97,58 +121,30 @@ fn render_hex_byte(
                 NibblePosition::Low => (dim, bright),
             }
         };
-
         let high_rect = egui::Rect::from_min_size(rect.min, egui::vec2(half_width, rect.height()));
         let low_rect = egui::Rect::from_min_size(
             egui::pos2(rect.min.x + half_width, rect.min.y),
             egui::vec2(half_width, rect.height()),
         );
-
         ui.painter().rect_filled(high_rect, 0.0, high_bg);
         ui.painter().rect_filled(low_rect, 0.0, low_bg);
-
-        // Re-paint text on top so it's visible over the backgrounds
-        ui.painter().text(
-            rect.center(),
-            egui::Align2::CENTER_CENTER,
-            hex,
-            egui::TextStyle::Monospace.resolve(ui.style()),
-            colors.cursor_text,
-        );
-
-        response
-    } else {
-        let mut rich_text = RichText::new(hex).monospace();
-        let mut has_bg = false;
-
-        // Apply background color priority: selection > current_match > search_match > bookmark > section
-        if highlight.is_selected {
-            rich_text = rich_text.background_color(colors.selection_bg);
-            has_bg = true;
-        } else if highlight.is_current_match {
-            rich_text = rich_text.background_color(colors.current_match_bg);
-            has_bg = true;
-        } else if highlight.is_search_match {
-            rich_text = rich_text.background_color(colors.search_match_bg);
-            has_bg = true;
-        } else if highlight.has_bookmark {
-            rich_text = rich_text.background_color(colors.bookmark_bg);
-            has_bg = true;
-        } else if let Some(bg) = highlight.section_bg {
-            rich_text = rich_text.background_color(bg);
-            has_bg = true;
-        }
-
-        if has_bg {
-            rich_text = rich_text.color(colors.hex_byte_text);
-        }
-
-        if highlight.is_protected {
-            rich_text = rich_text.strikethrough();
-        }
-
-        ui.label(rich_text)
+    } else if let Some(bg_color) = bg {
+        ui.painter().rect_filled(rect, 0.0, bg_color);
     }
+
+    // Paint text on top of backgrounds
+    ui.painter().galley(rect.min, galley, text_color);
+
+    // Strikethrough for protected bytes
+    if highlight.is_protected {
+        let y = rect.center().y;
+        ui.painter().line_segment(
+            [egui::pos2(rect.min.x, y), egui::pos2(rect.max.x, y)],
+            egui::Stroke::new(1.0, text_color),
+        );
+    }
+
+    response
 }
 
 /// Render the entire ASCII row as a single label with painter-based highlighting.
@@ -174,9 +170,15 @@ fn render_ascii_row(
         text.push('\u{00A0}'); // non-breaking space (not trimmed by text layout)
     }
 
-    // Render the whole row as one label
-    let response = ui.label(RichText::new(&text).monospace());
-    let rect = response.rect;
+    // Paint the row manually: egui's Label changes the text color on hover when
+    // given an interactive sense, which makes the whole ASCII row "light up".
+    // Allocating the rect ourselves and painting the galley directly avoids that
+    // while preserving click/drag detection for selection.
+    let font_id = TextStyle::Monospace.resolve(ui.style());
+    let text_color = ui.visuals().text_color();
+    let galley = ui.fonts(|f| f.layout_no_wrap(text, font_id.clone(), text_color));
+    let (rect, response) = ui.allocate_exact_size(galley.size(), egui::Sense::click_and_drag());
+    ui.painter().galley(rect.min, galley, text_color);
     let char_width = rect.width() / BYTES_PER_ROW as f32;
     let font_id = TextStyle::Monospace.resolve(ui.style());
 
@@ -456,27 +458,6 @@ fn prepare_display_state(app: &BendApp) -> Option<HexDisplayState> {
     })
 }
 
-/// Handle deferred click events from hex/ASCII columns
-fn handle_click_events(
-    app: &mut BendApp,
-    hex_click: Option<usize>,
-    ascii_click: Option<usize>,
-    shift_held: bool,
-) {
-    if let Some(offset) = hex_click {
-        if let Some(editor) = &mut app.editor {
-            editor.set_edit_mode(EditMode::Hex);
-            editor.set_cursor_with_selection(offset, shift_held);
-        }
-    }
-    if let Some(offset) = ascii_click {
-        if let Some(editor) = &mut app.editor {
-            editor.set_edit_mode(EditMode::Ascii);
-            editor.set_cursor_with_selection(offset, shift_held);
-        }
-    }
-}
-
 /// Show the hex editor panel
 pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
     let Some(state) = prepare_display_state(app) else {
@@ -485,10 +466,17 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
 
     let row_height = ui.text_style_height(&TextStyle::Monospace);
 
-    let mut clicked_offset: Option<usize> = None;
-    let mut clicked_ascii_offset: Option<usize> = None;
     let shift_held = ui.input(|i| i.modifiers.shift);
     let mut context_menu_offset: Option<usize> = None;
+
+    // Pointer state for drag-to-select
+    let pointer_pos = ui.input(|i| i.pointer.latest_pos());
+    let primary_down = ui.input(|i| i.pointer.primary_down());
+    let drag_id = egui::Id::new("hex_editor_drag");
+    let drag_active: bool = ui.data(|d| d.get_temp(drag_id).unwrap_or(false));
+    let mut cursor_move: Option<(usize, EditMode)> = None;
+    let mut start_drag = false;
+    let mut drag_current_offset: Option<usize> = None;
 
     let scroll_to_row: Option<usize> = app
         .pending_hex_scroll
@@ -532,7 +520,10 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
 
             let row_response = ui.horizontal(|ui| {
                 // Offset column
-                ui.label(RichText::new(format!("{:08X}", offset)).monospace());
+                ui.add(
+                    egui::Label::new(RichText::new(format!("{:08X}", offset)).monospace())
+                        .selectable(false),
+                );
                 ui.add_space(OFFSET_HEX_SPACING);
 
                 // Hex bytes
@@ -551,8 +542,22 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                         state.write_mode,
                         &colors,
                     );
+                    // Click (no drag) - move cursor
                     if response.clicked() {
-                        clicked_offset = Some(byte_offset);
+                        cursor_move = Some((byte_offset, EditMode::Hex));
+                    }
+                    // Drag started - move cursor and begin drag selection
+                    if response.drag_started_by(egui::PointerButton::Primary) {
+                        cursor_move = Some((byte_offset, EditMode::Hex));
+                        start_drag = true;
+                    }
+                    // During drag - detect which byte the pointer is currently over
+                    if primary_down && drag_active {
+                        if let Some(pos) = pointer_pos {
+                            if response.rect.contains(pos) {
+                                drag_current_offset = Some(byte_offset);
+                            }
+                        }
                     }
                     if response.secondary_clicked() {
                         context_menu_offset = Some(byte_offset);
@@ -564,10 +569,13 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                     if i == 8 {
                         ui.add_space(HEX_GROUP_SPACING);
                     }
-                    ui.label(
-                        RichText::new("  ")
-                            .monospace()
-                            .color(egui::Color32::TRANSPARENT),
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new("  ")
+                                .monospace()
+                                .color(egui::Color32::TRANSPARENT),
+                        )
+                        .selectable(false),
                     );
                 }
                 ui.add_space(HEX_ASCII_SPACING);
@@ -575,13 +583,52 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
                 // ASCII column
                 ui.spacing_mut().item_spacing.x = 0.0;
                 ui.add(egui::Label::new(RichText::new("|").monospace()).selectable(false));
-                let (_ascii_resp, ascii_click, ascii_ctx) =
+                let (ascii_resp, _ascii_click, ascii_ctx) =
                     render_ascii_row(ui, &row_bytes, offset, &state, &colors);
-                if let Some(off) = ascii_click {
-                    clicked_ascii_offset = Some(off);
-                }
                 if let Some(off) = ascii_ctx {
                     context_menu_offset = Some(off);
+                }
+                // ASCII click/drag: map pointer x to a char index within the row
+                let ascii_byte_at_pointer = |pos: egui::Pos2| -> Option<usize> {
+                    if !ascii_resp.rect.contains(pos) {
+                        return None;
+                    }
+                    let char_width = ascii_resp.rect.width() / BYTES_PER_ROW as f32;
+                    let char_idx = ((pos.x - ascii_resp.rect.min.x) / char_width).floor() as usize;
+                    if char_idx < row_bytes.len() {
+                        Some(offset + char_idx)
+                    } else {
+                        None
+                    }
+                };
+                // Click (no drag) - move cursor
+                if ascii_resp.clicked() {
+                    if let Some(pos) = ascii_resp.interact_pointer_pos() {
+                        if let Some(byte_offset) = ascii_byte_at_pointer(pos) {
+                            cursor_move = Some((byte_offset, EditMode::Ascii));
+                        }
+                    }
+                }
+                // Drag started - move cursor and begin drag selection.
+                // Use press_origin rather than the current pointer position: on the
+                // frame drag_started fires, the pointer may already have moved to a
+                // different row, which would fall outside this row's rect and the
+                // drag would silently never start.
+                if ascii_resp.drag_started_by(egui::PointerButton::Primary) {
+                    if let Some(press_pos) = ui.input(|i| i.pointer.press_origin()) {
+                        if let Some(byte_offset) = ascii_byte_at_pointer(press_pos) {
+                            cursor_move = Some((byte_offset, EditMode::Ascii));
+                            start_drag = true;
+                        }
+                    }
+                }
+                // During drag - detect which byte the pointer is currently over
+                if primary_down && drag_active {
+                    if let Some(pos) = pointer_pos {
+                        if let Some(byte_offset) = ascii_byte_at_pointer(pos) {
+                            drag_current_offset = Some(byte_offset);
+                        }
+                    }
                 }
                 ui.add(egui::Label::new(RichText::new("|").monospace()).selectable(false));
             });
@@ -603,8 +650,30 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
         }
     });
 
-    // Handle deferred click events
-    handle_click_events(app, clicked_offset, clicked_ascii_offset, shift_held);
+    // Handle cursor move (click or drag start)
+    if let Some((off, mode)) = cursor_move {
+        if let Some(editor) = &mut app.editor {
+            editor.set_edit_mode(mode);
+            editor.set_cursor_with_selection(off, shift_held);
+        }
+    }
+
+    // Mark drag active when a drag just started
+    if start_drag {
+        ui.data_mut(|d| d.insert_temp(drag_id, true));
+    }
+
+    // Handle drag extension
+    if let Some(off) = drag_current_offset {
+        if let Some(editor) = &mut app.editor {
+            editor.extend_selection_to(off);
+        }
+    }
+
+    // Clear drag state on pointer release
+    if !primary_down {
+        ui.data_mut(|d| d.insert_temp::<bool>(drag_id, false));
+    }
 
     // Handle keyboard input
     let keyboard_result = handle_keyboard_input(ui, app, state.cursor_pos, state.cursor_protected);
@@ -654,9 +723,9 @@ fn handle_keyboard_input(
         .map(|e| e.edit_mode())
         .unwrap_or(EditMode::Hex);
 
-    let (pending_high_risk_edit, paste_text) = ui.input_mut(|i| {
+    let (pending_high_risk_edit, paste_text, copy_requested) = ui.input_mut(|i| {
         let Some(editor) = &mut app.editor else {
-            return (None, None);
+            return (None, None, false);
         };
 
         let ctrl = i.modifiers.ctrl || i.modifiers.mac_cmd;
@@ -666,11 +735,15 @@ fn handle_keyboard_input(
             editor.toggle_write_mode();
         }
 
+        // Detect copy request (Cmd+C / Ctrl+C)
+        let copy_requested = i.events.iter().any(|e| matches!(e, egui::Event::Copy))
+            || (ctrl && i.key_pressed(egui::Key::C));
+
         // Navigation keys (arrows, page up/down, home/end)
         handle_navigation_keys(editor, i);
 
         // Edit input (text entry, backspace, delete, paste)
-        handle_edit_input(
+        let (edit, paste) = handle_edit_input(
             editor,
             i,
             cursor_pos,
@@ -678,8 +751,23 @@ fn handle_keyboard_input(
             should_warn_for_cursor,
             cursor_risk_level,
             current_edit_mode,
-        )
+        );
+        (edit, paste, copy_requested)
     });
+
+    // Handle copy outside the input closure — always override egui's native copy
+    // so that only the column matching the current edit mode ends up on the clipboard
+    if copy_requested {
+        if let Some(editor) = &app.editor {
+            let (start, end) = editor.selection().unwrap_or((cursor_pos, cursor_pos + 1));
+            let bytes = editor.bytes_in_range(start, end);
+            let formatted = match current_edit_mode {
+                EditMode::Hex => format_bytes_as_hex(bytes),
+                EditMode::Ascii => format_bytes_as_ascii(bytes),
+            };
+            ui.output_mut(|o| o.copied_text = formatted);
+        }
+    }
 
     // Handle paste outside the input closure
     if let Some(text) = paste_text {
@@ -804,15 +892,8 @@ fn show_context_menu(ui: &mut egui::Ui, app: &mut BendApp) {
     }
 }
 
-/// Copy selected bytes as hex string to clipboard
-fn copy_as_hex(ui: &mut egui::Ui, app: &BendApp, target_offset: usize) {
-    let Some(editor) = &app.editor else { return };
-
-    let (start, end) = editor
-        .selection()
-        .unwrap_or((target_offset, target_offset + 1));
-    let bytes = editor.bytes_in_range(start, end);
-
+/// Format bytes as space-separated hex pairs (e.g., "FF 00 AB")
+fn format_bytes_as_hex(bytes: &[u8]) -> String {
     let table = hex_table();
     let mut hex_string = String::with_capacity(bytes.len() * 3);
     for (i, &b) in bytes.iter().enumerate() {
@@ -821,8 +902,32 @@ fn copy_as_hex(ui: &mut egui::Ui, app: &BendApp, target_offset: usize) {
         }
         hex_string.push_str(table[b as usize]);
     }
+    hex_string
+}
 
-    ui.output_mut(|o| o.copied_text = hex_string);
+/// Format bytes as ASCII string (non-printable bytes become '.')
+fn format_bytes_as_ascii(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|&b| {
+            if is_printable_ascii(b) {
+                b as char
+            } else {
+                '.'
+            }
+        })
+        .collect()
+}
+
+/// Copy selected bytes as hex string to clipboard
+fn copy_as_hex(ui: &mut egui::Ui, app: &BendApp, target_offset: usize) {
+    let Some(editor) = &app.editor else { return };
+
+    let (start, end) = editor
+        .selection()
+        .unwrap_or((target_offset, target_offset + 1));
+    let bytes = editor.bytes_in_range(start, end);
+    ui.output_mut(|o| o.copied_text = format_bytes_as_hex(bytes));
 }
 
 /// Copy selected bytes as ASCII string to clipboard
@@ -833,19 +938,7 @@ fn copy_as_ascii(ui: &mut egui::Ui, app: &BendApp, target_offset: usize) {
         .selection()
         .unwrap_or((target_offset, target_offset + 1));
     let bytes = editor.bytes_in_range(start, end);
-
-    let ascii_string: String = bytes
-        .iter()
-        .map(|&b| {
-            if is_printable_ascii(b) {
-                b as char
-            } else {
-                '.'
-            }
-        })
-        .collect();
-
-    ui.output_mut(|o| o.copied_text = ascii_string);
+    ui.output_mut(|o| o.copied_text = format_bytes_as_ascii(bytes));
 }
 
 /// Paste bytes from clipboard (mode-dependent)
