@@ -6,7 +6,7 @@ use eframe::egui;
 
 /// Attempt to navigate to the offset specified in the dialog input
 fn attempt_navigate(app: &mut BendApp) -> Result<(), String> {
-    let offset = parse_offset(&app.go_to_offset_state.input_text)?;
+    let offset = parse_offset(&app.ui.go_to_offset_state.input_text)?;
 
     let editor = app
         .editor
@@ -28,7 +28,7 @@ fn attempt_navigate(app: &mut BendApp) -> Result<(), String> {
 
 /// Show the "Go to offset" dialog (modal window)
 pub fn show(ctx: &egui::Context, app: &mut BendApp) {
-    if !app.go_to_offset_state.dialog_open {
+    if !app.ui.go_to_offset_state.dialog_open {
         return;
     }
 
@@ -46,13 +46,13 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
 
             // Input field
             let response = ui.add(
-                egui::TextEdit::singleline(&mut app.go_to_offset_state.input_text)
+                egui::TextEdit::singleline(&mut app.ui.go_to_offset_state.input_text)
                     .hint_text("e.g., 1024 or 0x400")
                     .desired_width(200.0),
             );
 
             // Auto-focus the text field when dialog opens
-            if response.gained_focus() || app.go_to_offset_state.input_text.is_empty() {
+            if response.gained_focus() || app.ui.go_to_offset_state.input_text.is_empty() {
                 response.request_focus();
             }
 
@@ -75,8 +75,8 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
             }
 
             // Show error message if any
-            if let Some(error) = &app.go_to_offset_state.error {
-                let colors = app.colors;
+            if let Some(error) = &app.ui.go_to_offset_state.error {
+                let colors = app.ui.colors;
                 ui.add_space(4.0);
                 ui.colored_label(colors.error_text, error);
             }
@@ -103,11 +103,11 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
     if do_navigate {
         match attempt_navigate(app) {
             Ok(()) => close_dialog = true,
-            Err(e) => app.go_to_offset_state.error = Some(e),
+            Err(e) => app.ui.go_to_offset_state.error = Some(e),
         }
     }
 
     if close_dialog {
-        app.go_to_offset_state.close_dialog();
+        app.ui.go_to_offset_state.close_dialog();
     }
 }

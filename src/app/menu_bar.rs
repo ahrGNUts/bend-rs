@@ -81,7 +81,7 @@ impl BendApp {
         let mod_str = modifier_key();
         let open_shortcut = format!("{}O", mod_str);
         let export_shortcut = format!("{}E", mod_str);
-        let colors = self.colors;
+        let colors = self.ui.colors;
 
         if menu_item_with_shortcut(ui, "Open...", &open_shortcut, true, colors) {
             self.open_file_dialog(ui.ctx());
@@ -128,7 +128,7 @@ impl BendApp {
         ui.separator();
         if ui.button("Exit").clicked() {
             if self.has_unsaved_changes() {
-                self.dialogs.show_close = true;
+                self.ui.dialogs.show_close = true;
             } else {
                 self.config.settings.save();
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -148,7 +148,7 @@ impl BendApp {
         let find_shortcut = format!("{}F", mod_str);
         let goto_shortcut = format!("{}G", mod_str);
         let refresh_shortcut = format!("{}R", mod_str);
-        let colors = self.colors;
+        let colors = self.ui.colors;
 
         if menu_item_with_shortcut(ui, "Undo", &undo_shortcut, can_undo, colors) {
             self.do_undo();
@@ -161,11 +161,11 @@ impl BendApp {
         ui.separator();
 
         if menu_item_with_shortcut(ui, "Find & Replace...", &find_shortcut, has_file, colors) {
-            self.search_state.open_dialog();
+            self.ui.search_state.open_dialog();
             ui.close_menu();
         }
         if menu_item_with_shortcut(ui, "Go to Offset...", &goto_shortcut, has_file, colors) {
-            self.go_to_offset_state.open_dialog();
+            self.ui.go_to_offset_state.open_dialog();
             ui.close_menu();
         }
         ui.separator();
@@ -212,9 +212,9 @@ impl BendApp {
         }
         ui.separator();
         // Re-enable warnings option (only shown when warnings are suppressed)
-        if self.dialogs.suppress_high_risk_warnings {
+        if self.ui.dialogs.suppress_high_risk_warnings {
             if ui.button("Re-enable High-Risk Warnings").clicked() {
-                self.dialogs.suppress_high_risk_warnings = false;
+                self.ui.dialogs.suppress_high_risk_warnings = false;
                 self.config.settings.show_high_risk_warnings = true;
                 self.config.settings.save();
                 ui.close_menu();
@@ -224,16 +224,16 @@ impl BendApp {
         }
         ui.separator();
         if ui.button("Preferences...").clicked() {
-            self.settings_dialog_state.open(&self.config.settings);
+            self.ui.settings_dialog_state.open(&self.config.settings);
             ui.close_menu();
         }
     }
 
     /// Render the Help menu contents
     fn render_help_menu(&mut self, ui: &mut egui::Ui) {
-        let colors = self.colors;
+        let colors = self.ui.colors;
         if menu_item_with_shortcut(ui, "Keyboard Shortcuts", "F1", true, colors) {
-            self.shortcuts_dialog_state.open();
+            self.ui.shortcuts_dialog_state.open();
             ui.close_menu();
         }
     }

@@ -45,14 +45,14 @@ pub struct PendingEdit {
 impl BendApp {
     /// Show the high-risk edit warning dialog and handle user response
     pub(super) fn show_high_risk_warning_dialog(&mut self, ctx: &egui::Context) {
-        let Some(pending) = self.dialogs.pending_high_risk_edit else {
+        let Some(pending) = self.ui.dialogs.pending_high_risk_edit else {
             return;
         };
 
         let mut should_proceed = false;
         let mut should_cancel = false;
 
-        let colors = self.colors;
+        let colors = self.ui.colors;
         egui::Window::new("High-Risk Edit Warning")
             .collapsible(false)
             .resizable(false)
@@ -86,7 +86,7 @@ impl BendApp {
 
                     // Don't show again checkbox
                     ui.checkbox(
-                        &mut self.dialogs.high_risk_dont_show,
+                        &mut self.ui.dialogs.high_risk_dont_show,
                         "Don't warn me again this session",
                     );
 
@@ -123,22 +123,22 @@ impl BendApp {
                     }
                 }
             }
-            if self.dialogs.high_risk_dont_show {
-                self.dialogs.suppress_high_risk_warnings = true;
+            if self.ui.dialogs.high_risk_dont_show {
+                self.ui.dialogs.suppress_high_risk_warnings = true;
                 self.config.settings.show_high_risk_warnings = false;
                 self.config.settings.save();
             }
-            self.dialogs.high_risk_dont_show = false;
-            self.dialogs.pending_high_risk_edit = None;
+            self.ui.dialogs.high_risk_dont_show = false;
+            self.ui.dialogs.pending_high_risk_edit = None;
         } else if should_cancel {
-            self.dialogs.high_risk_dont_show = false;
-            self.dialogs.pending_high_risk_edit = None;
+            self.ui.dialogs.high_risk_dont_show = false;
+            self.ui.dialogs.pending_high_risk_edit = None;
         }
     }
 
     /// Show the close confirmation dialog
     pub(super) fn show_close_dialog(&mut self, ctx: &egui::Context) {
-        if !self.dialogs.show_close {
+        if !self.ui.dialogs.show_close {
             return;
         }
 
@@ -152,14 +152,14 @@ impl BendApp {
                 ui.horizontal(|ui| {
                     if ui.button("Export First").clicked() {
                         self.export_file(ui.ctx());
-                        self.dialogs.show_close = false;
+                        self.ui.dialogs.show_close = false;
                     }
                     if ui.button("Discard & Exit").clicked() {
-                        self.dialogs.pending_close = true;
-                        self.dialogs.show_close = false;
+                        self.ui.dialogs.pending_close = true;
+                        self.ui.dialogs.show_close = false;
                     }
                     if ui.button("Cancel").clicked() {
-                        self.dialogs.show_close = false;
+                        self.ui.dialogs.show_close = false;
                     }
                 });
             });

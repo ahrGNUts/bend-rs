@@ -10,10 +10,19 @@
 //! 3. `UiState`         — UI panel/dialog/cache state
 //! 4. `DocumentState`   — loaded document, editor, preview
 
+use crate::editor::{GoToOffsetState, SearchState};
 use crate::settings::AppSettings;
+use crate::ui::bookmarks::BookmarksPanelState;
+use crate::ui::hex_editor::ContextMenuState;
+use crate::ui::savepoints::SavePointsPanelState;
+use crate::ui::settings_dialog::SettingsDialogState;
+use crate::ui::shortcuts_dialog::ShortcutsDialogState;
+use crate::ui::theme::AppColors;
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::time::Instant;
+
+use super::DialogState;
 
 /// Result of a background file dialog thread.
 pub(super) enum FileDialogResult {
@@ -55,4 +64,42 @@ impl IoState {
 pub struct AppConfig {
     /// Application settings (persisted to disk)
     pub settings: AppSettings,
+}
+
+/// UI state: colors, dialogs, panel state, ephemeral scroll/selection intents.
+///
+/// Everything here is rebuilt or refreshed per frame (or per user interaction).
+/// Nothing here is persisted — that lives on `AppConfig`. Nothing here owns the
+/// document — that lives on `BendApp` (soon `DocumentState`).
+#[derive(Default)]
+pub struct UiState {
+    /// Cached theme-aware color palette, refreshed once per frame in `update()`.
+    pub colors: AppColors,
+
+    /// Dialog state (close confirmation, high-risk warnings)
+    pub dialogs: DialogState,
+
+    /// Context menu state for hex editor
+    pub context_menu_state: ContextMenuState,
+
+    /// Search and replace state
+    pub search_state: SearchState,
+
+    /// Go to offset dialog state
+    pub go_to_offset_state: GoToOffsetState,
+
+    /// State for the save points panel
+    pub savepoints_state: SavePointsPanelState,
+
+    /// State for the bookmarks panel
+    pub bookmarks_state: BookmarksPanelState,
+
+    /// Keyboard shortcuts help dialog state
+    pub shortcuts_dialog_state: ShortcutsDialogState,
+
+    /// Settings/preferences dialog state
+    pub settings_dialog_state: SettingsDialogState,
+
+    /// Pending scroll offset for hex editor (Some(offset) = scroll to this byte offset)
+    pub pending_hex_scroll: Option<usize>,
 }

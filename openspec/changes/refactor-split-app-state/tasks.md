@@ -19,11 +19,11 @@
 - [x] 3.5 `cargo build` + `cargo test` (204 tests pass)
 
 ## 4. Extract `UiState`
-- [ ] 4.1 Move `colors`, `dialogs`, `context_menu_state`, `search_state`, `go_to_offset_state`, `savepoints_state`, `bookmarks_state`, `shortcuts_dialog_state`, `settings_dialog_state`, `pending_hex_scroll`, `last_window_size` into `UiState`
-- [ ] 4.2 Add `ui: UiState` field to `BendApp`
-- [ ] 4.3 Update every UI file: `src/ui/search_dialog.rs`, `src/ui/settings_dialog.rs`, `src/ui/shortcuts_dialog.rs`, `src/ui/structure_tree.rs`, `src/ui/bookmarks.rs`, `src/ui/savepoints.rs`, `src/ui/go_to_offset_dialog.rs`, `src/ui/image_preview.rs`
-- [ ] 4.4 Update `src/app/input.rs`, `src/app/preview.rs`, `src/app/toolbar.rs`, `src/app/menu_bar.rs`
-- [ ] 4.5 `cargo build` + smoke test (all dialogs open, search works, bookmarks panel works)
+- [x] 4.1 Move `colors`, `dialogs`, `context_menu_state`, `search_state`, `go_to_offset_state`, `savepoints_state`, `bookmarks_state`, `shortcuts_dialog_state`, `settings_dialog_state`, `pending_hex_scroll` into `UiState`. `last_window_size` stayed in `IoState` alongside `window_resize_timer` — they implement the same debounce and split better there (design doc updated).
+- [x] 4.2 Add `ui: UiState` field to `BendApp`
+- [x] 4.3 Update UI files: `src/ui/hex_editor.rs`, `src/ui/search_dialog.rs`, `src/ui/structure_tree.rs`, `src/ui/bookmarks.rs`, `src/ui/go_to_offset_dialog.rs`, `src/ui/image_preview.rs`. `src/ui/settings_dialog.rs`, `shortcuts_dialog.rs`, `savepoints.rs` take dialog-state directly, not through `BendApp`.
+- [x] 4.4 Update `src/app/input.rs`, `src/app/toolbar.rs`, `src/app/menu_bar.rs`, `src/app/sections.rs` (+ tests), `src/app/dialogs.rs`. `src/app/preview.rs` did not reference moved fields.
+- [x] 4.5 `cargo build` + `cargo test` (204 tests pass)
 
 ## 5. Extract `DocumentState`
 - [ ] 5.1 Move `editor`, `current_file`, `cached_sections`, `preview`, `header_protection` into `DocumentState`

@@ -64,13 +64,13 @@ impl BendApp {
                     .add_enabled(has_file, egui::Button::new("Search"))
                     .clicked()
                 {
-                    self.search_state.open_dialog();
+                    self.ui.search_state.open_dialog();
                 }
                 if ui
                     .add_enabled(has_file, egui::Button::new("Go to"))
                     .clicked()
                 {
-                    self.go_to_offset_state.open_dialog();
+                    self.ui.go_to_offset_state.open_dialog();
                 }
 
                 ui.separator();
@@ -148,10 +148,10 @@ impl BendApp {
             self.export_file(ctx);
         }
         if actions.search {
-            self.search_state.open_dialog();
+            self.ui.search_state.open_dialog();
         }
         if actions.go_to {
-            self.go_to_offset_state.open_dialog();
+            self.ui.go_to_offset_state.open_dialog();
         }
         if actions.undo {
             self.do_undo();

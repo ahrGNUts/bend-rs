@@ -10,19 +10,15 @@ mod toolbar;
 
 pub use dialogs::{DialogState, PendingEdit, PendingEditType};
 pub use preview::PreviewState;
-pub use state::{AppConfig, IoState};
+pub use state::{AppConfig, IoState, UiState};
 
 use crate::editor::buffer::{EditMode, WriteMode};
-use crate::editor::{EditorState, GoToOffsetState, SearchState};
+use crate::editor::EditorState;
 use crate::formats::{parse_file, FileSection};
 use crate::ui::theme::AppColors;
 use crate::ui::{
-    bookmarks, go_to_offset_dialog,
-    hex_editor::{self, ContextMenuState},
-    image_preview, savepoints, search_dialog,
-    settings_dialog::{self, SettingsDialogState},
-    shortcuts_dialog::{self, ShortcutsDialogState},
-    structure_tree,
+    bookmarks, go_to_offset_dialog, hex_editor, image_preview, savepoints, search_dialog,
+    settings_dialog, shortcuts_dialog, structure_tree,
 };
 use eframe::egui;
 use state::FileDialogResult;
@@ -76,45 +72,18 @@ pub struct BendApp {
     /// Image preview state (textures, dirty flag, comparison mode)
     pub preview: PreviewState,
 
-    /// Dialog state (close confirmation, high-risk warnings)
-    pub dialogs: DialogState,
-
-    /// State for the save points panel
-    savepoints_state: savepoints::SavePointsPanelState,
-
     /// Cached parsed file sections for structure visualization
     /// Re-parsed when file is loaded or structure potentially changed
     pub cached_sections: Option<Vec<FileSection>>,
 
-    /// Search and replace state
-    pub search_state: SearchState,
-
-    /// Go to offset dialog state
-    pub go_to_offset_state: GoToOffsetState,
-
-    /// State for the bookmarks panel
-    bookmarks_state: bookmarks::BookmarksPanelState,
-
     /// Whether header protection is enabled (blocks edits to high-risk sections)
     pub header_protection: bool,
 
-    /// Context menu state for hex editor
-    pub context_menu_state: ContextMenuState,
-
-    /// Keyboard shortcuts help dialog state
-    pub shortcuts_dialog_state: ShortcutsDialogState,
-
-    /// Settings/preferences dialog state
-    pub settings_dialog_state: SettingsDialogState,
-
-    /// Cached theme-aware color palette, refreshed once per frame in `update()`.
-    pub colors: AppColors,
+    /// UI state: colors, dialogs, panel state, pending scroll
+    pub ui: UiState,
 
     /// Application configuration (persisted settings)
     pub config: AppConfig,
-
-    /// Pending scroll offset for hex editor (Some(offset) = scroll to this byte offset)
-    pub pending_hex_scroll: Option<usize>,
 
     /// I/O plumbing (file-dialog receivers, deferred paths, resize debounce)
     pub io: IoState,
@@ -131,8 +100,11 @@ impl BendApp {
 
         Self {
             header_protection,
-            dialogs: DialogState {
-                suppress_high_risk_warnings: suppress_warnings,
+            ui: UiState {
+                dialogs: DialogState {
+                    suppress_high_risk_warnings: suppress_warnings,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             config: AppConfig { settings },
@@ -156,12 +128,12 @@ impl BendApp {
 
     /// Request the hex editor to scroll to show the given byte offset
     pub fn scroll_hex_to_offset(&mut self, offset: usize) {
-        self.pending_hex_scroll = Some(offset);
+        self.ui.pending_hex_scroll = Some(offset);
     }
 
     /// Navigate the editor cursor and hex view to the current search match
     pub fn navigate_to_search_match(&mut self) {
-        if let Some(offset) = self.search_state.current_match_offset() {
+        if let Some(offset) = self.ui.search_state.current_match_offset() {
             if let Some(editor) = &mut self.editor {
                 editor.set_cursor(offset);
             }
@@ -173,8 +145,8 @@ impl BendApp {
     pub fn refresh_search(&mut self) {
         if let Some(editor) = &self.editor {
             let gen = editor.edit_generation();
-            crate::editor::search::execute_search(&mut self.search_state, editor.working());
-            self.search_state.set_searched_generation(gen);
+            crate::editor::search::execute_search(&mut self.ui.search_state, editor.working());
+            self.ui.search_state.set_searched_generation(gen);
         }
     }
 
@@ -307,14 +279,14 @@ impl BendApp {
     fn show_dialogs(&mut self, ctx: &egui::Context) {
         search_dialog::show(ctx, self);
         go_to_offset_dialog::show(ctx, self);
-        shortcuts_dialog::show(ctx, &mut self.shortcuts_dialog_state);
+        shortcuts_dialog::show(ctx, &mut self.ui.shortcuts_dialog_state);
         // Settings dialog handles saving internally; sync runtime flag on change
         if settings_dialog::show(
             ctx,
-            &mut self.settings_dialog_state,
+            &mut self.ui.settings_dialog_state,
             &mut self.config.settings,
         ) {
-            self.dialogs.suppress_high_risk_warnings =
+            self.ui.dialogs.suppress_high_risk_warnings =
                 !self.config.settings.show_high_risk_warnings;
         }
         self.show_high_risk_warning_dialog(ctx);
@@ -322,7 +294,7 @@ impl BendApp {
 
     /// Render the status bar
     fn render_status_bar(&self, ctx: &egui::Context) {
-        let colors = self.colors;
+        let colors = self.ui.colors;
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 // Unsaved changes indicator
@@ -386,9 +358,9 @@ impl BendApp {
                     egui::CollapsingHeader::new("Save Points")
                         .default_open(true)
                         .show(ui, |ui| {
-                            let mut state = std::mem::take(&mut self.savepoints_state);
+                            let mut state = std::mem::take(&mut self.ui.savepoints_state);
                             savepoints::show(ui, self, &mut state);
-                            self.savepoints_state = state;
+                            self.ui.savepoints_state = state;
                         });
 
                     ui.add_space(10.0);
@@ -397,9 +369,9 @@ impl BendApp {
                     egui::CollapsingHeader::new("Bookmarks")
                         .default_open(true)
                         .show(ui, |ui| {
-                            let mut state = std::mem::take(&mut self.bookmarks_state);
+                            let mut state = std::mem::take(&mut self.ui.bookmarks_state);
                             bookmarks::show(ui, self, &mut state);
-                            self.bookmarks_state = state;
+                            self.ui.bookmarks_state = state;
                         });
                 });
             });
@@ -448,14 +420,14 @@ impl BendApp {
 impl eframe::App for BendApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Handle close confirmation
-        if self.dialogs.pending_close {
+        if self.ui.dialogs.pending_close {
             self.config.settings.save();
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
         }
 
         // Refresh cached color palette for this frame
-        self.colors = AppColors::new(ctx.style().visuals.dark_mode);
+        self.ui.colors = AppColors::new(ctx.style().visuals.dark_mode);
 
         // Track window size changes (debounced save)
         let current_size = ctx.screen_rect().size();
@@ -590,18 +562,18 @@ mod tests {
         let mut app = BendApp::default();
 
         // Initially warnings are not suppressed
-        assert!(!app.dialogs.suppress_high_risk_warnings);
+        assert!(!app.ui.dialogs.suppress_high_risk_warnings);
         assert!(app.config.settings.show_high_risk_warnings);
 
         // Simulate what show_dialogs does when settings change:
         // Toggle the setting and sync
         app.config.settings.show_high_risk_warnings = false;
-        app.dialogs.suppress_high_risk_warnings = !app.config.settings.show_high_risk_warnings;
-        assert!(app.dialogs.suppress_high_risk_warnings);
+        app.ui.dialogs.suppress_high_risk_warnings = !app.config.settings.show_high_risk_warnings;
+        assert!(app.ui.dialogs.suppress_high_risk_warnings);
 
         // Toggle back
         app.config.settings.show_high_risk_warnings = true;
-        app.dialogs.suppress_high_risk_warnings = !app.config.settings.show_high_risk_warnings;
-        assert!(!app.dialogs.suppress_high_risk_warnings);
+        app.ui.dialogs.suppress_high_risk_warnings = !app.config.settings.show_high_risk_warnings;
+        assert!(!app.ui.dialogs.suppress_high_risk_warnings);
     }
 }

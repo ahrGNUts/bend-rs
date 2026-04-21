@@ -144,7 +144,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
 
     // Scope the immutable borrow of sections for UI rendering
     if let Some(sections) = &app.cached_sections {
-        let colors = app.colors;
+        let colors = app.ui.colors;
 
         // Legend
         ui.horizontal(|ui| {

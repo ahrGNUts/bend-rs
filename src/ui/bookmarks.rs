@@ -83,7 +83,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
                 } else {
                     // Normal display mode — colored background pill, like structure tree nodes
                     ui.horizontal(|ui| {
-                        let colors = app.colors;
+                        let colors = app.ui.colors;
                         let bg = colors.bookmark_bg;
                         let bg_idx = ui.painter().add(egui::Shape::Noop);
                         let label_text =

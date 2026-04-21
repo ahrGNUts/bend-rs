@@ -22,6 +22,7 @@
 - **`preview` stays on `DocumentState`.** Image preview is derived from the document; treating it as UI would force UI functions to take doc too.
 - **UI functions take the narrowest substate they need, not a bundle struct.** This makes the data dependencies visible in signatures and is how the borrow checker stays happy. A `Context<'a>` bundle would re-create the god-struct problem at a smaller scale.
 - **`pending_hex_scroll` goes on `UiState`, not `DocumentState`.** It's a UI scroll command, not document content.
+- **`last_window_size` lives on `IoState`, not `UiState`.** It's paired with `window_resize_timer` to implement the debounced settings save; the pair belongs together. Environment/IO concerns rather than UI widget state.
 - **Alternatives considered:**
   - *Leave `BendApp` as-is; extract traits.* Rejected: traits don't shrink the struct or narrow UI signatures.
   - *Use `Rc<RefCell<_>>` substates.* Rejected: unnecessary runtime cost and borrow-panic risk when plain `&mut` works.

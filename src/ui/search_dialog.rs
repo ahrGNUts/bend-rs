@@ -6,7 +6,7 @@ use eframe::egui;
 
 /// Show the search dialog (modal window)
 pub fn show(ctx: &egui::Context, app: &mut BendApp) {
-    if !app.search_state.dialog_open {
+    if !app.ui.search_state.dialog_open {
         return;
     }
 
@@ -26,8 +26,8 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
             // Search mode selection
             ui.horizontal(|ui| {
                 ui.label("Mode:");
-                ui.selectable_value(&mut app.search_state.mode, SearchMode::Hex, "Hex");
-                ui.selectable_value(&mut app.search_state.mode, SearchMode::Ascii, "ASCII");
+                ui.selectable_value(&mut app.ui.search_state.mode, SearchMode::Hex, "Hex");
+                ui.selectable_value(&mut app.ui.search_state.mode, SearchMode::Ascii, "ASCII");
             });
 
             ui.add_space(4.0);
@@ -36,24 +36,24 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
             ui.horizontal(|ui| {
                 ui.label("Find:");
                 let response = ui.add(
-                    egui::TextEdit::singleline(&mut app.search_state.query)
-                        .hint_text(match app.search_state.mode {
+                    egui::TextEdit::singleline(&mut app.ui.search_state.query)
+                        .hint_text(match app.ui.search_state.mode {
                             SearchMode::Hex => "e.g., FF D8 FF or FF ?? FF",
                             SearchMode::Ascii => "Enter text to search",
                         })
                         .desired_width(250.0),
                 );
                 // Auto-focus the find field when dialog opens
-                if app.search_state.just_opened {
+                if app.ui.search_state.just_opened {
                     response.request_focus();
-                    app.search_state.just_opened = false;
+                    app.ui.search_state.just_opened = false;
                 }
                 // Enter = next match, Shift+Enter = previous match
                 // If no matches yet or query changed, run the search first
                 if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     let shift_held = ui.input(|i| i.modifiers.shift);
-                    let needs_search = app.search_state.matches.is_empty()
-                        || app.search_state.query_changed_since_search();
+                    let needs_search = app.ui.search_state.matches.is_empty()
+                        || app.ui.search_state.query_changed_since_search();
                     if needs_search {
                         do_search = true;
                         if shift_held {
@@ -73,8 +73,8 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
             ui.horizontal(|ui| {
                 ui.label("Replace:");
                 ui.add(
-                    egui::TextEdit::singleline(&mut app.search_state.replace_with)
-                        .hint_text(match app.search_state.mode {
+                    egui::TextEdit::singleline(&mut app.ui.search_state.replace_with)
+                        .hint_text(match app.ui.search_state.mode {
                             SearchMode::Hex => "e.g., 00 00 00",
                             SearchMode::Ascii => "Replacement text",
                         })
@@ -86,8 +86,8 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
 
             // Options
             ui.horizontal(|ui| {
-                if app.search_state.mode == SearchMode::Ascii {
-                    ui.checkbox(&mut app.search_state.case_sensitive, "Case sensitive");
+                if app.ui.search_state.mode == SearchMode::Ascii {
+                    ui.checkbox(&mut app.ui.search_state.case_sensitive, "Case sensitive");
                 } else {
                     ui.label(egui::RichText::new("Tip: Use ?? for wildcard bytes").small());
                 }
@@ -106,8 +106,8 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
             });
 
             ui.horizontal(|ui| {
-                let has_matches = !app.search_state.matches.is_empty();
-                let replace_enabled = has_matches && app.search_state.current_match.is_some();
+                let has_matches = !app.ui.search_state.matches.is_empty();
+                let replace_enabled = has_matches && app.ui.search_state.current_match.is_some();
 
                 if ui
                     .add_enabled(replace_enabled, egui::Button::new("Replace"))
@@ -126,8 +126,8 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
             ui.add_space(8.0);
 
             // Results status
-            if let Some(msg) = &app.search_state.message {
-                let colors = app.colors;
+            if let Some(msg) = &app.ui.search_state.message {
+                let colors = app.ui.colors;
                 match msg {
                     SearchMessage::Error(text) => {
                         ui.colored_label(colors.error_text, text);
@@ -136,12 +136,17 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
                         ui.colored_label(colors.warning_text, text);
                     }
                 }
-            } else if !app.search_state.query.is_empty() {
-                let match_count = app.search_state.matches.len();
+            } else if !app.ui.search_state.query.is_empty() {
+                let match_count = app.ui.search_state.matches.len();
                 if match_count == 0 {
                     ui.label("No matches found");
                 } else {
-                    let current = app.search_state.current_match.map(|i| i + 1).unwrap_or(0);
+                    let current = app
+                        .ui
+                        .search_state
+                        .current_match
+                        .map(|i| i + 1)
+                        .unwrap_or(0);
                     ui.label(format!("Match {} of {}", current, match_count));
                 }
             }
@@ -160,8 +165,8 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
     if do_search {
         app.refresh_search();
         // Navigate to last match if Shift+Enter was used on first search
-        if navigate_to_last_after_search && !app.search_state.matches.is_empty() {
-            app.search_state.current_match = Some(app.search_state.matches.len() - 1);
+        if navigate_to_last_after_search && !app.ui.search_state.matches.is_empty() {
+            app.ui.search_state.current_match = Some(app.ui.search_state.matches.len() - 1);
         }
         app.navigate_to_search_match();
     }
@@ -170,11 +175,12 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
     if (do_next || do_prev) && !do_search {
         if let Some(editor) = &app.editor {
             if app
+                .ui
                 .search_state
                 .matches_may_be_stale(editor.edit_generation())
             {
                 app.refresh_search();
-                if app.search_state.matches.is_empty() {
+                if app.ui.search_state.matches.is_empty() {
                     do_next = false;
                     do_prev = false;
                 }
@@ -183,25 +189,25 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
     }
 
     if do_next {
-        app.search_state.next_match();
+        app.ui.search_state.next_match();
         app.navigate_to_search_match();
     }
 
     if do_prev {
-        app.search_state.prev_match();
+        app.ui.search_state.prev_match();
         app.navigate_to_search_match();
     }
 
     if do_replace_one {
-        let prev_index = app.search_state.current_match.unwrap_or(0);
+        let prev_index = app.ui.search_state.current_match.unwrap_or(0);
         if let Err(e) = replace_current(app) {
-            app.search_state.message = Some(SearchMessage::Error(e));
+            app.ui.search_state.message = Some(SearchMessage::Error(e));
         } else {
             app.refresh_search();
             // Restore match position (clamped to new matches length)
-            if !app.search_state.matches.is_empty() {
-                let clamped = prev_index.min(app.search_state.matches.len() - 1);
-                app.search_state.current_match = Some(clamped);
+            if !app.ui.search_state.matches.is_empty() {
+                let clamped = prev_index.min(app.ui.search_state.matches.len() - 1);
+                app.ui.search_state.current_match = Some(clamped);
                 app.navigate_to_search_match();
             }
         }
@@ -211,32 +217,33 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
         match replace_all(app) {
             Ok(_count) => {
                 // Save informational message before re-search clears it
-                let info_message = app.search_state.message.take();
+                let info_message = app.ui.search_state.message.take();
                 app.refresh_search();
                 // Restore informational message if re-search didn't produce a new error
-                if app.search_state.message.is_none() {
-                    app.search_state.message = info_message;
+                if app.ui.search_state.message.is_none() {
+                    app.ui.search_state.message = info_message;
                 }
             }
             Err(e) => {
-                app.search_state.message = Some(SearchMessage::Error(e));
+                app.ui.search_state.message = Some(SearchMessage::Error(e));
             }
         }
     }
 
     if close_dialog {
-        app.search_state.close_dialog();
+        app.ui.search_state.close_dialog();
     }
 }
 
 /// Replace the current match
 fn replace_current(app: &mut BendApp) -> Result<(), String> {
     let current_offset = app
+        .ui
         .search_state
         .current_match_offset()
         .ok_or("No current match")?;
 
-    let pattern_len = app.search_state.pattern_length();
+    let pattern_len = app.ui.search_state.pattern_length();
     if pattern_len == 0 {
         return Err("Invalid search pattern".to_string());
     }
@@ -270,11 +277,11 @@ fn replace_current(app: &mut BendApp) -> Result<(), String> {
 
 /// Replace all matches as a single undoable operation
 fn replace_all(app: &mut BendApp) -> Result<usize, String> {
-    if app.search_state.matches.is_empty() {
+    if app.ui.search_state.matches.is_empty() {
         return Ok(0);
     }
 
-    let pattern_len = app.search_state.pattern_length();
+    let pattern_len = app.ui.search_state.pattern_length();
     if pattern_len == 0 {
         return Err("Invalid search pattern".to_string());
     }
@@ -292,6 +299,7 @@ fn replace_all(app: &mut BendApp) -> Result<usize, String> {
 
     // Partition matches into protected vs replaceable
     let (protected, replaceable): (Vec<usize>, Vec<usize>) = app
+        .ui
         .search_state
         .matches
         .iter()
@@ -314,7 +322,7 @@ fn replace_all(app: &mut BendApp) -> Result<usize, String> {
     let skipped_count = protected.len();
 
     if skipped_count > 0 {
-        app.search_state.message = Some(SearchMessage::Info(format!(
+        app.ui.search_state.message = Some(SearchMessage::Info(format!(
             "Replaced {} of {} matches ({} skipped in protected regions)",
             replaced_count,
             replaced_count + skipped_count,
@@ -327,9 +335,9 @@ fn replace_all(app: &mut BendApp) -> Result<usize, String> {
 
 /// Get replacement bytes based on current mode
 fn get_replacement_bytes(app: &BendApp) -> Result<Vec<u8>, String> {
-    match app.search_state.mode {
-        SearchMode::Hex => parse_hex_replace(&app.search_state.replace_with),
-        SearchMode::Ascii => Ok(app.search_state.replace_with.as_bytes().to_vec()),
+    match app.ui.search_state.mode {
+        SearchMode::Hex => parse_hex_replace(&app.ui.search_state.replace_with),
+        SearchMode::Ascii => Ok(app.ui.search_state.replace_with.as_bytes().to_vec()),
     }
 }
 
@@ -345,12 +353,12 @@ mod tests {
         let mut app = BendApp::default();
         app.editor = Some(EditorState::new(data.to_vec()));
         app.cached_sections = Some(sections);
-        app.search_state.mode = SearchMode::Hex;
-        app.search_state.query = query.to_string();
-        app.search_state.replace_with = replace.to_string();
+        app.ui.search_state.mode = SearchMode::Hex;
+        app.ui.search_state.query = query.to_string();
+        app.ui.search_state.replace_with = replace.to_string();
         // Execute search to populate matches
         if let Some(editor) = &app.editor {
-            execute_search(&mut app.search_state, editor.working());
+            execute_search(&mut app.ui.search_state, editor.working());
         }
         app
     }
@@ -366,7 +374,7 @@ mod tests {
         ];
         let mut app = setup_app(&data, sections, "FF", "00");
         app.header_protection = true;
-        app.search_state.current_match = Some(0);
+        app.ui.search_state.current_match = Some(0);
 
         let result = replace_current(&mut app);
         assert!(result.is_err());
@@ -387,7 +395,7 @@ mod tests {
         ];
         let mut app = setup_app(&data, sections, "FF", "00");
         app.header_protection = true;
-        app.search_state.current_match = Some(0);
+        app.ui.search_state.current_match = Some(0);
 
         let result = replace_current(&mut app);
         assert!(result.is_ok());
@@ -408,7 +416,7 @@ mod tests {
         ];
         let mut app = setup_app(&data, sections, "AA BB", "00 00");
         app.header_protection = true;
-        app.search_state.current_match = Some(0);
+        app.ui.search_state.current_match = Some(0);
 
         let result = replace_current(&mut app);
         assert!(result.is_err());
@@ -442,7 +450,7 @@ mod tests {
         assert_eq!(app.editor.as_ref().unwrap().working()[15], 0x00);
 
         // Informational message set (should be Info variant, not Error)
-        match app.search_state.message.as_ref().unwrap() {
+        match app.ui.search_state.message.as_ref().unwrap() {
             SearchMessage::Info(msg) => {
                 assert!(msg.contains("1 skipped"));
                 assert!(msg.contains("Replaced 1 of 2"));
@@ -494,7 +502,7 @@ mod tests {
         assert_eq!(app.editor.as_ref().unwrap().working()[15], 0x00);
 
         // No informational message
-        assert!(app.search_state.message.is_none());
+        assert!(app.ui.search_state.message.is_none());
     }
 
     #[test]

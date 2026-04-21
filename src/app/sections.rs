@@ -27,7 +27,7 @@ impl BendApp {
     /// Get the background color for a byte based on its section's risk level
     pub fn section_color_for_offset(&self, offset: usize) -> Option<egui::Color32> {
         self.section_at_offset(offset)
-            .map(|section| self.colors.risk_bg_color(section.risk))
+            .map(|section| self.ui.colors.risk_bg_color(section.risk))
     }
 
     /// Check if an offset is in a protected region (header protection enabled + High/Critical risk)
@@ -59,7 +59,7 @@ impl BendApp {
 
     /// Check if a warning should be shown for editing at this offset
     pub fn should_warn_for_edit(&self, offset: usize) -> bool {
-        if self.dialogs.suppress_high_risk_warnings {
+        if self.ui.dialogs.suppress_high_risk_warnings {
             return false;
         }
         self.get_high_risk_level(offset).is_some()
@@ -221,7 +221,7 @@ mod tests {
         let mut app = create_test_app_with_sections(sections);
 
         // Warnings not suppressed by default
-        assert!(!app.dialogs.suppress_high_risk_warnings);
+        assert!(!app.ui.dialogs.suppress_high_risk_warnings);
 
         // Safe and Caution should not trigger warnings
         assert!(!app.should_warn_for_edit(5));
@@ -238,7 +238,7 @@ mod tests {
         assert_eq!(app.get_high_risk_level(35), Some(RiskLevel::Critical));
 
         // Suppress warnings
-        app.dialogs.suppress_high_risk_warnings = true;
+        app.ui.dialogs.suppress_high_risk_warnings = true;
 
         // No warnings when suppressed
         assert!(!app.should_warn_for_edit(25));

@@ -413,8 +413,8 @@ struct HighlightLookup<'a> {
 impl<'a> HighlightLookup<'a> {
     fn new(app: &'a BendApp) -> Self {
         Self {
-            current_match_offset: app.search_state.current_match_offset(),
-            pattern_len: app.search_state.pattern_length(),
+            current_match_offset: app.ui.search_state.current_match_offset(),
+            pattern_len: app.ui.search_state.pattern_length(),
             app,
         }
     }
@@ -426,7 +426,7 @@ impl<'a> HighlightLookup<'a> {
                 .selection
                 .map(|(start, end)| byte_offset >= start && byte_offset < end)
                 .unwrap_or(false),
-            is_search_match: self.app.search_state.is_within_match(byte_offset),
+            is_search_match: self.app.ui.search_state.is_within_match(byte_offset),
             is_current_match: self
                 .current_match_offset
                 .is_some_and(|m| byte_offset >= m && byte_offset < m + self.pattern_len),
@@ -479,6 +479,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
     let mut drag_current_offset: Option<usize> = None;
 
     let scroll_to_row: Option<usize> = app
+        .ui
         .pending_hex_scroll
         .take()
         .map(|byte_offset| byte_offset / BYTES_PER_ROW);
@@ -487,7 +488,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
         (target_row.saturating_sub(SCROLL_BUFFER_ROWS) as f32 * row_height).max(0.0)
     });
 
-    let colors = app.colors;
+    let colors = app.ui.colors;
     let highlights = HighlightLookup::new(app);
 
     let mut scroll_area = egui::ScrollArea::both().auto_shrink([false; 2]);
@@ -678,7 +679,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
     // Handle keyboard input
     let keyboard_result = handle_keyboard_input(ui, app, state.cursor_pos, state.cursor_protected);
     if let Some((edit_type, offset, risk_level)) = keyboard_result.pending_high_risk_edit {
-        app.dialogs.pending_high_risk_edit = Some(crate::app::PendingEdit {
+        app.ui.dialogs.pending_high_risk_edit = Some(crate::app::PendingEdit {
             edit_type,
             offset,
             risk_level,
@@ -687,7 +688,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
 
     // Handle context menu
     if let Some(offset) = context_menu_offset {
-        app.context_menu_state.target_offset = Some(offset);
+        app.ui.context_menu_state.target_offset = Some(offset);
     }
     show_context_menu(ui, app);
 }
@@ -801,7 +802,7 @@ enum ContextAction {
 
 /// Show the context menu for the hex editor
 fn show_context_menu(ui: &mut egui::Ui, app: &mut BendApp) {
-    let Some(target_offset) = app.context_menu_state.target_offset else {
+    let Some(target_offset) = app.ui.context_menu_state.target_offset else {
         return;
     };
 
@@ -883,12 +884,12 @@ fn show_context_menu(ui: &mut egui::Ui, app: &mut BendApp) {
                 editor.add_bookmark(target_offset, format!("Offset 0x{:X}", target_offset));
             }
         }
-        Some(ContextAction::GoToOffset) => app.go_to_offset_state.open_dialog(),
+        Some(ContextAction::GoToOffset) => app.ui.go_to_offset_state.open_dialog(),
         None => {}
     }
 
     if close_menu {
-        app.context_menu_state.target_offset = None;
+        app.ui.context_menu_state.target_offset = None;
     }
 }
 
