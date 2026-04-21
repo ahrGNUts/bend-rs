@@ -509,6 +509,16 @@ impl<'a> HighlightLookup<'a> {
     }
 }
 
+/// All the per-frame read state `render_row` needs, bundled so the function
+/// takes one context parameter instead of five individual borrows.
+struct RowRenderContext<'a> {
+    state: &'a HexDisplayState,
+    editor: &'a crate::editor::EditorState,
+    colors: &'a AppColors,
+    highlights: &'a HighlightLookup<'a>,
+    pointer: &'a PointerContext,
+}
+
 /// Prepare display state from the current editor state.
 /// Returns None if no editor is loaded.
 fn prepare_display_state(app: &BendApp) -> Option<HexDisplayState> {
@@ -532,13 +542,14 @@ fn prepare_display_state(app: &BendApp) -> Option<HexDisplayState> {
 fn render_row(
     ui: &mut egui::Ui,
     row_idx: usize,
-    state: &HexDisplayState,
-    editor: &crate::editor::EditorState,
-    colors: &AppColors,
-    highlights: &HighlightLookup,
-    pointer: &PointerContext,
+    ctx: &RowRenderContext<'_>,
     scroll_to_me: bool,
 ) -> RowResult {
+    let state = ctx.state;
+    let editor = ctx.editor;
+    let colors = ctx.colors;
+    let highlights = ctx.highlights;
+    let pointer = ctx.pointer;
     let offset = row_idx * BYTES_PER_ROW;
     let row_end = (offset + BYTES_PER_ROW).min(state.total_bytes);
     let row_bytes = editor.bytes_in_range(offset, row_end);
@@ -716,17 +727,15 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
         }
 
         let editor = app.doc.editor.as_ref().unwrap();
+        let ctx = RowRenderContext {
+            state: &state,
+            editor,
+            colors: &colors,
+            highlights: &highlights,
+            pointer: &pointer,
+        };
         for row_idx in render_start..render_end {
-            let row_result = render_row(
-                ui,
-                row_idx,
-                &state,
-                editor,
-                &colors,
-                &highlights,
-                &pointer,
-                scroll_to_row == Some(row_idx),
-            );
+            let row_result = render_row(ui, row_idx, &ctx, scroll_to_row == Some(row_idx));
             result.merge(row_result);
         }
 

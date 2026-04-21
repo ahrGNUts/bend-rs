@@ -33,24 +33,11 @@ Scope note: the real duplication between hex and ASCII rendering is narrower tha
 - [x] 4.4 `src/app/mod.rs` needed no change — `handle_edit_input` is only called from `handle_keyboard_input` inside `hex_editor.rs`. The proposal overstated the ripple; the call site is internal.
 
 ## 5. Verification
-- [ ] 5.1 `cargo fmt`
-- [ ] 5.2 `cargo build --release`
-- [ ] 5.3 `cargo test`
-- [ ] 5.4 Manual test matrix:
-  - Scroll a large file (>10MB) — no lag, no rendering artifacts
-  - Click to move cursor in hex column
-  - Click to move cursor in ASCII column
-  - Drag-select across rows — both columns highlight together
-  - Shift+click to extend selection
-  - Secondary-click to open context menu
-  - Copy selection in hex mode (copies hex bytes)
-  - Copy selection in ASCII mode (copies text)
-  - Paste in hex mode
-  - Paste in ASCII mode
-  - Overwrite edit
-  - Insert edit
-  - ESC cancels pending edit
-  - Search highlight visible in both columns
-  - Risk-level tint visible in both columns
-  - Incomplete last row (file length not multiple of 16) renders correctly
-- [ ] 5.5 Verify no visible behavior change vs. `main` baseline
+- [x] 5.1 `cargo fmt` — clean
+- [x] 5.2 `cargo build --release` — succeeds
+- [x] 5.3 `cargo test` — 204/204 pass
+- [x] 5.4 `cargo clippy --all-targets` — no new warnings from this refactor. Bundled `render_row`'s args into `RowRenderContext<'a>` to avoid a `too_many_arguments` warning.
+- [ ] 5.5 Manual smoke test (user to perform) — test matrix: scroll a large file, click in both columns, drag-select across rows, shift+click, secondary-click, copy/paste in hex and ASCII modes, overwrite + insert edits, ESC cancel, search highlight, risk tint, incomplete last row. Confirm no user-visible behavior change vs. `main` baseline.
+
+Scope note on matrix items:
+- "Search highlight visible in both columns" and "Risk-level tint visible in both columns" — the pre-refactor code only paints these in the hex column; ASCII parity would be a behavior change and is not part of this refactor (see Task 1 scope note). Expect hex-column-only here.
