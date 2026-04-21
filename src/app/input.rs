@@ -24,41 +24,41 @@ impl BendApp {
             if ctrl && i.key_pressed(egui::Key::O) {
                 actions.open = true;
             }
-            if ctrl && i.key_pressed(egui::Key::E) && self.editor.is_some() {
+            if ctrl && i.key_pressed(egui::Key::E) && self.doc.editor.is_some() {
                 actions.export = true;
             }
-            if ctrl && i.key_pressed(egui::Key::F) && self.editor.is_some() {
+            if ctrl && i.key_pressed(egui::Key::F) && self.doc.editor.is_some() {
                 actions.search = true;
             }
-            if ctrl && i.key_pressed(egui::Key::G) && self.editor.is_some() {
+            if ctrl && i.key_pressed(egui::Key::G) && self.doc.editor.is_some() {
                 actions.go_to = true;
             }
             // Undo: Ctrl+Z / Cmd+Z
-            if ctrl && !shift && i.key_pressed(egui::Key::Z) && self.editor.is_some() {
+            if ctrl && !shift && i.key_pressed(egui::Key::Z) && self.doc.editor.is_some() {
                 actions.undo = true;
             }
             // Redo: Ctrl+Shift+Z / Cmd+Shift+Z (or Ctrl+Y on some platforms)
-            if ctrl && shift && i.key_pressed(egui::Key::Z) && self.editor.is_some() {
+            if ctrl && shift && i.key_pressed(egui::Key::Z) && self.doc.editor.is_some() {
                 actions.redo = true;
             }
-            if ctrl && i.key_pressed(egui::Key::Y) && self.editor.is_some() {
+            if ctrl && i.key_pressed(egui::Key::Y) && self.doc.editor.is_some() {
                 actions.redo = true;
             }
             // Create save point: Ctrl+S / Cmd+S
-            if ctrl && i.key_pressed(egui::Key::S) && self.editor.is_some() {
+            if ctrl && i.key_pressed(egui::Key::S) && self.doc.editor.is_some() {
                 actions.create_save_point = true;
             }
             // Add bookmark: Ctrl+D / Cmd+D
-            if ctrl && i.key_pressed(egui::Key::D) && self.editor.is_some() {
+            if ctrl && i.key_pressed(egui::Key::D) && self.doc.editor.is_some() {
                 actions.add_bookmark = true;
             }
             // Refresh preview: Ctrl+R / Cmd+R
-            if ctrl && i.key_pressed(egui::Key::R) && self.editor.is_some() {
+            if ctrl && i.key_pressed(egui::Key::R) && self.doc.editor.is_some() {
                 actions.refresh_preview = true;
             }
             // Toggle edit mode: Ctrl+M / Cmd+M
             if ctrl && i.key_pressed(egui::Key::M) {
-                if let Some(editor) = self.editor.as_ref() {
+                if let Some(editor) = self.doc.editor.as_ref() {
                     actions.set_edit_mode = Some(match editor.edit_mode() {
                         EditMode::Hex => EditMode::Ascii,
                         EditMode::Ascii => EditMode::Hex,

@@ -118,7 +118,7 @@ fn show_section(
 /// Show the structure tree panel
 pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
     // Get cursor position and check if editor exists
-    let current_cursor = match &app.editor {
+    let current_cursor = match &app.doc.editor {
         Some(editor) => editor.cursor(),
         None => {
             ui.label("No file loaded");
@@ -127,7 +127,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
     };
 
     // Early return for missing or empty sections
-    match &app.cached_sections {
+    match &app.doc.cached_sections {
         None => {
             ui.label("Unable to parse file structure");
             return;
@@ -143,7 +143,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
     let mut clicked_offset: Option<usize> = None;
 
     // Scope the immutable borrow of sections for UI rendering
-    if let Some(sections) = &app.cached_sections {
+    if let Some(sections) = &app.doc.cached_sections {
         let colors = app.ui.colors;
 
         // Legend
@@ -175,7 +175,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
 
     // Handle navigation - borrow of cached_sections has ended
     if let Some(offset) = clicked_offset {
-        if let Some(editor) = &mut app.editor {
+        if let Some(editor) = &mut app.doc.editor {
             editor.set_cursor(offset);
         }
         app.scroll_hex_to_offset(offset);

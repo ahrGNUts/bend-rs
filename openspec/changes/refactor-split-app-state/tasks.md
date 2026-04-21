@@ -26,13 +26,13 @@
 - [x] 4.5 `cargo build` + `cargo test` (204 tests pass)
 
 ## 5. Extract `DocumentState`
-- [ ] 5.1 Move `editor`, `current_file`, `cached_sections`, `preview`, `header_protection` into `DocumentState`
-- [ ] 5.2 Add `doc: DocumentState` field to `BendApp`
-- [ ] 5.3 Move `is_offset_protected` and `is_range_protected` from `BendApp` onto `DocumentState` (in `src/app/sections.rs`)
-- [ ] 5.4 Update `src/app/input.rs`, `src/app/preview.rs`, `src/app/toolbar.rs`, `src/app/menu_bar.rs`
-- [ ] 5.5 Update `src/ui/hex_editor.rs` to take `&mut DocumentState, &mut UiState, &AppConfig` instead of `&mut BendApp`
-- [ ] 5.6 Update callers of `app.is_offset_protected` in `src/ui/search_dialog.rs:256` and elsewhere
-- [ ] 5.7 `cargo build` + smoke test (hex editor renders, edits apply, header protection works)
+- [x] 5.1 Move `editor`, `current_file`, `cached_sections`, `preview`, `header_protection` into `DocumentState` in `src/app/state.rs`
+- [x] 5.2 Add `doc: DocumentState` field to `BendApp`; remove the 5 fields from `BendApp`
+- [x] 5.3 Move pure helpers (`section_at_offset`, `is_offset_protected`, `is_range_protected`, `get_high_risk_level`) onto `DocumentState`. `section_color_for_offset` and `should_warn_for_edit` remain on `BendApp` because they combine `doc` with `ui.colors`/`ui.dialogs`.
+- [x] 5.4 Update app-layer: `src/app/mod.rs`, `src/app/dialogs.rs`, `src/app/input.rs`, `src/app/preview.rs`, `src/app/toolbar.rs`, `src/app/menu_bar.rs`, `src/app/sections.rs`
+- [x] 5.5 Deferred to Task 6 — `hex_editor::show` still takes `&mut BendApp`; this task only moves field locations and updates accesses
+- [x] 5.6 Update `app.is_offset_protected` / `app.is_range_protected` / `app.get_high_risk_level` / `app.section_at_offset` → `app.doc.<method>` across `src/ui/hex_editor.rs`, `src/ui/search_dialog.rs` (including tests), plus test modules in `src/app/mod.rs` and `src/app/sections.rs`
+- [x] 5.7 `cargo build` + `cargo test` (204 tests pass)
 
 ## 6. Narrow UI signatures
 - [ ] 6.1 For each UI `show()` function, replace `&mut BendApp` with the narrowest substate set it actually uses

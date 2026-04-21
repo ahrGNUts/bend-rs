@@ -173,7 +173,7 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
 
     // Auto-re-search if buffer was edited since last search (stale matches)
     if (do_next || do_prev) && !do_search {
-        if let Some(editor) = &app.editor {
+        if let Some(editor) = &app.doc.editor {
             if app
                 .ui
                 .search_state
@@ -260,14 +260,14 @@ fn replace_current(app: &mut BendApp) -> Result<(), String> {
     }
 
     // Check header protection
-    if app.is_range_protected(current_offset, pattern_len) {
+    if app.doc.is_range_protected(current_offset, pattern_len) {
         return Err(format!(
             "Cannot replace: match at offset 0x{:08X} is in a protected header region",
             current_offset
         ));
     }
 
-    let editor = app.editor.as_mut().ok_or("No file loaded")?;
+    let editor = app.doc.editor.as_mut().ok_or("No file loaded")?;
 
     // Apply the replacement as a single undoable operation
     editor.replace_bytes(current_offset, &replacement);
@@ -303,7 +303,7 @@ fn replace_all(app: &mut BendApp) -> Result<usize, String> {
         .search_state
         .matches
         .iter()
-        .partition(|&&offset| app.is_range_protected(offset, pattern_len));
+        .partition(|&&offset| app.doc.is_range_protected(offset, pattern_len));
 
     if replaceable.is_empty() {
         return Err(format!(
@@ -312,7 +312,7 @@ fn replace_all(app: &mut BendApp) -> Result<usize, String> {
         ));
     }
 
-    let editor = app.editor.as_mut().ok_or("No file loaded")?;
+    let editor = app.doc.editor.as_mut().ok_or("No file loaded")?;
 
     // Apply all replacements as a single atomic undo/redo operation
     // Since we require replacement to be same length, positions don't shift
@@ -351,13 +351,13 @@ mod tests {
     /// Helper: create a BendApp with file data, sections, and a hex search pre-executed
     fn setup_app(data: &[u8], sections: Vec<FileSection>, query: &str, replace: &str) -> BendApp {
         let mut app = BendApp::default();
-        app.editor = Some(EditorState::new(data.to_vec()));
-        app.cached_sections = Some(sections);
+        app.doc.editor = Some(EditorState::new(data.to_vec()));
+        app.doc.cached_sections = Some(sections);
         app.ui.search_state.mode = SearchMode::Hex;
         app.ui.search_state.query = query.to_string();
         app.ui.search_state.replace_with = replace.to_string();
         // Execute search to populate matches
-        if let Some(editor) = &app.editor {
+        if let Some(editor) = &app.doc.editor {
             execute_search(&mut app.ui.search_state, editor.working());
         }
         app
@@ -373,7 +373,7 @@ mod tests {
             FileSection::new("Data", 10, 20, RiskLevel::Safe),
         ];
         let mut app = setup_app(&data, sections, "FF", "00");
-        app.header_protection = true;
+        app.doc.header_protection = true;
         app.ui.search_state.current_match = Some(0);
 
         let result = replace_current(&mut app);
@@ -381,7 +381,7 @@ mod tests {
         assert!(result.unwrap_err().contains("protected header region"));
 
         // Verify byte was NOT changed
-        assert_eq!(app.editor.as_ref().unwrap().working()[5], 0xFF);
+        assert_eq!(app.doc.editor.as_ref().unwrap().working()[5], 0xFF);
     }
 
     #[test]
@@ -394,14 +394,14 @@ mod tests {
             FileSection::new("Data", 10, 20, RiskLevel::Safe),
         ];
         let mut app = setup_app(&data, sections, "FF", "00");
-        app.header_protection = true;
+        app.doc.header_protection = true;
         app.ui.search_state.current_match = Some(0);
 
         let result = replace_current(&mut app);
         assert!(result.is_ok());
 
         // Verify byte WAS changed
-        assert_eq!(app.editor.as_ref().unwrap().working()[15], 0x00);
+        assert_eq!(app.doc.editor.as_ref().unwrap().working()[15], 0x00);
     }
 
     #[test]
@@ -415,7 +415,7 @@ mod tests {
             FileSection::new("High", 10, 20, RiskLevel::High),
         ];
         let mut app = setup_app(&data, sections, "AA BB", "00 00");
-        app.header_protection = true;
+        app.doc.header_protection = true;
         app.ui.search_state.current_match = Some(0);
 
         let result = replace_current(&mut app);
@@ -423,8 +423,8 @@ mod tests {
         assert!(result.unwrap_err().contains("protected header region"));
 
         // Verify bytes NOT changed
-        assert_eq!(app.editor.as_ref().unwrap().working()[9], 0xAA);
-        assert_eq!(app.editor.as_ref().unwrap().working()[10], 0xBB);
+        assert_eq!(app.doc.editor.as_ref().unwrap().working()[9], 0xAA);
+        assert_eq!(app.doc.editor.as_ref().unwrap().working()[10], 0xBB);
     }
 
     #[test]
@@ -438,16 +438,16 @@ mod tests {
             FileSection::new("Data", 10, 20, RiskLevel::Safe),
         ];
         let mut app = setup_app(&data, sections, "FF", "00");
-        app.header_protection = true;
+        app.doc.header_protection = true;
 
         let result = replace_all(&mut app);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 1); // Only 1 replaced
 
         // Protected byte unchanged
-        assert_eq!(app.editor.as_ref().unwrap().working()[5], 0xFF);
+        assert_eq!(app.doc.editor.as_ref().unwrap().working()[5], 0xFF);
         // Safe byte replaced
-        assert_eq!(app.editor.as_ref().unwrap().working()[15], 0x00);
+        assert_eq!(app.doc.editor.as_ref().unwrap().working()[15], 0x00);
 
         // Informational message set (should be Info variant, not Error)
         match app.ui.search_state.message.as_ref().unwrap() {
@@ -469,7 +469,7 @@ mod tests {
             FileSection::new("Data", 10, 20, RiskLevel::Safe),
         ];
         let mut app = setup_app(&data, sections, "FF", "00");
-        app.header_protection = true;
+        app.doc.header_protection = true;
 
         let result = replace_all(&mut app);
         assert!(result.is_err());
@@ -478,7 +478,7 @@ mod tests {
             .contains("All 1 matches are in protected"));
 
         // Byte unchanged
-        assert_eq!(app.editor.as_ref().unwrap().working()[5], 0xFF);
+        assert_eq!(app.doc.editor.as_ref().unwrap().working()[5], 0xFF);
     }
 
     #[test]
@@ -498,8 +498,8 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 2); // Both replaced
 
-        assert_eq!(app.editor.as_ref().unwrap().working()[5], 0x00);
-        assert_eq!(app.editor.as_ref().unwrap().working()[15], 0x00);
+        assert_eq!(app.doc.editor.as_ref().unwrap().working()[5], 0x00);
+        assert_eq!(app.doc.editor.as_ref().unwrap().working()[15], 0x00);
 
         // No informational message
         assert!(app.ui.search_state.message.is_none());
@@ -519,11 +519,11 @@ mod tests {
         assert_eq!(result.unwrap(), 2);
 
         // Both should be replaced
-        assert_eq!(app.editor.as_ref().unwrap().working()[5], 0x00);
-        assert_eq!(app.editor.as_ref().unwrap().working()[15], 0x00);
+        assert_eq!(app.doc.editor.as_ref().unwrap().working()[5], 0x00);
+        assert_eq!(app.doc.editor.as_ref().unwrap().working()[15], 0x00);
 
         // A single undo should revert ALL replacements
-        let editor = app.editor.as_mut().unwrap();
+        let editor = app.doc.editor.as_mut().unwrap();
         assert!(editor.undo());
         assert_eq!(editor.working()[5], 0xFF);
         assert_eq!(editor.working()[15], 0xFF);

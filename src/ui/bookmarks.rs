@@ -18,7 +18,7 @@ pub struct BookmarksPanelState {
 
 /// Show the bookmarks panel
 pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelState) {
-    let Some(editor) = &app.editor else {
+    let Some(editor) = &app.doc.editor else {
         ui.label("No file loaded");
         return;
     };
@@ -31,7 +31,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
     ui.horizontal(|ui| {
         if ui.button("+ Add Bookmark").clicked() {
             let name = format!("Bookmark at 0x{:08X}", cursor_pos);
-            if let Some(editor) = &mut app.editor {
+            if let Some(editor) = &mut app.doc.editor {
                 editor.add_bookmark(cursor_pos, name);
             }
         }
@@ -172,7 +172,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
     if let Some(action) = action {
         match action {
             BookmarkAction::Navigate(offset) => {
-                if let Some(editor) = &mut app.editor {
+                if let Some(editor) = &mut app.doc.editor {
                     editor.set_cursor(offset);
                 }
                 app.scroll_hex_to_offset(offset);
@@ -182,7 +182,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
                 state.rename_text = name;
             }
             BookmarkAction::FinishRename(id, name) => {
-                if let Some(editor) = &mut app.editor {
+                if let Some(editor) = &mut app.doc.editor {
                     let _ = editor.bookmarks_mut().rename(id, name); // #[must_use] result intentionally ignored — bookmark existence already verified by UI
                 }
                 state.renaming = None;
@@ -197,7 +197,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
                 state.annotation_text = annotation;
             }
             BookmarkAction::FinishAnnotation(id, annotation) => {
-                if let Some(editor) = &mut app.editor {
+                if let Some(editor) = &mut app.doc.editor {
                     let _ = editor.bookmarks_mut().set_annotation(id, annotation);
                     // #[must_use] result intentionally ignored — bookmark existence already verified by UI
                 }
@@ -209,12 +209,12 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
                 state.annotation_text.clear();
             }
             BookmarkAction::DeleteAnnotation(id) => {
-                if let Some(editor) = &mut app.editor {
+                if let Some(editor) = &mut app.doc.editor {
                     let _ = editor.bookmarks_mut().set_annotation(id, String::new());
                 }
             }
             BookmarkAction::Delete(id) => {
-                if let Some(editor) = &mut app.editor {
+                if let Some(editor) = &mut app.doc.editor {
                     let _ = editor.remove_bookmark(id); // #[must_use] result intentionally ignored — bookmark existence already verified by UI
                 }
             }

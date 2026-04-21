@@ -7,7 +7,10 @@ use eframe::egui;
 pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
     // Comparison mode toggle at the top
     ui.horizontal(|ui| {
-        ui.checkbox(&mut app.preview.comparison_mode, "Compare with Original");
+        ui.checkbox(
+            &mut app.doc.preview.comparison_mode,
+            "Compare with Original",
+        );
     });
 
     // Animation controls (if animated GIF is loaded)
@@ -15,7 +18,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
 
     ui.add_space(4.0);
 
-    if app.preview.comparison_mode {
+    if app.doc.preview.comparison_mode {
         // Side-by-side comparison view
         show_comparison_view(ui, app);
     } else {
@@ -28,6 +31,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
 fn show_animation_controls(ui: &mut egui::Ui, app: &mut BendApp) {
     // Guard: only show controls if we have a multi-frame animation
     let has_animation = app
+        .doc
         .preview
         .animation
         .as_ref()
@@ -37,7 +41,7 @@ fn show_animation_controls(ui: &mut egui::Ui, app: &mut BendApp) {
     }
 
     // Read frame_count once (immutable for the duration of this function)
-    let frame_count = app.preview.animation.as_ref().unwrap().frames.len();
+    let frame_count = app.doc.preview.animation.as_ref().unwrap().frames.len();
 
     ui.add_space(2.0);
     ui.horizontal(|ui| {
@@ -50,7 +54,7 @@ fn show_animation_controls(ui: &mut egui::Ui, app: &mut BendApp) {
         // Previous frame button
         if ui.button("<").on_hover_text("Previous frame").clicked() {
             app.pause_animation();
-            let current = app.preview.animation.as_ref().unwrap().current_frame;
+            let current = app.doc.preview.animation.as_ref().unwrap().current_frame;
             let prev = if current == 0 {
                 frame_count - 1
             } else {
@@ -60,7 +64,7 @@ fn show_animation_controls(ui: &mut egui::Ui, app: &mut BendApp) {
         }
 
         // Play/Pause toggle — read fresh playing state
-        let is_playing = app.preview.animation.as_ref().unwrap().playing;
+        let is_playing = app.doc.preview.animation.as_ref().unwrap().playing;
         let play_label = if is_playing { "Pause" } else { "Play" };
         if ui.button(play_label).clicked() {
             app.toggle_animation_playback();
@@ -69,7 +73,7 @@ fn show_animation_controls(ui: &mut egui::Ui, app: &mut BendApp) {
         // Next frame button
         if ui.button(">").on_hover_text("Next frame").clicked() {
             app.pause_animation();
-            let current = app.preview.animation.as_ref().unwrap().current_frame;
+            let current = app.doc.preview.animation.as_ref().unwrap().current_frame;
             let next = (current + 1) % frame_count;
             app.set_animation_frame(next);
         }
@@ -83,12 +87,12 @@ fn show_animation_controls(ui: &mut egui::Ui, app: &mut BendApp) {
         ui.separator();
 
         // Frame label — read fresh current_frame after all button mutations
-        let current_frame = app.preview.animation.as_ref().unwrap().current_frame;
+        let current_frame = app.doc.preview.animation.as_ref().unwrap().current_frame;
         let mut label = format!("Frame {} / {}", current_frame + 1, frame_count);
 
         // Only append original count when it differs (comparison mode)
-        if app.preview.comparison_mode {
-            if let Some(orig) = app.preview.original_animation.as_ref() {
+        if app.doc.preview.comparison_mode {
+            if let Some(orig) = app.doc.preview.original_animation.as_ref() {
                 if orig.frames.len() != frame_count {
                     label.push_str(&format!(" (original: {})", orig.frames.len()));
                 }
@@ -116,7 +120,7 @@ fn show_comparison_view(ui: &mut egui::Ui, app: &BendApp) {
             ui.heading("Original");
             show_texture_scaled(
                 ui,
-                app.preview.original_texture.as_ref(),
+                app.doc.preview.original_texture.as_ref(),
                 scale,
                 max_image_size,
             );
@@ -128,12 +132,12 @@ fn show_comparison_view(ui: &mut egui::Ui, app: &BendApp) {
         ui.vertical(|ui| {
             ui.heading("Current");
             // Show decode error indicator if present
-            if app.preview.decode_error.is_some() {
+            if app.doc.preview.decode_error.is_some() {
                 ui.horizontal(|ui| {
                     ui.colored_label(colors.warning_text, "\u{26A0} Preview may be stale");
                 });
             }
-            show_texture_scaled(ui, app.preview.texture.as_ref(), scale, max_image_size);
+            show_texture_scaled(ui, app.doc.preview.texture.as_ref(), scale, max_image_size);
         });
     });
 }
@@ -144,13 +148,13 @@ fn calculate_unified_scale(app: &BendApp, max_size: egui::Vec2) -> f32 {
 
     // Get the texture that determines our scale
     // Use the largest dimensions from either texture
-    if let Some(tex) = &app.preview.original_texture {
+    if let Some(tex) = &app.doc.preview.original_texture {
         let tex_size = tex.size_vec2();
         let tex_scale = (max_size.x / tex_size.x).min(max_size.y / tex_size.y);
         scale = scale.min(tex_scale);
     }
 
-    if let Some(tex) = &app.preview.texture {
+    if let Some(tex) = &app.doc.preview.texture {
         let tex_size = tex.size_vec2();
         let tex_scale = (max_size.x / tex_size.x).min(max_size.y / tex_size.y);
         scale = scale.min(tex_scale);
@@ -201,9 +205,9 @@ fn show_texture_scaled(
 
 /// Show a single image preview (current working buffer)
 fn show_single_preview(ui: &mut egui::Ui, app: &BendApp) {
-    if let Some(texture) = &app.preview.texture {
+    if let Some(texture) = &app.doc.preview.texture {
         // Show decode error indicator if present
-        if app.preview.decode_error.is_some() {
+        if app.doc.preview.decode_error.is_some() {
             let colors = app.ui.colors;
             ui.horizontal(|ui| {
                 ui.colored_label(
@@ -223,12 +227,12 @@ fn show_single_preview(ui: &mut egui::Ui, app: &BendApp) {
     } else {
         // No preview available
         ui.centered_and_justified(|ui| {
-            if app.preview.decode_error.is_some() {
+            if app.doc.preview.decode_error.is_some() {
                 ui.vertical_centered(|ui| {
                     // Broken image indicator
                     ui.label(egui::RichText::new("\u{1F5BC}").size(64.0));
                     ui.label("Unable to decode image");
-                    if let Some(err) = &app.preview.decode_error {
+                    if let Some(err) = &app.doc.preview.decode_error {
                         ui.label(egui::RichText::new(err).small());
                     }
                 });

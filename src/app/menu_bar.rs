@@ -87,7 +87,7 @@ impl BendApp {
             self.open_file_dialog(ui.ctx());
             ui.close_menu();
         }
-        let has_file = self.editor.is_some();
+        let has_file = self.doc.editor.is_some();
         if menu_item_with_shortcut(ui, "Export...", &export_shortcut, has_file, colors) {
             self.export_file(ui.ctx());
             ui.close_menu();
@@ -140,9 +140,9 @@ impl BendApp {
     /// Render the Edit menu contents
     fn render_edit_menu(&mut self, ui: &mut egui::Ui) {
         let mod_str = modifier_key();
-        let has_file = self.editor.is_some();
-        let can_undo = self.editor.as_ref().is_some_and(|e| e.can_undo());
-        let can_redo = self.editor.as_ref().is_some_and(|e| e.can_redo());
+        let has_file = self.doc.editor.is_some();
+        let can_undo = self.doc.editor.as_ref().is_some_and(|e| e.can_undo());
+        let can_redo = self.doc.editor.as_ref().is_some_and(|e| e.can_redo());
         let undo_shortcut = format!("{}Z", mod_str);
         let redo_shortcut = format!("{}Shift+Z", mod_str);
         let find_shortcut = format!("{}F", mod_str);
@@ -180,7 +180,7 @@ impl BendApp {
             has_file,
             colors,
         ) {
-            if let Some(editor) = &mut self.editor {
+            if let Some(editor) = &mut self.doc.editor {
                 let count = editor.save_points().len();
                 let name = format!("Save Point {}", count + 1);
                 editor.create_save_point(name);
@@ -188,7 +188,7 @@ impl BendApp {
             ui.close_menu();
         }
         if menu_item_with_shortcut(ui, "Add Bookmark", &bookmark_shortcut, has_file, colors) {
-            if let Some(editor) = &mut self.editor {
+            if let Some(editor) = &mut self.doc.editor {
                 let cursor_pos = editor.cursor();
                 let name = format!("Bookmark at 0x{:08X}", cursor_pos);
                 editor.add_bookmark(cursor_pos, name);
@@ -204,7 +204,7 @@ impl BendApp {
         if ui
             .add_enabled(
                 has_file,
-                egui::Checkbox::new(&mut self.header_protection, "Protect Headers"),
+                egui::Checkbox::new(&mut self.doc.header_protection, "Protect Headers"),
             )
             .changed()
         {

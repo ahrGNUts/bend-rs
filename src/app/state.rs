@@ -10,7 +10,8 @@
 //! 3. `UiState`         — UI panel/dialog/cache state
 //! 4. `DocumentState`   — loaded document, editor, preview
 
-use crate::editor::{GoToOffsetState, SearchState};
+use crate::editor::{EditorState, GoToOffsetState, SearchState};
+use crate::formats::{FileSection, RiskLevel};
 use crate::settings::AppSettings;
 use crate::ui::bookmarks::BookmarksPanelState;
 use crate::ui::hex_editor::ContextMenuState;
@@ -22,7 +23,7 @@ use std::path::PathBuf;
 use std::sync::mpsc;
 use std::time::Instant;
 
-use super::DialogState;
+use super::{DialogState, PreviewState};
 
 /// Result of a background file dialog thread.
 pub(super) enum FileDialogResult {
@@ -102,4 +103,77 @@ pub struct UiState {
 
     /// Pending scroll offset for hex editor (Some(offset) = scroll to this byte offset)
     pub pending_hex_scroll: Option<usize>,
+}
+
+/// Document state: the loaded buffer/editor, its preview, parsed structure,
+/// and the runtime header-protection toggle.
+///
+/// Everything in here is derived from or attached to the currently-open file.
+/// Closing a file resets this substate; nothing else needs to change.
+#[derive(Default)]
+pub struct DocumentState {
+    /// Editor state containing buffers, history, and file metadata
+    pub editor: Option<EditorState>,
+
+    /// Path to currently loaded file (for display purposes)
+    pub current_file: Option<PathBuf>,
+
+    /// Image preview state (textures, dirty flag, comparison mode)
+    pub preview: PreviewState,
+
+    /// Cached parsed file sections for structure visualization
+    /// Re-parsed when file is loaded or structure potentially changed
+    pub cached_sections: Option<Vec<FileSection>>,
+
+    /// Whether header protection is enabled (blocks edits to high-risk sections)
+    pub header_protection: bool,
+}
+
+impl DocumentState {
+    /// Find the section containing a byte offset
+    pub fn section_at_offset(&self, offset: usize) -> Option<&FileSection> {
+        fn find_in_sections(sections: &[FileSection], offset: usize) -> Option<&FileSection> {
+            for section in sections {
+                if offset >= section.start && offset < section.end {
+                    // Check children first for more specific match
+                    if let Some(child) = find_in_sections(&section.children, offset) {
+                        return Some(child);
+                    }
+                    return Some(section);
+                }
+            }
+            None
+        }
+
+        self.cached_sections
+            .as_ref()
+            .and_then(|sections| find_in_sections(sections, offset))
+    }
+
+    /// Check if an offset is in a protected region (header protection enabled + High/Critical risk)
+    pub fn is_offset_protected(&self, offset: usize) -> bool {
+        if !self.header_protection {
+            return false;
+        }
+
+        self.section_at_offset(offset)
+            .map(|section| matches!(section.risk, RiskLevel::High | RiskLevel::Critical))
+            .unwrap_or(false)
+    }
+
+    /// Check if any byte in a range overlaps a protected region
+    pub fn is_range_protected(&self, start: usize, len: usize) -> bool {
+        if !self.header_protection || len == 0 {
+            return false;
+        }
+        (start..start + len).any(|offset| self.is_offset_protected(offset))
+    }
+
+    /// Check if an offset is in a high-risk region that should show a warning.
+    /// Returns the risk level if it's High or Critical, None otherwise.
+    pub fn get_high_risk_level(&self, offset: usize) -> Option<RiskLevel> {
+        self.section_at_offset(offset)
+            .filter(|section| matches!(section.risk, RiskLevel::High | RiskLevel::Critical))
+            .map(|section| section.risk)
+    }
 }

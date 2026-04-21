@@ -26,9 +26,9 @@ impl BendApp {
 
         egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                let has_file = self.editor.is_some();
-                let can_undo = self.editor.as_ref().is_some_and(|e| e.can_undo());
-                let can_redo = self.editor.as_ref().is_some_and(|e| e.can_redo());
+                let has_file = self.doc.editor.is_some();
+                let can_undo = self.doc.editor.as_ref().is_some_and(|e| e.can_undo());
+                let can_redo = self.doc.editor.as_ref().is_some_and(|e| e.can_redo());
 
                 // File operations
                 if ui.button("Open").clicked() {
@@ -79,27 +79,28 @@ impl BendApp {
                 if ui
                     .add_enabled(
                         has_file,
-                        egui::SelectableLabel::new(self.preview.comparison_mode, "Compare"),
+                        egui::SelectableLabel::new(self.doc.preview.comparison_mode, "Compare"),
                     )
                     .clicked()
                 {
-                    self.preview.comparison_mode = !self.preview.comparison_mode;
+                    self.doc.preview.comparison_mode = !self.doc.preview.comparison_mode;
                 }
                 if ui
                     .add_enabled(
                         has_file,
-                        egui::SelectableLabel::new(self.header_protection, "Protect"),
+                        egui::SelectableLabel::new(self.doc.header_protection, "Protect"),
                     )
                     .on_hover_text("Protect header regions from editing")
                     .clicked()
                 {
-                    self.header_protection = !self.header_protection;
+                    self.doc.header_protection = !self.doc.header_protection;
                 }
 
                 ui.separator();
 
                 // Edit mode selector
                 let current_mode = self
+                    .doc
                     .editor
                     .as_ref()
                     .map(|e| e.edit_mode())
@@ -160,14 +161,14 @@ impl BendApp {
             self.do_redo();
         }
         if actions.create_save_point {
-            if let Some(editor) = &mut self.editor {
+            if let Some(editor) = &mut self.doc.editor {
                 let count = editor.save_points().len();
                 let name = format!("Save Point {}", count + 1);
                 editor.create_save_point(name);
             }
         }
         if actions.add_bookmark {
-            if let Some(editor) = &mut self.editor {
+            if let Some(editor) = &mut self.doc.editor {
                 let cursor_pos = editor.cursor();
                 let name = format!("Bookmark at 0x{:08X}", cursor_pos);
                 editor.add_bookmark(cursor_pos, name);
@@ -177,7 +178,7 @@ impl BendApp {
             self.mark_preview_dirty();
         }
         if let Some(mode) = actions.set_edit_mode {
-            if let Some(editor) = &mut self.editor {
+            if let Some(editor) = &mut self.doc.editor {
                 editor.set_edit_mode(mode);
             }
         }

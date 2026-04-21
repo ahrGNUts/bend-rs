@@ -9,6 +9,7 @@ fn attempt_navigate(app: &mut BendApp) -> Result<(), String> {
     let offset = parse_offset(&app.ui.go_to_offset_state.input_text)?;
 
     let editor = app
+        .doc
         .editor
         .as_mut()
         .ok_or_else(|| "No file loaded".to_string())?;
@@ -62,7 +63,7 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
             }
 
             // Show file size hint if available
-            if let Some(editor) = &app.editor {
+            if let Some(editor) = &app.doc.editor {
                 ui.add_space(4.0);
                 ui.label(
                     egui::RichText::new(format!(

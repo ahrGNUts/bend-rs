@@ -432,10 +432,11 @@ impl<'a> HighlightLookup<'a> {
                 .is_some_and(|m| byte_offset >= m && byte_offset < m + self.pattern_len),
             has_bookmark: self
                 .app
+                .doc
                 .editor
                 .as_ref()
                 .is_some_and(|e| e.has_bookmark_at(byte_offset)),
-            is_protected: self.app.is_offset_protected(byte_offset),
+            is_protected: self.app.doc.is_offset_protected(byte_offset),
             section_bg: self.app.section_color_for_offset(byte_offset),
         }
     }
@@ -444,7 +445,7 @@ impl<'a> HighlightLookup<'a> {
 /// Prepare display state from the current editor state.
 /// Returns None if no editor is loaded.
 fn prepare_display_state(app: &BendApp) -> Option<HexDisplayState> {
-    let editor = app.editor.as_ref()?;
+    let editor = app.doc.editor.as_ref()?;
     let total_bytes = editor.len();
     Some(HexDisplayState {
         total_bytes,
@@ -454,7 +455,7 @@ fn prepare_display_state(app: &BendApp) -> Option<HexDisplayState> {
         selection: editor.selection(),
         edit_mode: editor.edit_mode(),
         write_mode: editor.write_mode(),
-        cursor_protected: app.is_offset_protected(editor.cursor()),
+        cursor_protected: app.doc.is_offset_protected(editor.cursor()),
     })
 }
 
@@ -511,7 +512,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
             ));
         }
 
-        let editor = app.editor.as_ref().unwrap();
+        let editor = app.doc.editor.as_ref().unwrap();
 
         for row_idx in render_start..render_end {
             let offset = row_idx * BYTES_PER_ROW;
@@ -653,7 +654,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
 
     // Handle cursor move (click or drag start)
     if let Some((off, mode)) = cursor_move {
-        if let Some(editor) = &mut app.editor {
+        if let Some(editor) = &mut app.doc.editor {
             editor.set_edit_mode(mode);
             editor.set_cursor_with_selection(off, shift_held);
         }
@@ -666,7 +667,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
 
     // Handle drag extension
     if let Some(off) = drag_current_offset {
-        if let Some(editor) = &mut app.editor {
+        if let Some(editor) = &mut app.doc.editor {
             editor.extend_selection_to(off);
         }
     }
@@ -715,17 +716,18 @@ fn handle_keyboard_input(
 
     // Pre-compute warning state before mutable borrow of editor
     let should_warn_for_cursor = app.should_warn_for_edit(cursor_pos);
-    let cursor_risk_level = app.get_high_risk_level(cursor_pos);
+    let cursor_risk_level = app.doc.get_high_risk_level(cursor_pos);
 
     // Cache edit mode for text input handling
     let current_edit_mode = app
+        .doc
         .editor
         .as_ref()
         .map(|e| e.edit_mode())
         .unwrap_or(EditMode::Hex);
 
     let (pending_high_risk_edit, paste_text, copy_requested) = ui.input_mut(|i| {
-        let Some(editor) = &mut app.editor else {
+        let Some(editor) = &mut app.doc.editor else {
             return (None, None, false);
         };
 
@@ -759,7 +761,7 @@ fn handle_keyboard_input(
     // Handle copy outside the input closure — always override egui's native copy
     // so that only the column matching the current edit mode ends up on the clipboard
     if copy_requested {
-        if let Some(editor) = &app.editor {
+        if let Some(editor) = &app.doc.editor {
             let (start, end) = editor.selection().unwrap_or((cursor_pos, cursor_pos + 1));
             let bytes = editor.bytes_in_range(start, end);
             let formatted = match current_edit_mode {
@@ -773,17 +775,17 @@ fn handle_keyboard_input(
     // Handle paste outside the input closure
     if let Some(text) = paste_text {
         if let Some(bytes) = parse_paste_input(&text, current_edit_mode) {
-            if let Some(editor) = &mut app.editor {
+            if let Some(editor) = &mut app.doc.editor {
                 apply_paste_bytes(editor, cursor_pos, &bytes);
             }
         }
     }
 
     // Check if buffer length changed and invalidate caches
-    if let Some(editor) = &mut app.editor {
+    if let Some(editor) = &mut app.doc.editor {
         if editor.take_length_changed() {
             // Re-parse file structure since offsets shifted
-            app.cached_sections = crate::formats::parse_file(editor.working());
+            app.doc.cached_sections = crate::formats::parse_file(editor.working());
         }
     }
 
@@ -811,6 +813,7 @@ fn show_context_menu(ui: &mut egui::Ui, app: &mut BendApp) {
 
     // Determine if we have a selection or just cursor
     let (start, end) = app
+        .doc
         .editor
         .as_ref()
         .and_then(|e| e.selection())
@@ -880,7 +883,7 @@ fn show_context_menu(ui: &mut egui::Ui, app: &mut BendApp) {
         Some(ContextAction::CopyAscii) => copy_as_ascii(ui, app, target_offset),
         Some(ContextAction::Paste) => paste_hex(ui, app, target_offset),
         Some(ContextAction::AddBookmark) => {
-            if let Some(editor) = &mut app.editor {
+            if let Some(editor) = &mut app.doc.editor {
                 editor.add_bookmark(target_offset, format!("Offset 0x{:X}", target_offset));
             }
         }
@@ -922,7 +925,9 @@ fn format_bytes_as_ascii(bytes: &[u8]) -> String {
 
 /// Copy selected bytes as hex string to clipboard
 fn copy_as_hex(ui: &mut egui::Ui, app: &BendApp, target_offset: usize) {
-    let Some(editor) = &app.editor else { return };
+    let Some(editor) = &app.doc.editor else {
+        return;
+    };
 
     let (start, end) = editor
         .selection()
@@ -933,7 +938,9 @@ fn copy_as_hex(ui: &mut egui::Ui, app: &BendApp, target_offset: usize) {
 
 /// Copy selected bytes as ASCII string to clipboard
 fn copy_as_ascii(ui: &mut egui::Ui, app: &BendApp, target_offset: usize) {
-    let Some(editor) = &app.editor else { return };
+    let Some(editor) = &app.doc.editor else {
+        return;
+    };
 
     let (start, end) = editor
         .selection()
@@ -951,7 +958,7 @@ fn paste_hex(_ui: &mut egui::Ui, app: &mut BendApp, target_offset: usize) {
         return;
     };
 
-    let Some(editor) = &mut app.editor else {
+    let Some(editor) = &mut app.doc.editor else {
         return;
     };
 

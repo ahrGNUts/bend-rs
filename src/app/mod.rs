@@ -10,11 +10,11 @@ mod toolbar;
 
 pub use dialogs::{DialogState, PendingEdit, PendingEditType};
 pub use preview::PreviewState;
-pub use state::{AppConfig, IoState, UiState};
+pub use state::{AppConfig, DocumentState, IoState, UiState};
 
 use crate::editor::buffer::{EditMode, WriteMode};
 use crate::editor::EditorState;
-use crate::formats::{parse_file, FileSection};
+use crate::formats::parse_file;
 use crate::ui::theme::AppColors;
 use crate::ui::{
     bookmarks, go_to_offset_dialog, hex_editor, image_preview, savepoints, search_dialog,
@@ -63,21 +63,8 @@ const WINDOW_RESIZE_DEBOUNCE_MS: u64 = 500;
 /// 4. Export writes the working buffer to a new file
 #[derive(Default)]
 pub struct BendApp {
-    /// Editor state containing buffers, history, and file metadata
-    pub editor: Option<EditorState>,
-
-    /// Path to currently loaded file (for display purposes)
-    pub current_file: Option<PathBuf>,
-
-    /// Image preview state (textures, dirty flag, comparison mode)
-    pub preview: PreviewState,
-
-    /// Cached parsed file sections for structure visualization
-    /// Re-parsed when file is loaded or structure potentially changed
-    pub cached_sections: Option<Vec<FileSection>>,
-
-    /// Whether header protection is enabled (blocks edits to high-risk sections)
-    pub header_protection: bool,
+    /// Document state: loaded editor, current file, preview, sections, header protection
+    pub doc: DocumentState,
 
     /// UI state: colors, dialogs, panel state, pending scroll
     pub ui: UiState,
@@ -99,7 +86,10 @@ impl BendApp {
         let suppress_warnings = !settings.show_high_risk_warnings;
 
         Self {
-            header_protection,
+            doc: DocumentState {
+                header_protection,
+                ..Default::default()
+            },
             ui: UiState {
                 dialogs: DialogState {
                     suppress_high_risk_warnings: suppress_warnings,
@@ -114,14 +104,14 @@ impl BendApp {
 
     /// Perform undo on the active editor (if any)
     pub(super) fn do_undo(&mut self) {
-        if let Some(editor) = &mut self.editor {
+        if let Some(editor) = &mut self.doc.editor {
             let _ = editor.undo();
         }
     }
 
     /// Perform redo on the active editor (if any)
     pub(super) fn do_redo(&mut self) {
-        if let Some(editor) = &mut self.editor {
+        if let Some(editor) = &mut self.doc.editor {
             let _ = editor.redo();
         }
     }
@@ -134,7 +124,7 @@ impl BendApp {
     /// Navigate the editor cursor and hex view to the current search match
     pub fn navigate_to_search_match(&mut self) {
         if let Some(offset) = self.ui.search_state.current_match_offset() {
-            if let Some(editor) = &mut self.editor {
+            if let Some(editor) = &mut self.doc.editor {
                 editor.set_cursor(offset);
             }
             self.scroll_hex_to_offset(offset);
@@ -143,7 +133,7 @@ impl BendApp {
 
     /// Re-execute the current search against the working buffer and record the generation
     pub fn refresh_search(&mut self) {
-        if let Some(editor) = &self.editor {
+        if let Some(editor) = &self.doc.editor {
             let gen = editor.edit_generation();
             crate::editor::search::execute_search(&mut self.ui.search_state, editor.working());
             self.ui.search_state.set_searched_generation(gen);
@@ -152,20 +142,21 @@ impl BendApp {
 
     /// Check if there are unsaved changes
     pub fn has_unsaved_changes(&self) -> bool {
-        self.editor.as_ref().is_some_and(|e| e.is_modified())
+        self.doc.editor.as_ref().is_some_and(|e| e.is_modified())
     }
 
     /// Export the working buffer to a new file (non-blocking)
     pub fn export_file(&mut self, ctx: &egui::Context) {
-        if self.io.is_dialog_pending() || self.editor.is_none() {
+        if self.io.is_dialog_pending() || self.doc.editor.is_none() {
             return;
         }
 
-        let editor = self.editor.as_ref().unwrap();
+        let editor = self.doc.editor.as_ref().unwrap();
         let buffer = editor.working().to_vec();
 
         // Pre-compute filename and extension on main thread
         let default_name = self
+            .doc
             .current_file
             .as_ref()
             .and_then(|p| p.file_stem())
@@ -173,6 +164,7 @@ impl BendApp {
             .unwrap_or_else(|| "export".to_string());
 
         let extension = self
+            .doc
             .current_file
             .as_ref()
             .and_then(|p| p.extension())
@@ -219,7 +211,7 @@ impl BendApp {
     /// Open a file from a path
     pub fn open_file(&mut self, path: PathBuf) {
         if !Self::is_supported_extension(&path) {
-            self.preview.decode_error = Some(
+            self.doc.preview.decode_error = Some(
                 "Unsupported file format. Bend supports BMP (.bmp), JPEG (.jpg, .jpeg), and GIF (.gif) files."
                     .to_string(),
             );
@@ -230,20 +222,20 @@ impl BendApp {
             Ok(bytes) => {
                 log::info!("Loaded file: {} ({} bytes)", path.display(), bytes.len());
                 // Parse file structure for section highlighting
-                self.cached_sections = parse_file(&bytes);
-                self.editor = Some(EditorState::new(bytes));
-                self.current_file = Some(path.clone());
+                self.doc.cached_sections = parse_file(&bytes);
+                self.doc.editor = Some(EditorState::new(bytes));
+                self.doc.current_file = Some(path.clone());
                 self.mark_preview_dirty();
-                self.preview.decode_error = None;
+                self.doc.preview.decode_error = None;
                 // Clear existing textures and animation state
-                self.preview.reset_for_new_file();
+                self.doc.preview.reset_for_new_file();
                 // Add to recent files and save settings
                 self.config.settings.add_recent_file(path);
                 self.config.settings.save();
             }
             Err(e) => {
                 log::error!("Failed to load file: {}", e);
-                self.preview.decode_error = Some(format!("Failed to load file: {}", e));
+                self.doc.preview.decode_error = Some(format!("Failed to load file: {}", e));
             }
         }
     }
@@ -302,10 +294,10 @@ impl BendApp {
                     ui.colored_label(colors.modified_indicator, "\u{25CF} Modified");
                     ui.separator();
                 }
-                if let Some(path) = &self.current_file {
+                if let Some(path) = &self.doc.current_file {
                     ui.label(format!("File: {}", path.display()));
                 }
-                if let Some(editor) = &self.editor {
+                if let Some(editor) = &self.doc.editor {
                     ui.separator();
                     ui.label(format!("{} bytes", editor.working().len()));
                     ui.separator();
@@ -325,7 +317,7 @@ impl BendApp {
                     };
                     ui.label(write_mode_text);
                 }
-                if let Some(err) = &self.preview.decode_error {
+                if let Some(err) = &self.doc.preview.decode_error {
                     ui.separator();
                     ui.colored_label(colors.warning_text, err);
                 }
@@ -335,7 +327,7 @@ impl BendApp {
 
     /// Render the sidebar with structure tree, save points, and bookmarks
     fn render_sidebar(&mut self, ctx: &egui::Context) {
-        if self.editor.is_none() {
+        if self.doc.editor.is_none() {
             return;
         }
 
@@ -380,7 +372,7 @@ impl BendApp {
     /// Render the main content area with hex editor and image preview
     fn render_main_content(&mut self, ctx: &egui::Context) {
         // Hex editor panel (resizable SidePanel, only shown when file is loaded)
-        if self.editor.is_some() {
+        if self.doc.editor.is_some() {
             egui::SidePanel::left("hex_panel")
                 .resizable(true)
                 .default_width(620.0)
@@ -394,7 +386,7 @@ impl BendApp {
 
         // Preview panel (CentralPanel takes remaining space)
         egui::CentralPanel::default().show(ctx, |ui| {
-            if self.editor.is_some() {
+            if self.doc.editor.is_some() {
                 ui.heading("Preview");
                 image_preview::show(ui, self);
             } else {
@@ -544,8 +536,9 @@ mod tests {
         app.open_file(PathBuf::from("/tmp/test.tiff"));
 
         // Should set an error message
-        assert!(app.preview.decode_error.is_some());
+        assert!(app.doc.preview.decode_error.is_some());
         assert!(app
+            .doc
             .preview
             .decode_error
             .as_ref()
@@ -553,8 +546,8 @@ mod tests {
             .contains("Unsupported file format"));
 
         // Should NOT load a file
-        assert!(app.editor.is_none());
-        assert!(app.current_file.is_none());
+        assert!(app.doc.editor.is_none());
+        assert!(app.doc.current_file.is_none());
     }
 
     #[test]

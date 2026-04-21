@@ -107,7 +107,7 @@ impl BendApp {
         // Handle user response
         if should_proceed {
             // Apply the edit based on type
-            if let Some(editor) = &mut self.editor {
+            if let Some(editor) = &mut self.doc.editor {
                 match pending.edit_type {
                     PendingEditType::Nibble(nibble_value) => {
                         let _ = editor.edit_nibble_with_mode(nibble_value);

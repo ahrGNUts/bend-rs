@@ -143,8 +143,8 @@ fn poll_animation_decode(
 impl BendApp {
     /// Mark the preview as needing update (with debounce timestamp)
     pub fn mark_preview_dirty(&mut self) {
-        self.preview.dirty = true;
-        self.preview.last_edit_time = Some(Instant::now());
+        self.doc.preview.dirty = true;
+        self.doc.preview.last_edit_time = Some(Instant::now());
     }
 
     /// Decode image data into an egui texture handle.
@@ -165,7 +165,7 @@ impl BendApp {
     /// Must be called unconditionally from BendApp::update() — not guarded by dirty flag.
     pub fn advance_animation(&mut self, ctx: &egui::Context) {
         // Poll pending background animation decode (working buffer)
-        if let Some(result) = poll_animation_decode(&mut self.preview.pending_animation) {
+        if let Some(result) = poll_animation_decode(&mut self.doc.preview.pending_animation) {
             match result {
                 Ok((frames, delays)) => {
                     if frames.len() > 1 {
@@ -184,14 +184,15 @@ impl BendApp {
 
                         // Preserve playback state from previous animation
                         let (current_frame, playing) = self
+                            .doc
                             .preview
                             .animation
                             .as_ref()
                             .map(|a| (a.current_frame.min(frames.len() - 1), a.playing))
                             .unwrap_or((0, true));
 
-                        self.preview.texture = Some(textures[current_frame].clone());
-                        self.preview.animation = Some(AnimationState {
+                        self.doc.preview.texture = Some(textures[current_frame].clone());
+                        self.doc.preview.animation = Some(AnimationState {
                             textures,
                             frames,
                             delays,
@@ -206,20 +207,22 @@ impl BendApp {
                             frames[0].clone(),
                             egui::TextureOptions::LINEAR,
                         );
-                        self.preview.texture = Some(texture);
-                        self.preview.animation = None;
+                        self.doc.preview.texture = Some(texture);
+                        self.doc.preview.animation = None;
                     }
-                    self.preview.decode_error = None;
+                    self.doc.preview.decode_error = None;
                 }
                 Err(e) => {
                     log::warn!("Background animated GIF decode failed: {}", e);
-                    self.preview.decode_error = Some(format!("Decode error: {}", e));
+                    self.doc.preview.decode_error = Some(format!("Decode error: {}", e));
                 }
             }
         }
 
         // Poll pending background original animation decode
-        if let Some(result) = poll_animation_decode(&mut self.preview.pending_original_animation) {
+        if let Some(result) =
+            poll_animation_decode(&mut self.doc.preview.pending_original_animation)
+        {
             match result {
                 Ok((frames, delays)) => {
                     if frames.len() > 1 {
@@ -236,8 +239,8 @@ impl BendApp {
                             })
                             .collect();
 
-                        self.preview.original_texture = Some(textures[0].clone());
-                        self.preview.original_animation = Some(AnimationState {
+                        self.doc.preview.original_texture = Some(textures[0].clone());
+                        self.doc.preview.original_animation = Some(AnimationState {
                             textures,
                             frames,
                             delays,
@@ -251,7 +254,7 @@ impl BendApp {
                             frames[0].clone(),
                             egui::TextureOptions::LINEAR,
                         );
-                        self.preview.original_texture = Some(texture);
+                        self.doc.preview.original_texture = Some(texture);
                     }
                 }
                 Err(e) => {
@@ -261,9 +264,9 @@ impl BendApp {
         }
 
         // Advance working buffer animation — swap pre-uploaded texture handle (Arc clone)
-        if let Some(anim) = &mut self.preview.animation {
+        if let Some(anim) = &mut self.doc.preview.animation {
             if advance_single_animation(anim) {
-                self.preview.texture = Some(anim.textures[anim.current_frame].clone());
+                self.doc.preview.texture = Some(anim.textures[anim.current_frame].clone());
             }
             if anim.playing {
                 ctx.request_repaint_after(remaining_frame_delay(anim));
@@ -271,9 +274,9 @@ impl BendApp {
         }
 
         // Advance original buffer animation (comparison mode)
-        if let Some(anim) = &mut self.preview.original_animation {
+        if let Some(anim) = &mut self.doc.preview.original_animation {
             if advance_single_animation(anim) {
-                self.preview.original_texture = Some(anim.textures[anim.current_frame].clone());
+                self.doc.preview.original_texture = Some(anim.textures[anim.current_frame].clone());
             }
             if anim.playing {
                 ctx.request_repaint_after(remaining_frame_delay(anim));
@@ -282,12 +285,12 @@ impl BendApp {
 
         // Ensure original is loaded when comparison mode is enabled
         // (handles the case where comparison is toggled on after initial load)
-        if self.preview.comparison_mode
-            && self.preview.original_animation.is_none()
-            && self.preview.pending_original_animation.is_none()
-            && self.preview.original_texture.is_none()
+        if self.doc.preview.comparison_mode
+            && self.doc.preview.original_animation.is_none()
+            && self.doc.preview.pending_original_animation.is_none()
+            && self.doc.preview.original_texture.is_none()
         {
-            if let Some(editor) = &self.editor {
+            if let Some(editor) = &self.doc.editor {
                 let original_data = editor.original().to_vec();
                 if crate::formats::is_animated_format(&original_data) {
                     let (tx, rx) = mpsc::channel();
@@ -295,11 +298,11 @@ impl BendApp {
                         let result = decode_animated_gif(&original_data);
                         let _ = tx.send(result);
                     });
-                    self.preview.pending_original_animation = Some(rx);
+                    self.doc.preview.pending_original_animation = Some(rx);
                 } else {
                     // Static original — decode directly
                     if let Ok(texture) = Self::decode_to_texture(ctx, &original_data, "original") {
-                        self.preview.original_texture = Some(texture);
+                        self.doc.preview.original_texture = Some(texture);
                     }
                 }
             }
@@ -309,12 +312,12 @@ impl BendApp {
     /// Update the image preview texture from the working buffer
     /// Uses debouncing to prevent excessive re-renders during rapid editing
     pub fn update_preview(&mut self, ctx: &egui::Context) {
-        if !self.preview.dirty {
+        if !self.doc.preview.dirty {
             return;
         }
 
         // Debounce: wait for edits to settle before re-rendering
-        if let Some(edit_time) = self.preview.last_edit_time {
+        if let Some(edit_time) = self.doc.preview.last_edit_time {
             let elapsed = edit_time.elapsed();
             let debounce_duration = std::time::Duration::from_millis(PREVIEW_DEBOUNCE_MS);
             if elapsed < debounce_duration {
@@ -325,7 +328,7 @@ impl BendApp {
             }
         }
 
-        let Some(editor) = &self.editor else {
+        let Some(editor) = &self.doc.editor else {
             return;
         };
 
@@ -341,15 +344,15 @@ impl BendApp {
                 let _ = tx.send(result);
             });
             // TODO: Consider adding Arc<AtomicBool> cancellation for long-running decodes
-            if self.preview.pending_animation.is_some() {
+            if self.doc.preview.pending_animation.is_some() {
                 log::debug!("Superseding in-flight animation decode with new request");
             }
-            self.preview.pending_animation = Some(rx);
+            self.doc.preview.pending_animation = Some(rx);
 
             // Also decode original for comparison if needed (on background thread)
-            if self.preview.comparison_mode
-                && self.preview.original_animation.is_none()
-                && self.preview.pending_original_animation.is_none()
+            if self.doc.preview.comparison_mode
+                && self.doc.preview.original_animation.is_none()
+                && self.doc.preview.pending_original_animation.is_none()
             {
                 let original_data = editor.original().to_vec();
                 if crate::formats::is_animated_format(&original_data) {
@@ -358,66 +361,66 @@ impl BendApp {
                         let result = decode_animated_gif(&original_data);
                         let _ = tx.send(result);
                     });
-                    self.preview.pending_original_animation = Some(rx);
+                    self.doc.preview.pending_original_animation = Some(rx);
                 }
             }
         } else {
             // Non-GIF: use existing static decode path
             match Self::decode_to_texture(ctx, working, "preview") {
                 Ok(texture) => {
-                    self.preview.texture = Some(texture);
-                    self.preview.decode_error = None;
+                    self.doc.preview.texture = Some(texture);
+                    self.doc.preview.decode_error = None;
                 }
                 Err(e) => {
                     log::warn!("Failed to decode image: {}", e);
-                    self.preview.decode_error = Some(format!("Decode error: {}", e));
+                    self.doc.preview.decode_error = Some(format!("Decode error: {}", e));
                     // Keep the old texture as "last valid state"
                 }
             }
 
             // Clear any stale animation state
-            self.preview.animation = None;
-            self.preview.original_animation = None;
+            self.doc.preview.animation = None;
+            self.doc.preview.original_animation = None;
 
             // Also update original texture if not yet loaded
-            if self.preview.original_texture.is_none() {
+            if self.doc.preview.original_texture.is_none() {
                 if let Ok(texture) = Self::decode_to_texture(ctx, editor.original(), "original") {
-                    self.preview.original_texture = Some(texture);
+                    self.doc.preview.original_texture = Some(texture);
                 }
             }
         }
 
-        self.preview.dirty = false;
+        self.doc.preview.dirty = false;
     }
 
     /// Set the animation to a specific frame (used by UI controls).
     /// Uses pre-uploaded GPU texture handles — no per-frame upload needed.
     pub fn set_animation_frame(&mut self, frame_index: usize) {
-        if let Some(anim) = &mut self.preview.animation {
+        if let Some(anim) = &mut self.doc.preview.animation {
             let idx = frame_index.min(anim.frames.len().saturating_sub(1));
             anim.current_frame = idx;
             anim.last_frame_time = Instant::now();
-            self.preview.texture = Some(anim.textures[idx].clone());
+            self.doc.preview.texture = Some(anim.textures[idx].clone());
         }
 
         // Sync original animation if in comparison mode
-        if let Some(anim) = &mut self.preview.original_animation {
+        if let Some(anim) = &mut self.doc.preview.original_animation {
             let idx = frame_index.min(anim.frames.len().saturating_sub(1));
             anim.current_frame = idx;
             anim.last_frame_time = Instant::now();
-            self.preview.original_texture = Some(anim.textures[idx].clone());
+            self.doc.preview.original_texture = Some(anim.textures[idx].clone());
         }
     }
 
     /// Toggle play/pause for animation
     pub fn toggle_animation_playback(&mut self) {
-        if let Some(anim) = &mut self.preview.animation {
+        if let Some(anim) = &mut self.doc.preview.animation {
             anim.playing = !anim.playing;
             if anim.playing {
                 anim.last_frame_time = Instant::now();
             }
         }
-        if let Some(anim) = &mut self.preview.original_animation {
+        if let Some(anim) = &mut self.doc.preview.original_animation {
             anim.playing = !anim.playing;
             if anim.playing {
                 anim.last_frame_time = Instant::now();
@@ -427,10 +430,10 @@ impl BendApp {
 
     /// Pause animation (used when stepping frame-by-frame)
     pub fn pause_animation(&mut self) {
-        if let Some(anim) = &mut self.preview.animation {
+        if let Some(anim) = &mut self.doc.preview.animation {
             anim.playing = false;
         }
-        if let Some(anim) = &mut self.preview.original_animation {
+        if let Some(anim) = &mut self.doc.preview.original_animation {
             anim.playing = false;
         }
     }
