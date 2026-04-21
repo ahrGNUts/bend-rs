@@ -11,20 +11,20 @@ Scope note: the real duplication between hex and ASCII rendering is narrower tha
 - [x] 1.6 `cargo build` + `cargo test` (204 tests pass)
 
 ## 2. Introduce RowResult and pure row rendering
-- [ ] 2.1 Define `struct RowResult { cursor_move: Option<(usize, EditMode)>, start_drag: bool, drag_current_offset: Option<usize>, context_menu_offset: Option<usize> }` with `Default`
-- [ ] 2.2 Write `fn render_row(ui, row_idx, state: &DisplayState, colors: &AppColors, highlights: &HighlightLookup, ...) -> RowResult`
-- [ ] 2.3 Move hex-column rendering from the `show()` closure into `render_row`
-- [ ] 2.4 Move ASCII-column rendering from the `show()` closure into `render_row`
-- [ ] 2.5 Ensure `render_row` performs NO editor state mutations — only reads and event collection
-- [ ] 2.6 `cargo build` + visual smoke test
+- [x] 2.1 Defined `RowResult { cursor_move, start_drag, drag_current_offset, context_menu_offset }` with `Default` and `merge()` (last-value-wins — matches the original loop's plain-assignment semantics)
+- [x] 2.2 Added `PointerContext { pointer_pos, primary_down, drag_active }` so `render_row` sees a consistent snapshot
+- [x] 2.3 Wrote `render_row(ui, row_idx, state, editor, colors, highlights, pointer, scroll_to_me) -> RowResult` containing the hex-column rendering
+- [x] 2.4 Same function renders the ASCII column (pipes, padding for incomplete last rows, pointer-to-byte mapping)
+- [x] 2.5 `render_row` takes `&EditorState` (immutable) — no editor mutations in the render path; events are collected into `RowResult`
+- [x] 2.6 `cargo build` + `cargo test` pass
 
 ## 3. Extract interaction handler
-- [ ] 3.1 Write `fn handle_row_interactions(result: RowResult, editor: &mut EditorState, ui_state: &mut UiState, shift_held: bool)`
-- [ ] 3.2 Move click, drag-start, drag-continue, secondary-click, and context-menu logic from the `show()` closure into this function
-- [ ] 3.3 Preserve drag-select behavior from commit 2cef50a (highlights both columns)
-- [ ] 3.4 Preserve edit-mode-aware copy/paste from commit 2cef50a
-- [ ] 3.5 Preserve non-selectable ASCII pipe borders from commit 6b4fdaf
-- [ ] 3.6 Preserve ASCII alignment on incomplete last row from commit 37e8e65
+- [x] 3.1 Wrote `handle_row_interactions(ui, app, result, shift_held, drag_id, primary_down)` (takes `&mut BendApp` because it mutates both `doc.editor` and `ui.context_menu_state`; threading those as narrow substate refs is a job for a follow-up once we decide whether drag_id management belongs in `UiState`)
+- [x] 3.2 Moved cursor-move, drag-start, drag-extend, drag-release, and context-menu logic out of the `show()` closure body
+- [x] 3.3 Drag-select behavior (commit 2cef50a) preserved — `drag_current_offset` is still set from both columns using press_origin for ASCII
+- [x] 3.4 Edit-mode-aware copy/paste (commit 2cef50a) preserved — unchanged; lives in `handle_keyboard_input`
+- [x] 3.5 Non-selectable ASCII pipe borders (commit 6b4fdaf) preserved — `render_row` emits the same bracketing labels with `.selectable(false)`
+- [x] 3.6 ASCII alignment on incomplete last row (commit 37e8e65) preserved — `render_row` still pads hex with transparent labels when `row_bytes.len() < BYTES_PER_ROW`
 
 ## 4. Shrink show() to orchestrator
 - [ ] 4.1 Rewrite `show()` as: prepare state → compute scroll target → build `ScrollArea` → in `show_viewport`, loop visible rows calling `render_row`, accumulating a `Vec<RowResult>` (or folding a single `RowResult`) → after the loop, call `handle_row_interactions`

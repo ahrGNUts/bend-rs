@@ -404,6 +404,48 @@ fn handle_edit_input(
     (pending_high_risk_edit, paste_text)
 }
 
+/// Snapshot of pointer state passed into `render_row` so the pure render
+/// function can detect drag-over targets without re-reading `ui.input`.
+struct PointerContext {
+    pointer_pos: Option<egui::Pos2>,
+    primary_down: bool,
+    drag_active: bool,
+}
+
+/// Input events detected while rendering one row. `render_row` returns this
+/// without mutating editor state; `handle_row_interactions` applies it afterward.
+#[derive(Default)]
+struct RowResult {
+    /// Byte offset the user clicked or drag-started on, with the originating column.
+    cursor_move: Option<(usize, EditMode)>,
+    /// True if a drag just started on this row.
+    start_drag: bool,
+    /// The byte offset the pointer is over during an active drag (for selection extension).
+    drag_current_offset: Option<usize>,
+    /// The byte offset of a secondary-click target (for opening the context menu).
+    context_menu_offset: Option<usize>,
+}
+
+impl RowResult {
+    /// Fold another row's result into this accumulator. Later non-empty values
+    /// overwrite earlier ones (last-click-wins, which matches the original
+    /// loop's plain-assignment behavior).
+    fn merge(&mut self, other: RowResult) {
+        if other.cursor_move.is_some() {
+            self.cursor_move = other.cursor_move;
+        }
+        if other.start_drag {
+            self.start_drag = true;
+        }
+        if other.drag_current_offset.is_some() {
+            self.drag_current_offset = other.drag_current_offset;
+        }
+        if other.context_menu_offset.is_some() {
+            self.context_menu_offset = other.context_menu_offset;
+        }
+    }
+}
+
 /// Cached display state for the hex editor, read from BendApp once per frame
 struct HexDisplayState {
     total_bytes: usize,
@@ -472,32 +514,168 @@ fn prepare_display_state(app: &BendApp) -> Option<HexDisplayState> {
     })
 }
 
-/// Show the hex editor panel
+/// Render one row (offset column + hex bytes + ASCII column) without mutating
+/// editor state. Input events are collected into a `RowResult` so the caller
+/// can apply them in a single pass after the whole scroll area has painted.
+fn render_row(
+    ui: &mut egui::Ui,
+    row_idx: usize,
+    state: &HexDisplayState,
+    editor: &crate::editor::EditorState,
+    colors: &AppColors,
+    highlights: &HighlightLookup,
+    pointer: &PointerContext,
+    scroll_to_me: bool,
+) -> RowResult {
+    let offset = row_idx * BYTES_PER_ROW;
+    let row_end = (offset + BYTES_PER_ROW).min(state.total_bytes);
+    let row_bytes = editor.bytes_in_range(offset, row_end);
+    let mut result = RowResult::default();
+
+    let row_response = ui.horizontal(|ui| {
+        // Offset column
+        ui.add(
+            egui::Label::new(RichText::new(format!("{:08X}", offset)).monospace())
+                .selectable(false),
+        );
+        ui.add_space(OFFSET_HEX_SPACING);
+
+        // Hex bytes
+        for (i, byte) in row_bytes.iter().enumerate() {
+            if i == 8 {
+                ui.add_space(HEX_GROUP_SPACING);
+            }
+            let byte_offset = offset + i;
+            let highlight = highlights.byte_highlight(byte_offset, state);
+            let response = render_hex_byte(
+                ui,
+                *byte,
+                &highlight,
+                state.cursor_nibble,
+                state.edit_mode,
+                state.write_mode,
+                colors,
+            );
+            if response.clicked() {
+                result.cursor_move = Some((byte_offset, EditMode::Hex));
+            }
+            if response.drag_started_by(egui::PointerButton::Primary) {
+                result.cursor_move = Some((byte_offset, EditMode::Hex));
+                result.start_drag = true;
+            }
+            if pointer.primary_down && pointer.drag_active {
+                if let Some(pos) = pointer.pointer_pos {
+                    if response.rect.contains(pos) {
+                        result.drag_current_offset = Some(byte_offset);
+                    }
+                }
+            }
+            if response.secondary_clicked() {
+                result.context_menu_offset = Some(byte_offset);
+            }
+        }
+
+        // Pad remaining space if row is incomplete (keeps ASCII column aligned).
+        for i in row_bytes.len()..BYTES_PER_ROW {
+            if i == 8 {
+                ui.add_space(HEX_GROUP_SPACING);
+            }
+            ui.add(
+                egui::Label::new(
+                    RichText::new("  ")
+                        .monospace()
+                        .color(egui::Color32::TRANSPARENT),
+                )
+                .selectable(false),
+            );
+        }
+        ui.add_space(HEX_ASCII_SPACING);
+
+        // ASCII column — bracketed by non-selectable "|" pipes (commit 6b4fdaf).
+        ui.spacing_mut().item_spacing.x = 0.0;
+        ui.add(egui::Label::new(RichText::new("|").monospace()).selectable(false));
+        let (ascii_resp, _ascii_click, ascii_ctx) =
+            render_ascii_row(ui, &row_bytes, offset, state, colors);
+        if let Some(off) = ascii_ctx {
+            result.context_menu_offset = Some(off);
+        }
+        // ASCII click/drag: map pointer x to a char index within the row.
+        let ascii_byte_at_pointer = |pos: egui::Pos2| -> Option<usize> {
+            if !ascii_resp.rect.contains(pos) {
+                return None;
+            }
+            let char_width = ascii_resp.rect.width() / BYTES_PER_ROW as f32;
+            let char_idx = ((pos.x - ascii_resp.rect.min.x) / char_width).floor() as usize;
+            if char_idx < row_bytes.len() {
+                Some(offset + char_idx)
+            } else {
+                None
+            }
+        };
+        if ascii_resp.clicked() {
+            if let Some(pos) = ascii_resp.interact_pointer_pos() {
+                if let Some(byte_offset) = ascii_byte_at_pointer(pos) {
+                    result.cursor_move = Some((byte_offset, EditMode::Ascii));
+                }
+            }
+        }
+        // Drag started — use press_origin rather than the current pointer
+        // position: on the frame drag_started fires, the pointer may already
+        // have moved to a different row, which would fall outside this row's
+        // rect and the drag would silently never start.
+        if ascii_resp.drag_started_by(egui::PointerButton::Primary) {
+            if let Some(press_pos) = ui.input(|i| i.pointer.press_origin()) {
+                if let Some(byte_offset) = ascii_byte_at_pointer(press_pos) {
+                    result.cursor_move = Some((byte_offset, EditMode::Ascii));
+                    result.start_drag = true;
+                }
+            }
+        }
+        if pointer.primary_down && pointer.drag_active {
+            if let Some(pos) = pointer.pointer_pos {
+                if let Some(byte_offset) = ascii_byte_at_pointer(pos) {
+                    result.drag_current_offset = Some(byte_offset);
+                }
+            }
+        }
+        ui.add(egui::Label::new(RichText::new("|").monospace()).selectable(false));
+    });
+
+    if scroll_to_me {
+        row_response
+            .response
+            .scroll_to_me(Some(egui::Align::Center));
+    }
+
+    result
+}
+
+/// Show the hex editor panel.
+/// Orchestrator: snapshot frame inputs → compute scroll target → run virtual
+/// scrolling, calling `render_row` per visible row → apply the merged
+/// `RowResult` → handle keyboard input → show context menu.
 pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
     let Some(state) = prepare_display_state(app) else {
         return;
     };
 
     let row_height = ui.text_style_height(&TextStyle::Monospace);
-
     let shift_held = ui.input(|i| i.modifiers.shift);
-    let mut context_menu_offset: Option<usize> = None;
 
-    // Pointer state for drag-to-select
-    let pointer_pos = ui.input(|i| i.pointer.latest_pos());
-    let primary_down = ui.input(|i| i.pointer.primary_down());
+    // Snapshot pointer + drag state once so `render_row` sees a consistent view.
     let drag_id = egui::Id::new("hex_editor_drag");
-    let drag_active: bool = ui.data(|d| d.get_temp(drag_id).unwrap_or(false));
-    let mut cursor_move: Option<(usize, EditMode)> = None;
-    let mut start_drag = false;
-    let mut drag_current_offset: Option<usize> = None;
+    let pointer = PointerContext {
+        pointer_pos: ui.input(|i| i.pointer.latest_pos()),
+        primary_down: ui.input(|i| i.pointer.primary_down()),
+        drag_active: ui.data(|d| d.get_temp(drag_id).unwrap_or(false)),
+    };
 
+    // Take the pending scroll target so we don't re-scroll on the next frame.
     let scroll_to_row: Option<usize> = app
         .ui
         .pending_hex_scroll
         .take()
         .map(|byte_offset| byte_offset / BYTES_PER_ROW);
-
     let initial_scroll_offset: Option<f32> = scroll_to_row.map(|target_row| {
         (target_row.saturating_sub(SCROLL_BUFFER_ROWS) as f32 * row_height).max(0.0)
     });
@@ -510,11 +688,11 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
         scroll_area = scroll_area.vertical_scroll_offset(offset_y);
     }
 
+    let mut result = RowResult::default();
     scroll_area.show_viewport(ui, |ui, viewport| {
         let first_visible_row = (viewport.min.y / row_height).floor() as usize;
         let last_visible_row =
             ((viewport.max.y / row_height).ceil() as usize).min(state.total_rows);
-
         let render_start = first_visible_row.saturating_sub(BUFFER_ROWS);
         let render_end = (last_visible_row + BUFFER_ROWS).min(state.total_rows);
 
@@ -526,136 +704,20 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
         }
 
         let editor = app.doc.editor.as_ref().unwrap();
-
         for row_idx in render_start..render_end {
-            let offset = row_idx * BYTES_PER_ROW;
-            let row_end = (offset + BYTES_PER_ROW).min(state.total_bytes);
-            let row_bytes = editor.bytes_in_range(offset, row_end);
-            let should_scroll_to_this_row = scroll_to_row == Some(row_idx);
-
-            let row_response = ui.horizontal(|ui| {
-                // Offset column
-                ui.add(
-                    egui::Label::new(RichText::new(format!("{:08X}", offset)).monospace())
-                        .selectable(false),
-                );
-                ui.add_space(OFFSET_HEX_SPACING);
-
-                // Hex bytes
-                for (i, byte) in row_bytes.iter().enumerate() {
-                    if i == 8 {
-                        ui.add_space(HEX_GROUP_SPACING);
-                    }
-                    let byte_offset = offset + i;
-                    let highlight = highlights.byte_highlight(byte_offset, &state);
-                    let response = render_hex_byte(
-                        ui,
-                        *byte,
-                        &highlight,
-                        state.cursor_nibble,
-                        state.edit_mode,
-                        state.write_mode,
-                        &colors,
-                    );
-                    // Click (no drag) - move cursor
-                    if response.clicked() {
-                        cursor_move = Some((byte_offset, EditMode::Hex));
-                    }
-                    // Drag started - move cursor and begin drag selection
-                    if response.drag_started_by(egui::PointerButton::Primary) {
-                        cursor_move = Some((byte_offset, EditMode::Hex));
-                        start_drag = true;
-                    }
-                    // During drag - detect which byte the pointer is currently over
-                    if primary_down && drag_active {
-                        if let Some(pos) = pointer_pos {
-                            if response.rect.contains(pos) {
-                                drag_current_offset = Some(byte_offset);
-                            }
-                        }
-                    }
-                    if response.secondary_clicked() {
-                        context_menu_offset = Some(byte_offset);
-                    }
-                }
-
-                // Pad remaining space if row is incomplete
-                for i in row_bytes.len()..BYTES_PER_ROW {
-                    if i == 8 {
-                        ui.add_space(HEX_GROUP_SPACING);
-                    }
-                    ui.add(
-                        egui::Label::new(
-                            RichText::new("  ")
-                                .monospace()
-                                .color(egui::Color32::TRANSPARENT),
-                        )
-                        .selectable(false),
-                    );
-                }
-                ui.add_space(HEX_ASCII_SPACING);
-
-                // ASCII column
-                ui.spacing_mut().item_spacing.x = 0.0;
-                ui.add(egui::Label::new(RichText::new("|").monospace()).selectable(false));
-                let (ascii_resp, _ascii_click, ascii_ctx) =
-                    render_ascii_row(ui, &row_bytes, offset, &state, &colors);
-                if let Some(off) = ascii_ctx {
-                    context_menu_offset = Some(off);
-                }
-                // ASCII click/drag: map pointer x to a char index within the row
-                let ascii_byte_at_pointer = |pos: egui::Pos2| -> Option<usize> {
-                    if !ascii_resp.rect.contains(pos) {
-                        return None;
-                    }
-                    let char_width = ascii_resp.rect.width() / BYTES_PER_ROW as f32;
-                    let char_idx = ((pos.x - ascii_resp.rect.min.x) / char_width).floor() as usize;
-                    if char_idx < row_bytes.len() {
-                        Some(offset + char_idx)
-                    } else {
-                        None
-                    }
-                };
-                // Click (no drag) - move cursor
-                if ascii_resp.clicked() {
-                    if let Some(pos) = ascii_resp.interact_pointer_pos() {
-                        if let Some(byte_offset) = ascii_byte_at_pointer(pos) {
-                            cursor_move = Some((byte_offset, EditMode::Ascii));
-                        }
-                    }
-                }
-                // Drag started - move cursor and begin drag selection.
-                // Use press_origin rather than the current pointer position: on the
-                // frame drag_started fires, the pointer may already have moved to a
-                // different row, which would fall outside this row's rect and the
-                // drag would silently never start.
-                if ascii_resp.drag_started_by(egui::PointerButton::Primary) {
-                    if let Some(press_pos) = ui.input(|i| i.pointer.press_origin()) {
-                        if let Some(byte_offset) = ascii_byte_at_pointer(press_pos) {
-                            cursor_move = Some((byte_offset, EditMode::Ascii));
-                            start_drag = true;
-                        }
-                    }
-                }
-                // During drag - detect which byte the pointer is currently over
-                if primary_down && drag_active {
-                    if let Some(pos) = pointer_pos {
-                        if let Some(byte_offset) = ascii_byte_at_pointer(pos) {
-                            drag_current_offset = Some(byte_offset);
-                        }
-                    }
-                }
-                ui.add(egui::Label::new(RichText::new("|").monospace()).selectable(false));
-            });
-
-            if should_scroll_to_this_row {
-                row_response
-                    .response
-                    .scroll_to_me(Some(egui::Align::Center));
-            }
+            let row_result = render_row(
+                ui,
+                row_idx,
+                &state,
+                editor,
+                &colors,
+                &highlights,
+                &pointer,
+                scroll_to_row == Some(row_idx),
+            );
+            result.merge(row_result);
         }
 
-        // Reserve space for rows after visible area
         let rows_after = state.total_rows.saturating_sub(render_end);
         if rows_after > 0 {
             ui.allocate_space(egui::vec2(
@@ -665,32 +727,8 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
         }
     });
 
-    // Handle cursor move (click or drag start)
-    if let Some((off, mode)) = cursor_move {
-        if let Some(editor) = &mut app.doc.editor {
-            editor.set_edit_mode(mode);
-            editor.set_cursor_with_selection(off, shift_held);
-        }
-    }
+    handle_row_interactions(ui, app, result, shift_held, drag_id, pointer.primary_down);
 
-    // Mark drag active when a drag just started
-    if start_drag {
-        ui.data_mut(|d| d.insert_temp(drag_id, true));
-    }
-
-    // Handle drag extension
-    if let Some(off) = drag_current_offset {
-        if let Some(editor) = &mut app.doc.editor {
-            editor.extend_selection_to(off);
-        }
-    }
-
-    // Clear drag state on pointer release
-    if !primary_down {
-        ui.data_mut(|d| d.insert_temp::<bool>(drag_id, false));
-    }
-
-    // Handle keyboard input
     let keyboard_result = handle_keyboard_input(ui, app, state.cursor_pos, state.cursor_protected);
     if let Some((edit_type, offset, risk_level)) = keyboard_result.pending_high_risk_edit {
         app.ui.dialogs.pending_high_risk_edit = Some(crate::app::PendingEdit {
@@ -700,11 +738,40 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
         });
     }
 
-    // Handle context menu
-    if let Some(offset) = context_menu_offset {
+    show_context_menu(ui, app);
+}
+
+/// Apply a `RowResult` (click, drag start/extend, secondary click, context
+/// menu target) to editor + UI state. Runs after the scroll area has painted,
+/// so mutating the editor here doesn't invalidate any per-frame read state.
+fn handle_row_interactions(
+    ui: &mut egui::Ui,
+    app: &mut BendApp,
+    result: RowResult,
+    shift_held: bool,
+    drag_id: egui::Id,
+    primary_down: bool,
+) {
+    if let Some((off, mode)) = result.cursor_move {
+        if let Some(editor) = &mut app.doc.editor {
+            editor.set_edit_mode(mode);
+            editor.set_cursor_with_selection(off, shift_held);
+        }
+    }
+    if result.start_drag {
+        ui.data_mut(|d| d.insert_temp(drag_id, true));
+    }
+    if let Some(off) = result.drag_current_offset {
+        if let Some(editor) = &mut app.doc.editor {
+            editor.extend_selection_to(off);
+        }
+    }
+    if !primary_down {
+        ui.data_mut(|d| d.insert_temp::<bool>(drag_id, false));
+    }
+    if let Some(offset) = result.context_menu_offset {
         app.ui.context_menu_state.target_offset = Some(offset);
     }
-    show_context_menu(ui, app);
 }
 
 /// Result of keyboard input handling
