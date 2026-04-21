@@ -319,8 +319,20 @@ fn handle_navigation_keys(editor: &mut crate::editor::EditorState, i: &egui::Inp
     }
 }
 
+/// Collected result of one frame of hex-editor edit input (text entry,
+/// backspace, delete, paste). Named fields rather than a tuple so callers
+/// read intent at the use site.
+#[derive(Default)]
+struct EditInputResult {
+    /// A high-risk edit the user attempted that now needs confirmation.
+    pending_high_risk_edit: Option<(PendingEditType, usize, RiskLevel)>,
+    /// Clipboard text pasted this frame, to be parsed and applied outside the
+    /// `ui.input_mut` closure (so we can take a `&mut editor` without borrow
+    /// conflicts).
+    paste_text: Option<String>,
+}
+
 /// Handle edit input: text entry, backspace, delete, and paste.
-/// Returns (pending_high_risk_edit, paste_text).
 fn handle_edit_input(
     editor: &mut crate::editor::EditorState,
     i: &mut egui::InputState,
@@ -329,19 +341,19 @@ fn handle_edit_input(
     should_warn_for_cursor: bool,
     cursor_risk_level: Option<RiskLevel>,
     current_edit_mode: EditMode,
-) -> (Option<(PendingEditType, usize, RiskLevel)>, Option<String>) {
-    let mut pending_high_risk_edit: Option<(PendingEditType, usize, RiskLevel)> = None;
-    let mut paste_text: Option<String> = None;
+) -> EditInputResult {
+    let mut result = EditInputResult::default();
 
     if cursor_protected {
-        return (pending_high_risk_edit, paste_text);
+        return result;
     }
 
     // Backspace key
     if i.key_pressed(egui::Key::Backspace) {
         if should_warn_for_cursor && editor.write_mode() == WriteMode::Insert {
             if let Some(risk) = cursor_risk_level {
-                pending_high_risk_edit = Some((PendingEditType::Backspace, cursor_pos, risk));
+                result.pending_high_risk_edit =
+                    Some((PendingEditType::Backspace, cursor_pos, risk));
             }
         } else {
             editor.handle_backspace();
@@ -351,7 +363,7 @@ fn handle_edit_input(
     if i.key_pressed(egui::Key::Delete) {
         if should_warn_for_cursor && editor.write_mode() == WriteMode::Insert {
             if let Some(risk) = cursor_risk_level {
-                pending_high_risk_edit = Some((PendingEditType::Delete, cursor_pos, risk));
+                result.pending_high_risk_edit = Some((PendingEditType::Delete, cursor_pos, risk));
             }
         } else {
             editor.handle_delete();
@@ -367,7 +379,7 @@ fn handle_edit_input(
                             if let Some(nibble) = c.to_digit(16) {
                                 if should_warn_for_cursor {
                                     if let Some(risk) = cursor_risk_level {
-                                        pending_high_risk_edit = Some((
+                                        result.pending_high_risk_edit = Some((
                                             PendingEditType::Nibble(nibble as u8),
                                             cursor_pos,
                                             risk,
@@ -383,7 +395,7 @@ fn handle_edit_input(
                             if is_printable_ascii_char(c) {
                                 if should_warn_for_cursor {
                                     if let Some(risk) = cursor_risk_level {
-                                        pending_high_risk_edit =
+                                        result.pending_high_risk_edit =
                                             Some((PendingEditType::Ascii(c), cursor_pos, risk));
                                     }
                                 } else {
@@ -395,13 +407,13 @@ fn handle_edit_input(
                 }
             }
             egui::Event::Paste(text) => {
-                paste_text = Some(text.clone());
+                result.paste_text = Some(text.clone());
             }
             _ => {}
         }
     }
 
-    (pending_high_risk_edit, paste_text)
+    result
 }
 
 /// Snapshot of pointer state passed into `render_row` so the pure render
@@ -806,9 +818,9 @@ fn handle_keyboard_input(
         .map(|e| e.edit_mode())
         .unwrap_or(EditMode::Hex);
 
-    let (pending_high_risk_edit, paste_text, copy_requested) = ui.input_mut(|i| {
+    let (edit_result, copy_requested) = ui.input_mut(|i| {
         let Some(editor) = &mut app.doc.editor else {
-            return (None, None, false);
+            return (EditInputResult::default(), false);
         };
 
         let ctrl = i.modifiers.ctrl || i.modifiers.mac_cmd;
@@ -826,7 +838,7 @@ fn handle_keyboard_input(
         handle_navigation_keys(editor, i);
 
         // Edit input (text entry, backspace, delete, paste)
-        let (edit, paste) = handle_edit_input(
+        let edit_result = handle_edit_input(
             editor,
             i,
             cursor_pos,
@@ -835,7 +847,7 @@ fn handle_keyboard_input(
             cursor_risk_level,
             current_edit_mode,
         );
-        (edit, paste, copy_requested)
+        (edit_result, copy_requested)
     });
 
     // Handle copy outside the input closure — always override egui's native copy
@@ -853,7 +865,7 @@ fn handle_keyboard_input(
     }
 
     // Handle paste outside the input closure
-    if let Some(text) = paste_text {
+    if let Some(text) = edit_result.paste_text {
         if let Some(bytes) = parse_paste_input(&text, current_edit_mode) {
             if let Some(editor) = &mut app.doc.editor {
                 apply_paste_bytes(editor, cursor_pos, &bytes);
@@ -870,7 +882,7 @@ fn handle_keyboard_input(
     }
 
     KeyboardResult {
-        pending_high_risk_edit,
+        pending_high_risk_edit: edit_result.pending_high_risk_edit,
     }
 }
 

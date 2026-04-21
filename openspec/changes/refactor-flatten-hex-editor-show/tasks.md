@@ -27,10 +27,10 @@ Scope note: the real duplication between hex and ASCII rendering is narrower tha
 - [x] 3.6 ASCII alignment on incomplete last row (commit 37e8e65) preserved — `render_row` still pads hex with transparent labels when `row_bytes.len() < BYTES_PER_ROW`
 
 ## 4. Shrink show() to orchestrator
-- [ ] 4.1 Rewrite `show()` as: prepare state → compute scroll target → build `ScrollArea` → in `show_viewport`, loop visible rows calling `render_row`, accumulating a `Vec<RowResult>` (or folding a single `RowResult`) → after the loop, call `handle_row_interactions`
-- [ ] 4.2 Verify `show()` is ≤100 lines after refactor
-- [ ] 4.3 Replace `handle_edit_input`'s `(Option<_>, Option<_>)` tuple return with `struct EditInputResult { pending_high_risk_edit: Option<...>, paste_text: Option<String> }`
-- [ ] 4.4 Update the call site in `src/app/mod.rs` to destructure the named struct
+- [x] 4.1 `show()` is now: prepare state → snapshot pointer → compute scroll target → ScrollArea → loop `render_row` folding results via `RowResult::merge` → `handle_row_interactions` → keyboard input → context menu
+- [x] 4.2 `show()` is 86 lines (target ≤100)
+- [x] 4.3 Replaced `handle_edit_input`'s `(Option<_>, Option<_>)` tuple with `struct EditInputResult { pending_high_risk_edit, paste_text }`; caller in `handle_keyboard_input` destructures by field name
+- [x] 4.4 `src/app/mod.rs` needed no change — `handle_edit_input` is only called from `handle_keyboard_input` inside `hex_editor.rs`. The proposal overstated the ripple; the call site is internal.
 
 ## 5. Verification
 - [ ] 5.1 `cargo fmt`
