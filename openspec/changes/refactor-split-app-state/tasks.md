@@ -47,8 +47,8 @@
 - [x] 6.3 Partial: 7 of 9 UI `show()` functions no longer import `BendApp` (the two exceptions are documented in 6.2). Full elimination is deferred to the companion proposal `refactor-flatten-hex-editor-show` (which rewrites hex_editor internals) — at that point, search_dialog's remaining BendApp usage can be revisited without blocking this change.
 
 ## 7. Verification
-- [ ] 7.1 `cargo fmt`
-- [ ] 7.2 `cargo build --release`
-- [ ] 7.3 `cargo test`
-- [ ] 7.4 Manual full smoke test: open file, edit in hex + ASCII, undo/redo, create save point, restore save point, search + replace, drag-select, copy/paste, context menu, export, reopen settings, theme toggle
-- [ ] 7.5 Verify no visible behavior change vs. `main` baseline
+- [x] 7.1 `cargo fmt` — clean (no diff)
+- [x] 7.2 `cargo build --release` — succeeds (28.8s)
+- [x] 7.3 `cargo test` — 204/204 pass
+- [x] 7.4 `cargo clippy --all-targets` — no new warnings introduced by this refactor (the remaining warnings are pre-existing: `field_reassign_with_default` in test setup in `settings.rs` / `search.rs` / `preview.rs` tests, plus a pre-existing `collapsible_if` in `bookmarks.rs:162` and `needless_borrow` in `hex_editor.rs:589`)
+- [ ] 7.5 Manual smoke test (user to perform): open file, edit in hex + ASCII, undo/redo, create + restore save point, search + replace, drag-select, copy/paste, context menu, export, reopen settings, theme toggle, confirm no visible behavior change vs. pre-refactor baseline
