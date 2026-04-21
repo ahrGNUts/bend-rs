@@ -5,10 +5,12 @@ mod input;
 mod menu_bar;
 mod preview;
 mod sections;
+mod state;
 mod toolbar;
 
 pub use dialogs::{DialogState, PendingEdit, PendingEditType};
 pub use preview::PreviewState;
+pub use state::IoState;
 
 use crate::editor::buffer::{EditMode, WriteMode};
 use crate::editor::{EditorState, GoToOffsetState, SearchState};
@@ -24,16 +26,10 @@ use crate::ui::{
     structure_tree,
 };
 use eframe::egui;
+use state::FileDialogResult;
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
-
-enum FileDialogResult {
-    OpenFile(PathBuf),
-    ExportSuccess(PathBuf),
-    ExportError(String),
-    Cancelled,
-}
 
 /// Spawn a file dialog on a background thread, returning a receiver for the result.
 fn spawn_file_dialog<F>(ctx: &egui::Context, dialog_fn: F) -> mpsc::Receiver<FileDialogResult>
@@ -118,23 +114,11 @@ pub struct BendApp {
     /// Application settings (persisted to disk)
     pub settings: AppSettings,
 
-    /// Pending file path to open (for deferred actions from menus)
-    pub(super) pending_open_path: Option<PathBuf>,
-
     /// Pending scroll offset for hex editor (Some(offset) = scroll to this byte offset)
     pub pending_hex_scroll: Option<usize>,
 
-    /// Last known window size (for change detection)
-    last_window_size: Option<egui::Vec2>,
-
-    /// Timer for debouncing window resize saves
-    window_resize_timer: Option<Instant>,
-
-    /// Receiver for a pending open-file dialog running on a background thread
-    open_dialog_rx: Option<mpsc::Receiver<FileDialogResult>>,
-
-    /// Receiver for a pending export dialog running on a background thread
-    export_dialog_rx: Option<mpsc::Receiver<FileDialogResult>>,
+    /// I/O plumbing (file-dialog receivers, deferred paths, resize debounce)
+    pub io: IoState,
 }
 
 impl BendApp {
@@ -155,11 +139,6 @@ impl BendApp {
             settings,
             ..Default::default()
         }
-    }
-
-    /// Returns true if a file dialog is already open on a background thread
-    fn is_dialog_pending(&self) -> bool {
-        self.open_dialog_rx.is_some() || self.export_dialog_rx.is_some()
     }
 
     /// Perform undo on the active editor (if any)
@@ -207,7 +186,7 @@ impl BendApp {
 
     /// Export the working buffer to a new file (non-blocking)
     pub fn export_file(&mut self, ctx: &egui::Context) {
-        if self.is_dialog_pending() || self.editor.is_none() {
+        if self.io.is_dialog_pending() || self.editor.is_none() {
             return;
         }
 
@@ -252,7 +231,7 @@ impl BendApp {
             }
         });
 
-        self.export_dialog_rx = Some(rx);
+        self.io.export_dialog_rx = Some(rx);
     }
 
     /// Check if a file extension is a supported format
@@ -300,7 +279,7 @@ impl BendApp {
 
     /// Open file dialog on a background thread (non-blocking)
     pub fn open_file_dialog(&mut self, ctx: &egui::Context) {
-        if self.is_dialog_pending() {
+        if self.io.is_dialog_pending() {
             return;
         }
 
@@ -322,7 +301,7 @@ impl BendApp {
             }
         });
 
-        self.open_dialog_rx = Some(rx);
+        self.io.open_dialog_rx = Some(rx);
     }
 
     /// Show all modal dialogs
@@ -476,42 +455,42 @@ impl eframe::App for BendApp {
 
         // Track window size changes (debounced save)
         let current_size = ctx.screen_rect().size();
-        if let Some(last_size) = self.last_window_size {
+        if let Some(last_size) = self.io.last_window_size {
             if (current_size.x - last_size.x).abs() > WINDOW_RESIZE_THRESHOLD
                 || (current_size.y - last_size.y).abs() > WINDOW_RESIZE_THRESHOLD
             {
-                self.window_resize_timer = Some(Instant::now());
-                self.last_window_size = Some(current_size);
+                self.io.window_resize_timer = Some(Instant::now());
+                self.io.last_window_size = Some(current_size);
             }
         } else {
-            self.last_window_size = Some(current_size);
+            self.io.last_window_size = Some(current_size);
         }
 
         // Save window size after debounce period of no resize activity
-        if let Some(timer) = self.window_resize_timer {
+        if let Some(timer) = self.io.window_resize_timer {
             if timer.elapsed() > Duration::from_millis(WINDOW_RESIZE_DEBOUNCE_MS) {
                 self.settings.window_width = current_size.x;
                 self.settings.window_height = current_size.y;
                 self.settings.save();
-                self.window_resize_timer = None;
+                self.io.window_resize_timer = None;
             }
         }
 
         // Handle deferred file opening from recent files menu
-        if let Some(path) = self.pending_open_path.take() {
+        if let Some(path) = self.io.pending_open_path.take() {
             self.open_file(path);
         }
 
         // Poll background file dialogs
-        if let Some(rx) = &self.open_dialog_rx {
+        if let Some(rx) = &self.io.open_dialog_rx {
             if let Ok(result) = rx.try_recv() {
                 if let FileDialogResult::OpenFile(path) = result {
                     self.open_file(path);
                 }
-                self.open_dialog_rx = None;
+                self.io.open_dialog_rx = None;
             }
         }
-        if let Some(rx) = &self.export_dialog_rx {
+        if let Some(rx) = &self.io.export_dialog_rx {
             if let Ok(result) = rx.try_recv() {
                 match result {
                     FileDialogResult::ExportSuccess(path) => {
@@ -522,7 +501,7 @@ impl eframe::App for BendApp {
                     }
                     _ => {}
                 }
-                self.export_dialog_rx = None;
+                self.io.export_dialog_rx = None;
             }
         }
 

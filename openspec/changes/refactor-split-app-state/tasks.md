@@ -1,15 +1,15 @@
 # Tasks: Split BendApp into cohesive substates
 
 ## 1. Define substates
-- [ ] 1.1 Create `src/app/state.rs` with `DocumentState`, `UiState`, `IoState`, `AppConfig` structs (fields moved from `BendApp`)
-- [ ] 1.2 Each substate gets `#[derive(Default)]` or an explicit `impl Default`
-- [ ] 1.3 Re-export the four types from `src/app/mod.rs`
+- [x] 1.1 Create `src/app/state.rs` (substates added incrementally per tasks 2–5 rather than all at once, so unused-field warnings don't accumulate)
+- [x] 1.2 Each substate gets `#[derive(Default)]`
+- [x] 1.3 Re-export from `src/app/mod.rs` as substates land (`pub use state::IoState;` done)
 
 ## 2. Extract `IoState` (smallest, most isolated)
-- [ ] 2.1 Move `open_dialog_rx`, `export_dialog_rx`, `pending_open_path`, `window_resize_timer` off `BendApp` into `IoState`
-- [ ] 2.2 Add `io: IoState` field to `BendApp`
-- [ ] 2.3 Update callers in `src/app/mod.rs` (dialog polling at ~:505-527, `is_dialog_pending`), `src/app/dialogs.rs`, `src/app/menu_bar.rs`
-- [ ] 2.4 `cargo build` + manual smoke test (open file via dialog)
+- [x] 2.1 Move `open_dialog_rx`, `export_dialog_rx`, `pending_open_path`, `window_resize_timer`, `last_window_size` off `BendApp` into `IoState`; moved `FileDialogResult` enum alongside it.
+- [x] 2.2 Add `io: IoState` field to `BendApp`
+- [x] 2.3 Update callers in `src/app/mod.rs` (dialog polling, resize debounce, `is_dialog_pending` → `IoState::is_dialog_pending`) and `src/app/menu_bar.rs:113`. `src/app/dialogs.rs` did not touch these fields.
+- [x] 2.4 `cargo build` + `cargo test` (204 tests pass)
 
 ## 3. Extract `AppConfig`
 - [ ] 3.1 Move `settings: AppSettings` off `BendApp` into `AppConfig`

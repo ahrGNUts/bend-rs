@@ -110,7 +110,7 @@ impl BendApp {
                         .on_hover_text(path.to_string_lossy())
                         .clicked()
                     {
-                        self.pending_open_path = Some(path.clone());
+                        self.io.pending_open_path = Some(path.clone());
                         ui.close_menu();
                     }
                 }
