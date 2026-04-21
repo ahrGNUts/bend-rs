@@ -1,12 +1,14 @@
 # Tasks: Flatten hex_editor::show()
 
-## 1. Extract shared byte-highlight painter
-- [ ] 1.1 Define `struct ByteHighlightFlags { cursor, selected, search_match, risk_tint: Option<RiskLevel> }`
-- [ ] 1.2 Write `fn paint_byte_highlight(ui, rect, flags: ByteHighlightFlags, colors: &AppColors)`
-- [ ] 1.3 Replace duplicated painting code in `render_hex_byte` (`src/ui/hex_editor.rs:~160-210`) with calls to the new painter
-- [ ] 1.4 Replace duplicated painting code in `render_ascii_row` (`:~210-262`) with calls to the new painter
-- [ ] 1.5 Verify visual parity: cursor background, selection background, search highlight, and risk-level tint render identically in both hex and ASCII columns
-- [ ] 1.6 `cargo build` + manual check: scroll through a file, confirm selection shading and search highlights look identical to baseline
+## 1. Extract shared byte-highlight helpers
+Scope note: the real duplication between hex and ASCII rendering is narrower than the original tasks.md claimed. Today the hex column paints cursor/selection/current_match/search_match/bookmark/section_bg/protected; the ASCII column paints only cursor/selection. Full parity (search/risk tints in ASCII too) would be a user-visible behavior change and is intentionally out of scope for this refactor. Instead we extract the genuinely duplicated pieces.
+
+- [x] 1.1 Use the existing `ByteHighlight` struct rather than introducing a parallel `ByteHighlightFlags` (they would be identical).
+- [x] 1.2 Extract `cursor_color_pair(write_mode, colors) -> (bright, dim)` — the insert-vs-overwrite tuple destructuring duplicated in both renderers.
+- [x] 1.3 Extract `byte_background_color(highlight, colors) -> Option<Color32>` for the priority chain (selection > current_match > search_match > bookmark > section). Used in `render_hex_byte`; available for future ASCII use.
+- [x] 1.4 Wire both helpers into `render_hex_byte` and `render_ascii_row`.
+- [x] 1.5 Visual parity preserved (same colors, same painting order).
+- [x] 1.6 `cargo build` + `cargo test` (204 tests pass)
 
 ## 2. Introduce RowResult and pure row rendering
 - [ ] 2.1 Define `struct RowResult { cursor_move: Option<(usize, EditMode)>, start_drag: bool, drag_current_offset: Option<usize>, context_menu_offset: Option<usize> }` with `Default`

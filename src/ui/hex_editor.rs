@@ -63,6 +63,35 @@ struct ByteHighlight {
     section_bg: Option<egui::Color32>,
 }
 
+/// Resolve the bright/dim cursor color pair for the current write mode.
+/// Insert mode uses the insert-flavor palette; overwrite mode uses the
+/// overwrite-flavor palette. Returns `(bright, dim)`.
+fn cursor_color_pair(write_mode: WriteMode, colors: &AppColors) -> (egui::Color32, egui::Color32) {
+    if write_mode == WriteMode::Insert {
+        (colors.cursor_bright_insert, colors.cursor_dim_insert)
+    } else {
+        (colors.cursor_bright_overwrite, colors.cursor_dim_overwrite)
+    }
+}
+
+/// Pick the non-cursor background color for a byte based on highlight flags.
+/// Priority: selection > current_match > search_match > bookmark > section tint.
+/// Returns `None` when the byte has no applicable background. Cursor painting is
+/// handled by the caller because it uses split-nibble rendering in the hex column.
+fn byte_background_color(highlight: &ByteHighlight, colors: &AppColors) -> Option<egui::Color32> {
+    if highlight.is_selected {
+        Some(colors.selection_bg)
+    } else if highlight.is_current_match {
+        Some(colors.current_match_bg)
+    } else if highlight.is_search_match {
+        Some(colors.search_match_bg)
+    } else if highlight.has_bookmark {
+        Some(colors.bookmark_bg)
+    } else {
+        highlight.section_bg
+    }
+}
+
 /// Render a single hex byte with cursor/selection/section highlighting.
 /// Returns the response for click detection.
 fn render_hex_byte(
@@ -81,16 +110,8 @@ fn render_hex_byte(
     // cursor > selection > current_match > search_match > bookmark > section
     let bg = if highlight.is_cursor {
         None // cursor uses split-nibble backgrounds below
-    } else if highlight.is_selected {
-        Some(colors.selection_bg)
-    } else if highlight.is_current_match {
-        Some(colors.current_match_bg)
-    } else if highlight.is_search_match {
-        Some(colors.search_match_bg)
-    } else if highlight.has_bookmark {
-        Some(colors.bookmark_bg)
     } else {
-        highlight.section_bg
+        byte_background_color(highlight, colors)
     };
 
     let text_color = if highlight.is_cursor {
@@ -108,11 +129,7 @@ fn render_hex_byte(
     // Paint backgrounds
     if highlight.is_cursor {
         let half_width = rect.width() / 2.0;
-        let (bright, dim) = if write_mode == WriteMode::Insert {
-            (colors.cursor_bright_insert, colors.cursor_dim_insert)
-        } else {
-            (colors.cursor_bright_overwrite, colors.cursor_dim_overwrite)
-        };
+        let (bright, dim) = cursor_color_pair(write_mode, colors);
         let (high_bg, low_bg) = if edit_mode == EditMode::Ascii {
             (dim, dim)
         } else {
@@ -183,11 +200,7 @@ fn render_ascii_row(
     let font_id = TextStyle::Monospace.resolve(ui.style());
 
     // Draw highlights and re-paint characters on top
-    let (cursor_bright, cursor_dim) = if state.write_mode == WriteMode::Insert {
-        (colors.cursor_bright_insert, colors.cursor_dim_insert)
-    } else {
-        (colors.cursor_bright_overwrite, colors.cursor_dim_overwrite)
-    };
+    let (cursor_bright, cursor_dim) = cursor_color_pair(state.write_mode, colors);
 
     for (i, byte) in row_bytes.iter().enumerate() {
         let byte_offset = row_offset + i;
