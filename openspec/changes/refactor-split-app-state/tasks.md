@@ -12,11 +12,11 @@
 - [x] 2.4 `cargo build` + `cargo test` (204 tests pass)
 
 ## 3. Extract `AppConfig`
-- [ ] 3.1 Move `settings: AppSettings` off `BendApp` into `AppConfig`
-- [ ] 3.2 Add `config: AppConfig` field to `BendApp`
-- [ ] 3.3 Update `BendApp::new()` to construct `AppConfig`
-- [ ] 3.4 Update every read of `app.settings` → `app.config.settings`
-- [ ] 3.5 `cargo build` + smoke test (settings dialog opens, theme persists)
+- [x] 3.1 Move `settings: AppSettings` off `BendApp` into `AppConfig`
+- [x] 3.2 Add `config: AppConfig` field to `BendApp`
+- [x] 3.3 Update `BendApp::new()` to construct `AppConfig`
+- [x] 3.4 Update every read of `self.settings` → `self.config.settings` across `src/app/mod.rs`, `src/app/menu_bar.rs`, `src/app/dialogs.rs` (also the `test_settings_sync_suppress_warnings` test)
+- [x] 3.5 `cargo build` + `cargo test` (204 tests pass)
 
 ## 4. Extract `UiState`
 - [ ] 4.1 Move `colors`, `dialogs`, `context_menu_state`, `search_state`, `go_to_offset_state`, `savepoints_state`, `bookmarks_state`, `shortcuts_dialog_state`, `settings_dialog_state`, `pending_hex_scroll`, `last_window_size` into `UiState`

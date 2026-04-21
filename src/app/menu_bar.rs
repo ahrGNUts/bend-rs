@@ -95,7 +95,7 @@ impl BendApp {
         ui.separator();
 
         // Recent files submenu
-        let recent_files = self.settings.recent_files().to_vec();
+        let recent_files = self.config.settings.recent_files().to_vec();
         let has_recent = !recent_files.is_empty();
         ui.menu_button("Recent Files", |ui| {
             if has_recent {
@@ -116,8 +116,8 @@ impl BendApp {
                 }
                 ui.separator();
                 if ui.button("Clear Recent Files").clicked() {
-                    self.settings.clear_recent_files();
-                    self.settings.save();
+                    self.config.settings.clear_recent_files();
+                    self.config.settings.save();
                     ui.close_menu();
                 }
             } else {
@@ -130,7 +130,7 @@ impl BendApp {
             if self.has_unsaved_changes() {
                 self.dialogs.show_close = true;
             } else {
-                self.settings.save();
+                self.config.settings.save();
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
             ui.close_menu();
@@ -215,8 +215,8 @@ impl BendApp {
         if self.dialogs.suppress_high_risk_warnings {
             if ui.button("Re-enable High-Risk Warnings").clicked() {
                 self.dialogs.suppress_high_risk_warnings = false;
-                self.settings.show_high_risk_warnings = true;
-                self.settings.save();
+                self.config.settings.show_high_risk_warnings = true;
+                self.config.settings.save();
                 ui.close_menu();
             }
         } else {
@@ -224,7 +224,7 @@ impl BendApp {
         }
         ui.separator();
         if ui.button("Preferences...").clicked() {
-            self.settings_dialog_state.open(&self.settings);
+            self.settings_dialog_state.open(&self.config.settings);
             ui.close_menu();
         }
     }

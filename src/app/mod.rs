@@ -10,12 +10,11 @@ mod toolbar;
 
 pub use dialogs::{DialogState, PendingEdit, PendingEditType};
 pub use preview::PreviewState;
-pub use state::IoState;
+pub use state::{AppConfig, IoState};
 
 use crate::editor::buffer::{EditMode, WriteMode};
 use crate::editor::{EditorState, GoToOffsetState, SearchState};
 use crate::formats::{parse_file, FileSection};
-use crate::settings::AppSettings;
 use crate::ui::theme::AppColors;
 use crate::ui::{
     bookmarks, go_to_offset_dialog,
@@ -111,8 +110,8 @@ pub struct BendApp {
     /// Cached theme-aware color palette, refreshed once per frame in `update()`.
     pub colors: AppColors,
 
-    /// Application settings (persisted to disk)
-    pub settings: AppSettings,
+    /// Application configuration (persisted settings)
+    pub config: AppConfig,
 
     /// Pending scroll offset for hex editor (Some(offset) = scroll to this byte offset)
     pub pending_hex_scroll: Option<usize>,
@@ -122,7 +121,7 @@ pub struct BendApp {
 }
 
 impl BendApp {
-    pub fn new(cc: &eframe::CreationContext<'_>, settings: AppSettings) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>, settings: crate::settings::AppSettings) -> Self {
         settings.theme.apply(&cc.egui_ctx);
         crate::ui::theme::apply_custom_visuals(&cc.egui_ctx);
 
@@ -136,7 +135,7 @@ impl BendApp {
                 suppress_high_risk_warnings: suppress_warnings,
                 ..Default::default()
             },
-            settings,
+            config: AppConfig { settings },
             ..Default::default()
         }
     }
@@ -267,8 +266,8 @@ impl BendApp {
                 // Clear existing textures and animation state
                 self.preview.reset_for_new_file();
                 // Add to recent files and save settings
-                self.settings.add_recent_file(path);
-                self.settings.save();
+                self.config.settings.add_recent_file(path);
+                self.config.settings.save();
             }
             Err(e) => {
                 log::error!("Failed to load file: {}", e);
@@ -310,8 +309,13 @@ impl BendApp {
         go_to_offset_dialog::show(ctx, self);
         shortcuts_dialog::show(ctx, &mut self.shortcuts_dialog_state);
         // Settings dialog handles saving internally; sync runtime flag on change
-        if settings_dialog::show(ctx, &mut self.settings_dialog_state, &mut self.settings) {
-            self.dialogs.suppress_high_risk_warnings = !self.settings.show_high_risk_warnings;
+        if settings_dialog::show(
+            ctx,
+            &mut self.settings_dialog_state,
+            &mut self.config.settings,
+        ) {
+            self.dialogs.suppress_high_risk_warnings =
+                !self.config.settings.show_high_risk_warnings;
         }
         self.show_high_risk_warning_dialog(ctx);
     }
@@ -445,7 +449,7 @@ impl eframe::App for BendApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Handle close confirmation
         if self.dialogs.pending_close {
-            self.settings.save();
+            self.config.settings.save();
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
         }
@@ -469,9 +473,9 @@ impl eframe::App for BendApp {
         // Save window size after debounce period of no resize activity
         if let Some(timer) = self.io.window_resize_timer {
             if timer.elapsed() > Duration::from_millis(WINDOW_RESIZE_DEBOUNCE_MS) {
-                self.settings.window_width = current_size.x;
-                self.settings.window_height = current_size.y;
-                self.settings.save();
+                self.config.settings.window_width = current_size.x;
+                self.config.settings.window_height = current_size.y;
+                self.config.settings.save();
                 self.io.window_resize_timer = None;
             }
         }
@@ -587,17 +591,17 @@ mod tests {
 
         // Initially warnings are not suppressed
         assert!(!app.dialogs.suppress_high_risk_warnings);
-        assert!(app.settings.show_high_risk_warnings);
+        assert!(app.config.settings.show_high_risk_warnings);
 
         // Simulate what show_dialogs does when settings change:
         // Toggle the setting and sync
-        app.settings.show_high_risk_warnings = false;
-        app.dialogs.suppress_high_risk_warnings = !app.settings.show_high_risk_warnings;
+        app.config.settings.show_high_risk_warnings = false;
+        app.dialogs.suppress_high_risk_warnings = !app.config.settings.show_high_risk_warnings;
         assert!(app.dialogs.suppress_high_risk_warnings);
 
         // Toggle back
-        app.settings.show_high_risk_warnings = true;
-        app.dialogs.suppress_high_risk_warnings = !app.settings.show_high_risk_warnings;
+        app.config.settings.show_high_risk_warnings = true;
+        app.dialogs.suppress_high_risk_warnings = !app.config.settings.show_high_risk_warnings;
         assert!(!app.dialogs.suppress_high_risk_warnings);
     }
 }

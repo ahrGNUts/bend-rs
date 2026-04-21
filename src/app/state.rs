@@ -10,6 +10,7 @@
 //! 3. `UiState`         — UI panel/dialog/cache state
 //! 4. `DocumentState`   — loaded document, editor, preview
 
+use crate::settings::AppSettings;
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::time::Instant;
@@ -46,4 +47,12 @@ impl IoState {
     pub fn is_dialog_pending(&self) -> bool {
         self.open_dialog_rx.is_some() || self.export_dialog_rx.is_some()
     }
+}
+
+/// Application configuration. Currently wraps persisted settings; may grow to
+/// hold runtime/non-persisted config without changing substate boundaries.
+#[derive(Default)]
+pub struct AppConfig {
+    /// Application settings (persisted to disk)
+    pub settings: AppSettings,
 }
