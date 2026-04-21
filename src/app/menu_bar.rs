@@ -197,7 +197,7 @@ impl BendApp {
         }
         ui.separator();
         if menu_item_with_shortcut(ui, "Refresh Preview", &refresh_shortcut, has_file, colors) {
-            self.mark_preview_dirty();
+            self.doc.preview.mark_dirty();
             ui.close_menu();
         }
         ui.separator();

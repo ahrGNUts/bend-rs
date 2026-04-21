@@ -27,6 +27,7 @@
   - *Leave `BendApp` as-is; extract traits.* Rejected: traits don't shrink the struct or narrow UI signatures.
   - *Use `Rc<RefCell<_>>` substates.* Rejected: unnecessary runtime cost and borrow-panic risk when plain `&mut` works.
   - *Event-sourced architecture (commands + reducers).* Rejected as overkill for a ~6K-line desktop app; would be a rewrite, not a refactor.
+- **Cross-cutters stay on `BendApp`.** Methods that genuinely touch 3+ substates (`section_color_for_offset`: doc + ui.colors; `should_warn_for_edit`: doc + ui.dialogs) live on `BendApp` as thin wrappers that delegate to the owning substate. Callers that need them keep `&mut BendApp` — that's the explicit cost for cross-cutting logic, and the design accepts this rather than pushing it onto substates that would then need to know about each other.
 
 ## Risks / Trade-offs
 

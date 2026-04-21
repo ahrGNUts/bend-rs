@@ -1,38 +1,32 @@
 //! Image preview UI component
 
-use crate::app::BendApp;
+use crate::app::PreviewState;
+use crate::ui::theme::AppColors;
 use eframe::egui;
 
 /// Show the image preview panel with optional comparison mode
-pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
+pub fn show(ui: &mut egui::Ui, preview: &mut PreviewState, colors: &AppColors) {
     // Comparison mode toggle at the top
     ui.horizontal(|ui| {
-        ui.checkbox(
-            &mut app.doc.preview.comparison_mode,
-            "Compare with Original",
-        );
+        ui.checkbox(&mut preview.comparison_mode, "Compare with Original");
     });
 
     // Animation controls (if animated GIF is loaded)
-    show_animation_controls(ui, app);
+    show_animation_controls(ui, preview);
 
     ui.add_space(4.0);
 
-    if app.doc.preview.comparison_mode {
-        // Side-by-side comparison view
-        show_comparison_view(ui, app);
+    if preview.comparison_mode {
+        show_comparison_view(ui, preview, colors);
     } else {
-        // Single preview view (current working buffer)
-        show_single_preview(ui, app);
+        show_single_preview(ui, preview, colors);
     }
 }
 
 /// Show animation controls when an animated GIF is loaded
-fn show_animation_controls(ui: &mut egui::Ui, app: &mut BendApp) {
+fn show_animation_controls(ui: &mut egui::Ui, preview: &mut PreviewState) {
     // Guard: only show controls if we have a multi-frame animation
-    let has_animation = app
-        .doc
-        .preview
+    let has_animation = preview
         .animation
         .as_ref()
         .is_some_and(|a| a.frames.len() > 1);
@@ -41,58 +35,58 @@ fn show_animation_controls(ui: &mut egui::Ui, app: &mut BendApp) {
     }
 
     // Read frame_count once (immutable for the duration of this function)
-    let frame_count = app.doc.preview.animation.as_ref().unwrap().frames.len();
+    let frame_count = preview.animation.as_ref().unwrap().frames.len();
 
     ui.add_space(2.0);
     ui.horizontal(|ui| {
         // First frame button
         if ui.button("|<").on_hover_text("First frame").clicked() {
-            app.pause_animation();
-            app.set_animation_frame(0);
+            preview.pause_animation();
+            preview.set_animation_frame(0);
         }
 
         // Previous frame button
         if ui.button("<").on_hover_text("Previous frame").clicked() {
-            app.pause_animation();
-            let current = app.doc.preview.animation.as_ref().unwrap().current_frame;
+            preview.pause_animation();
+            let current = preview.animation.as_ref().unwrap().current_frame;
             let prev = if current == 0 {
                 frame_count - 1
             } else {
                 current - 1
             };
-            app.set_animation_frame(prev);
+            preview.set_animation_frame(prev);
         }
 
         // Play/Pause toggle — read fresh playing state
-        let is_playing = app.doc.preview.animation.as_ref().unwrap().playing;
+        let is_playing = preview.animation.as_ref().unwrap().playing;
         let play_label = if is_playing { "Pause" } else { "Play" };
         if ui.button(play_label).clicked() {
-            app.toggle_animation_playback();
+            preview.toggle_animation_playback();
         }
 
         // Next frame button
         if ui.button(">").on_hover_text("Next frame").clicked() {
-            app.pause_animation();
-            let current = app.doc.preview.animation.as_ref().unwrap().current_frame;
+            preview.pause_animation();
+            let current = preview.animation.as_ref().unwrap().current_frame;
             let next = (current + 1) % frame_count;
-            app.set_animation_frame(next);
+            preview.set_animation_frame(next);
         }
 
         // Last frame button
         if ui.button(">|").on_hover_text("Last frame").clicked() {
-            app.pause_animation();
-            app.set_animation_frame(frame_count - 1);
+            preview.pause_animation();
+            preview.set_animation_frame(frame_count - 1);
         }
 
         ui.separator();
 
         // Frame label — read fresh current_frame after all button mutations
-        let current_frame = app.doc.preview.animation.as_ref().unwrap().current_frame;
+        let current_frame = preview.animation.as_ref().unwrap().current_frame;
         let mut label = format!("Frame {} / {}", current_frame + 1, frame_count);
 
         // Only append original count when it differs (comparison mode)
-        if app.doc.preview.comparison_mode {
-            if let Some(orig) = app.doc.preview.original_animation.as_ref() {
+        if preview.comparison_mode {
+            if let Some(orig) = preview.original_animation.as_ref() {
                 if orig.frames.len() != frame_count {
                     label.push_str(&format!(" (original: {})", orig.frames.len()));
                 }
@@ -103,8 +97,7 @@ fn show_animation_controls(ui: &mut egui::Ui, app: &mut BendApp) {
 }
 
 /// Show the comparison view with original and current images side-by-side
-fn show_comparison_view(ui: &mut egui::Ui, app: &BendApp) {
-    let colors = app.ui.colors;
+fn show_comparison_view(ui: &mut egui::Ui, preview: &PreviewState, colors: &AppColors) {
     let available_size = ui.available_size();
 
     // Calculate the maximum size for each image (half the width minus spacing)
@@ -112,18 +105,13 @@ fn show_comparison_view(ui: &mut egui::Ui, app: &BendApp) {
     let max_image_size = egui::vec2(half_width, available_size.y - 30.0);
 
     // Calculate a unified scale factor based on both textures
-    let scale = calculate_unified_scale(app, max_image_size);
+    let scale = calculate_unified_scale(preview, max_image_size);
 
     ui.horizontal(|ui| {
         // Left: Original image
         ui.vertical(|ui| {
             ui.heading("Original");
-            show_texture_scaled(
-                ui,
-                app.doc.preview.original_texture.as_ref(),
-                scale,
-                max_image_size,
-            );
+            show_texture_scaled(ui, preview.original_texture.as_ref(), scale, max_image_size);
         });
 
         ui.separator();
@@ -132,29 +120,29 @@ fn show_comparison_view(ui: &mut egui::Ui, app: &BendApp) {
         ui.vertical(|ui| {
             ui.heading("Current");
             // Show decode error indicator if present
-            if app.doc.preview.decode_error.is_some() {
+            if preview.decode_error.is_some() {
                 ui.horizontal(|ui| {
                     ui.colored_label(colors.warning_text, "\u{26A0} Preview may be stale");
                 });
             }
-            show_texture_scaled(ui, app.doc.preview.texture.as_ref(), scale, max_image_size);
+            show_texture_scaled(ui, preview.texture.as_ref(), scale, max_image_size);
         });
     });
 }
 
 /// Calculate a unified scale factor so both images display at the same size
-fn calculate_unified_scale(app: &BendApp, max_size: egui::Vec2) -> f32 {
+fn calculate_unified_scale(preview: &PreviewState, max_size: egui::Vec2) -> f32 {
     let mut scale = 1.0_f32;
 
     // Get the texture that determines our scale
     // Use the largest dimensions from either texture
-    if let Some(tex) = &app.doc.preview.original_texture {
+    if let Some(tex) = &preview.original_texture {
         let tex_size = tex.size_vec2();
         let tex_scale = (max_size.x / tex_size.x).min(max_size.y / tex_size.y);
         scale = scale.min(tex_scale);
     }
 
-    if let Some(tex) = &app.doc.preview.texture {
+    if let Some(tex) = &preview.texture {
         let tex_size = tex.size_vec2();
         let tex_scale = (max_size.x / tex_size.x).min(max_size.y / tex_size.y);
         scale = scale.min(tex_scale);
@@ -204,11 +192,10 @@ fn show_texture_scaled(
 }
 
 /// Show a single image preview (current working buffer)
-fn show_single_preview(ui: &mut egui::Ui, app: &BendApp) {
-    if let Some(texture) = &app.doc.preview.texture {
+fn show_single_preview(ui: &mut egui::Ui, preview: &PreviewState, colors: &AppColors) {
+    if let Some(texture) = &preview.texture {
         // Show decode error indicator if present
-        if app.doc.preview.decode_error.is_some() {
-            let colors = app.ui.colors;
+        if preview.decode_error.is_some() {
             ui.horizontal(|ui| {
                 ui.colored_label(
                     colors.warning_text,
@@ -227,12 +214,12 @@ fn show_single_preview(ui: &mut egui::Ui, app: &BendApp) {
     } else {
         // No preview available
         ui.centered_and_justified(|ui| {
-            if app.doc.preview.decode_error.is_some() {
+            if preview.decode_error.is_some() {
                 ui.vertical_centered(|ui| {
                     // Broken image indicator
                     ui.label(egui::RichText::new("\u{1F5BC}").size(64.0));
                     ui.label("Unable to decode image");
-                    if let Some(err) = &app.doc.preview.decode_error {
+                    if let Some(err) = &preview.decode_error {
                         ui.label(egui::RichText::new(err).small());
                     }
                 });

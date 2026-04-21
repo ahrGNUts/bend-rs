@@ -1,6 +1,6 @@
 //! Bookmarks list UI component
 
-use crate::app::BendApp;
+use crate::app::{DocumentState, UiState};
 use eframe::egui;
 
 /// State for the bookmarks panel
@@ -16,9 +16,16 @@ pub struct BookmarksPanelState {
     pub annotation_text: String,
 }
 
-/// Show the bookmarks panel
-pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelState) {
-    let Some(editor) = &app.doc.editor else {
+/// Show the bookmarks panel.
+/// Needs `DocumentState` for the editor and `UiState` for colors + scroll
+/// intent; those are the only substates touched here.
+pub fn show(
+    ui: &mut egui::Ui,
+    doc: &mut DocumentState,
+    ui_state: &mut UiState,
+    state: &mut BookmarksPanelState,
+) {
+    let Some(editor) = &doc.editor else {
         ui.label("No file loaded");
         return;
     };
@@ -31,7 +38,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
     ui.horizontal(|ui| {
         if ui.button("+ Add Bookmark").clicked() {
             let name = format!("Bookmark at 0x{:08X}", cursor_pos);
-            if let Some(editor) = &mut app.doc.editor {
+            if let Some(editor) = &mut doc.editor {
                 editor.add_bookmark(cursor_pos, name);
             }
         }
@@ -83,7 +90,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
                 } else {
                     // Normal display mode — colored background pill, like structure tree nodes
                     ui.horizontal(|ui| {
-                        let colors = app.ui.colors;
+                        let colors = ui_state.colors;
                         let bg = colors.bookmark_bg;
                         let bg_idx = ui.painter().add(egui::Shape::Noop);
                         let label_text =
@@ -172,17 +179,17 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
     if let Some(action) = action {
         match action {
             BookmarkAction::Navigate(offset) => {
-                if let Some(editor) = &mut app.doc.editor {
+                if let Some(editor) = &mut doc.editor {
                     editor.set_cursor(offset);
                 }
-                app.scroll_hex_to_offset(offset);
+                ui_state.pending_hex_scroll = Some(offset);
             }
             BookmarkAction::StartRename(id, name) => {
                 state.renaming = Some(id);
                 state.rename_text = name;
             }
             BookmarkAction::FinishRename(id, name) => {
-                if let Some(editor) = &mut app.doc.editor {
+                if let Some(editor) = &mut doc.editor {
                     let _ = editor.bookmarks_mut().rename(id, name); // #[must_use] result intentionally ignored — bookmark existence already verified by UI
                 }
                 state.renaming = None;
@@ -197,7 +204,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
                 state.annotation_text = annotation;
             }
             BookmarkAction::FinishAnnotation(id, annotation) => {
-                if let Some(editor) = &mut app.doc.editor {
+                if let Some(editor) = &mut doc.editor {
                     let _ = editor.bookmarks_mut().set_annotation(id, annotation);
                     // #[must_use] result intentionally ignored — bookmark existence already verified by UI
                 }
@@ -209,12 +216,12 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut BookmarksPanelStat
                 state.annotation_text.clear();
             }
             BookmarkAction::DeleteAnnotation(id) => {
-                if let Some(editor) = &mut app.doc.editor {
+                if let Some(editor) = &mut doc.editor {
                     let _ = editor.bookmarks_mut().set_annotation(id, String::new());
                 }
             }
             BookmarkAction::Delete(id) => {
-                if let Some(editor) = &mut app.doc.editor {
+                if let Some(editor) = &mut doc.editor {
                     let _ = editor.remove_bookmark(id); // #[must_use] result intentionally ignored — bookmark existence already verified by UI
                 }
             }

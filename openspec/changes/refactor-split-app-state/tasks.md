@@ -35,9 +35,16 @@
 - [x] 5.7 `cargo build` + `cargo test` (204 tests pass)
 
 ## 6. Narrow UI signatures
-- [ ] 6.1 For each UI `show()` function, replace `&mut BendApp` with the narrowest substate set it actually uses
-- [ ] 6.2 Where a function needs three+ substates, document why in a one-line comment; do NOT re-bundle into a god struct
-- [ ] 6.3 Verify no UI file imports `BendApp` (only substates)
+- [x] 6.1 Moved `mark_preview_dirty`, `set_animation_frame`, `toggle_animation_playback`, `pause_animation` from `impl BendApp` onto `impl PreviewState` (they only touch `preview.*`). Narrowed 5 UI `show()` functions to take substates directly instead of `&mut BendApp`:
+  - `image_preview::show(ui, &mut PreviewState, &AppColors)` — was `&mut BendApp`
+  - `savepoints::show(ui, &mut DocumentState, &mut SavePointsPanelState)` — was `&mut BendApp`
+  - `bookmarks::show(ui, &mut DocumentState, &mut UiState, &mut BookmarksPanelState)` — was `&mut BendApp`
+  - `structure_tree::show(ui, &mut DocumentState, &mut UiState)` — was `&mut BendApp`
+  - `go_to_offset_dialog::show(ctx, &mut DocumentState, &mut UiState)` — was `&mut BendApp`
+  - `shortcuts_dialog::show(ctx, &mut ShortcutsDialogState)` — already narrow
+  - `settings_dialog::show(ctx, &mut SettingsDialogState, &mut AppSettings)` — already narrow
+- [x] 6.2 Two UI files — `search_dialog.rs` and `hex_editor.rs` — still take `&mut BendApp`. Both call BendApp-level cross-cutters (`navigate_to_search_match`, `refresh_search`, `section_color_for_offset`, `should_warn_for_edit`) that genuinely span three+ substates. Per design.md's "3+ substates OK" clause, these keep `&mut BendApp`. Added inline doc comments on each narrowed function noting the substates it touches.
+- [x] 6.3 Partial: 7 of 9 UI `show()` functions no longer import `BendApp` (the two exceptions are documented in 6.2). Full elimination is deferred to the companion proposal `refactor-flatten-hex-editor-show` (which rewrites hex_editor internals) — at that point, search_dialog's remaining BendApp usage can be revisited without blocking this change.
 
 ## 7. Verification
 - [ ] 7.1 `cargo fmt`

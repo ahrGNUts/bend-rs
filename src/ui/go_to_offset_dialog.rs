@@ -1,15 +1,14 @@
 //! Go to offset dialog UI component
 
-use crate::app::BendApp;
+use crate::app::{DocumentState, UiState};
 use crate::editor::go_to_offset::parse_offset;
 use eframe::egui;
 
 /// Attempt to navigate to the offset specified in the dialog input
-fn attempt_navigate(app: &mut BendApp) -> Result<(), String> {
-    let offset = parse_offset(&app.ui.go_to_offset_state.input_text)?;
+fn attempt_navigate(doc: &mut DocumentState, ui_state: &mut UiState) -> Result<(), String> {
+    let offset = parse_offset(&ui_state.go_to_offset_state.input_text)?;
 
-    let editor = app
-        .doc
+    let editor = doc
         .editor
         .as_mut()
         .ok_or_else(|| "No file loaded".to_string())?;
@@ -23,13 +22,15 @@ fn attempt_navigate(app: &mut BendApp) -> Result<(), String> {
     }
 
     editor.set_cursor(offset);
-    app.scroll_hex_to_offset(offset);
+    ui_state.pending_hex_scroll = Some(offset);
     Ok(())
 }
 
-/// Show the "Go to offset" dialog (modal window)
-pub fn show(ctx: &egui::Context, app: &mut BendApp) {
-    if !app.ui.go_to_offset_state.dialog_open {
+/// Show the "Go to offset" dialog (modal window).
+/// Needs `DocumentState` (for editor) and `UiState` (for dialog state,
+/// colors, and the pending-scroll intent).
+pub fn show(ctx: &egui::Context, doc: &mut DocumentState, ui_state: &mut UiState) {
+    if !ui_state.go_to_offset_state.dialog_open {
         return;
     }
 
@@ -47,13 +48,13 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
 
             // Input field
             let response = ui.add(
-                egui::TextEdit::singleline(&mut app.ui.go_to_offset_state.input_text)
+                egui::TextEdit::singleline(&mut ui_state.go_to_offset_state.input_text)
                     .hint_text("e.g., 1024 or 0x400")
                     .desired_width(200.0),
             );
 
             // Auto-focus the text field when dialog opens
-            if response.gained_focus() || app.ui.go_to_offset_state.input_text.is_empty() {
+            if response.gained_focus() || ui_state.go_to_offset_state.input_text.is_empty() {
                 response.request_focus();
             }
 
@@ -63,7 +64,7 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
             }
 
             // Show file size hint if available
-            if let Some(editor) = &app.doc.editor {
+            if let Some(editor) = &doc.editor {
                 ui.add_space(4.0);
                 ui.label(
                     egui::RichText::new(format!(
@@ -76,8 +77,8 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
             }
 
             // Show error message if any
-            if let Some(error) = &app.ui.go_to_offset_state.error {
-                let colors = app.ui.colors;
+            if let Some(error) = &ui_state.go_to_offset_state.error {
+                let colors = ui_state.colors;
                 ui.add_space(4.0);
                 ui.colored_label(colors.error_text, error);
             }
@@ -102,13 +103,13 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
 
     // Handle navigation after UI scope ends (to avoid borrow issues)
     if do_navigate {
-        match attempt_navigate(app) {
+        match attempt_navigate(doc, ui_state) {
             Ok(()) => close_dialog = true,
-            Err(e) => app.ui.go_to_offset_state.error = Some(e),
+            Err(e) => ui_state.go_to_offset_state.error = Some(e),
         }
     }
 
     if close_dialog {
-        app.ui.go_to_offset_state.close_dialog();
+        ui_state.go_to_offset_state.close_dialog();
     }
 }

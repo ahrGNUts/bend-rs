@@ -1,6 +1,6 @@
 //! Structure tree UI component for visualizing file sections
 
-use crate::app::BendApp;
+use crate::app::{DocumentState, UiState};
 use crate::formats::{FileSection, RiskLevel};
 use crate::ui::theme::AppColors;
 use eframe::egui::{self, RichText};
@@ -115,10 +115,12 @@ fn show_section(
     }
 }
 
-/// Show the structure tree panel
-pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
+/// Show the structure tree panel.
+/// Needs `DocumentState` (editor + cached_sections) and `UiState` (colors +
+/// scroll intent). No BendApp-level method is called.
+pub fn show(ui: &mut egui::Ui, doc: &mut DocumentState, ui_state: &mut UiState) {
     // Get cursor position and check if editor exists
-    let current_cursor = match &app.doc.editor {
+    let current_cursor = match &doc.editor {
         Some(editor) => editor.cursor(),
         None => {
             ui.label("No file loaded");
@@ -127,7 +129,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
     };
 
     // Early return for missing or empty sections
-    match &app.doc.cached_sections {
+    match &doc.cached_sections {
         None => {
             ui.label("Unable to parse file structure");
             return;
@@ -143,8 +145,8 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
     let mut clicked_offset: Option<usize> = None;
 
     // Scope the immutable borrow of sections for UI rendering
-    if let Some(sections) = &app.doc.cached_sections {
-        let colors = app.ui.colors;
+    if let Some(sections) = &doc.cached_sections {
+        let colors = ui_state.colors;
 
         // Legend
         ui.horizontal(|ui| {
@@ -175,9 +177,9 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
 
     // Handle navigation - borrow of cached_sections has ended
     if let Some(offset) = clicked_offset {
-        if let Some(editor) = &mut app.doc.editor {
+        if let Some(editor) = &mut doc.editor {
             editor.set_cursor(offset);
         }
-        app.scroll_hex_to_offset(offset);
+        ui_state.pending_hex_scroll = Some(offset);
     }
 }

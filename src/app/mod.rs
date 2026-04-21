@@ -225,7 +225,7 @@ impl BendApp {
                 self.doc.cached_sections = parse_file(&bytes);
                 self.doc.editor = Some(EditorState::new(bytes));
                 self.doc.current_file = Some(path.clone());
-                self.mark_preview_dirty();
+                self.doc.preview.mark_dirty();
                 self.doc.preview.decode_error = None;
                 // Clear existing textures and animation state
                 self.doc.preview.reset_for_new_file();
@@ -270,7 +270,7 @@ impl BendApp {
     /// Show all modal dialogs
     fn show_dialogs(&mut self, ctx: &egui::Context) {
         search_dialog::show(ctx, self);
-        go_to_offset_dialog::show(ctx, self);
+        go_to_offset_dialog::show(ctx, &mut self.doc, &mut self.ui);
         shortcuts_dialog::show(ctx, &mut self.ui.shortcuts_dialog_state);
         // Settings dialog handles saving internally; sync runtime flag on change
         if settings_dialog::show(
@@ -341,7 +341,7 @@ impl BendApp {
                     egui::CollapsingHeader::new("File Structure")
                         .default_open(true)
                         .show(ui, |ui| {
-                            structure_tree::show(ui, self);
+                            structure_tree::show(ui, &mut self.doc, &mut self.ui);
                         });
 
                     ui.add_space(10.0);
@@ -351,7 +351,7 @@ impl BendApp {
                         .default_open(true)
                         .show(ui, |ui| {
                             let mut state = std::mem::take(&mut self.ui.savepoints_state);
-                            savepoints::show(ui, self, &mut state);
+                            savepoints::show(ui, &mut self.doc, &mut state);
                             self.ui.savepoints_state = state;
                         });
 
@@ -362,7 +362,7 @@ impl BendApp {
                         .default_open(true)
                         .show(ui, |ui| {
                             let mut state = std::mem::take(&mut self.ui.bookmarks_state);
-                            bookmarks::show(ui, self, &mut state);
+                            bookmarks::show(ui, &mut self.doc, &mut self.ui, &mut state);
                             self.ui.bookmarks_state = state;
                         });
                 });
@@ -388,7 +388,7 @@ impl BendApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             if self.doc.editor.is_some() {
                 ui.heading("Preview");
-                image_preview::show(ui, self);
+                image_preview::show(ui, &mut self.doc.preview, &self.ui.colors);
             } else {
                 // No file loaded - show welcome message
                 ui.centered_and_justified(|ui| {

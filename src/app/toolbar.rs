@@ -175,7 +175,7 @@ impl BendApp {
             }
         }
         if actions.refresh_preview {
-            self.mark_preview_dirty();
+            self.doc.preview.mark_dirty();
         }
         if let Some(mode) = actions.set_edit_mode {
             if let Some(editor) = &mut self.doc.editor {

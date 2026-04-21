@@ -1,6 +1,6 @@
 //! Save points UI panel
 
-use crate::app::BendApp;
+use crate::app::DocumentState;
 use eframe::egui::{self, RichText};
 
 /// State for the save points panel
@@ -23,18 +23,16 @@ pub struct SavePointsPanelState {
 }
 
 /// Show the save points panel
-pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut SavePointsPanelState) {
+pub fn show(ui: &mut egui::Ui, doc: &mut DocumentState, state: &mut SavePointsPanelState) {
     // Get save point count for UI (need to read before mutable access)
-    let save_point_count = app
-        .doc
+    let save_point_count = doc
         .editor
         .as_ref()
         .map(|e| e.save_point_count())
         .unwrap_or(0);
 
     // Get save points to display (need to clone for borrow checker)
-    let save_points: Vec<_> = app
-        .doc
+    let save_points: Vec<_> = doc
         .editor
         .as_ref()
         .map(|e| {
@@ -49,15 +47,14 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut SavePointsPanelSta
     let can_delete: Vec<_> = save_points
         .iter()
         .map(|(id, _)| {
-            app.doc
-                .editor
+            doc.editor
                 .as_ref()
                 .map(|e| e.can_delete_save_point(*id))
                 .unwrap_or(false)
         })
         .collect();
 
-    let has_editor = app.doc.editor.is_some();
+    let has_editor = doc.editor.is_some();
 
     if !has_editor {
         ui.label(RichText::new("No file loaded").italics());
@@ -92,7 +89,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut SavePointsPanelSta
 
     // Handle pending create action
     if state.pending_create {
-        if let Some(editor) = &mut app.doc.editor {
+        if let Some(editor) = &mut doc.editor {
             editor.create_save_point(state.new_name_buffer.clone());
             state.new_name_buffer.clear();
         }
@@ -161,15 +158,15 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut SavePointsPanelSta
 
     // Perform deferred actions
     if let Some(id) = action_restore {
-        if let Some(editor) = &mut app.doc.editor {
+        if let Some(editor) = &mut doc.editor {
             if editor.restore_save_point(id) {
-                app.mark_preview_dirty();
+                doc.preview.mark_dirty();
             }
         }
     }
 
     if let Some(id) = action_delete {
-        if let Some(editor) = &mut app.doc.editor {
+        if let Some(editor) = &mut doc.editor {
             let _ = editor.delete_save_point(id); // #[must_use] result intentionally ignored — deletability already checked by UI
         }
     }
@@ -180,7 +177,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp, state: &mut SavePointsPanelSta
     }
 
     if let Some((id, new_name)) = action_finish_rename {
-        if let Some(editor) = &mut app.doc.editor {
+        if let Some(editor) = &mut doc.editor {
             let _ = editor.rename_save_point(id, new_name); // #[must_use] result intentionally ignored — save point existence already verified by UI
         }
     }

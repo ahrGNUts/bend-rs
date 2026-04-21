@@ -66,6 +66,57 @@ impl PreviewState {
         self.pending_animation = None;
         self.pending_original_animation = None;
     }
+
+    /// Mark the preview as needing update (with debounce timestamp).
+    pub fn mark_dirty(&mut self) {
+        self.dirty = true;
+        self.last_edit_time = Some(Instant::now());
+    }
+
+    /// Set the animation to a specific frame (used by UI controls).
+    /// Uses pre-uploaded GPU texture handles — no per-frame upload needed.
+    pub fn set_animation_frame(&mut self, frame_index: usize) {
+        if let Some(anim) = &mut self.animation {
+            let idx = frame_index.min(anim.frames.len().saturating_sub(1));
+            anim.current_frame = idx;
+            anim.last_frame_time = Instant::now();
+            self.texture = Some(anim.textures[idx].clone());
+        }
+
+        // Sync original animation if in comparison mode
+        if let Some(anim) = &mut self.original_animation {
+            let idx = frame_index.min(anim.frames.len().saturating_sub(1));
+            anim.current_frame = idx;
+            anim.last_frame_time = Instant::now();
+            self.original_texture = Some(anim.textures[idx].clone());
+        }
+    }
+
+    /// Toggle play/pause for animation.
+    pub fn toggle_animation_playback(&mut self) {
+        if let Some(anim) = &mut self.animation {
+            anim.playing = !anim.playing;
+            if anim.playing {
+                anim.last_frame_time = Instant::now();
+            }
+        }
+        if let Some(anim) = &mut self.original_animation {
+            anim.playing = !anim.playing;
+            if anim.playing {
+                anim.last_frame_time = Instant::now();
+            }
+        }
+    }
+
+    /// Pause animation (used when stepping frame-by-frame).
+    pub fn pause_animation(&mut self) {
+        if let Some(anim) = &mut self.animation {
+            anim.playing = false;
+        }
+        if let Some(anim) = &mut self.original_animation {
+            anim.playing = false;
+        }
+    }
 }
 
 /// Decode an animated GIF into per-frame ColorImages and delay durations.
@@ -141,12 +192,6 @@ fn poll_animation_decode(
 }
 
 impl BendApp {
-    /// Mark the preview as needing update (with debounce timestamp)
-    pub fn mark_preview_dirty(&mut self) {
-        self.doc.preview.dirty = true;
-        self.doc.preview.last_edit_time = Some(Instant::now());
-    }
-
     /// Decode image data into an egui texture handle.
     fn decode_to_texture(
         ctx: &egui::Context,
@@ -391,51 +436,6 @@ impl BendApp {
         }
 
         self.doc.preview.dirty = false;
-    }
-
-    /// Set the animation to a specific frame (used by UI controls).
-    /// Uses pre-uploaded GPU texture handles — no per-frame upload needed.
-    pub fn set_animation_frame(&mut self, frame_index: usize) {
-        if let Some(anim) = &mut self.doc.preview.animation {
-            let idx = frame_index.min(anim.frames.len().saturating_sub(1));
-            anim.current_frame = idx;
-            anim.last_frame_time = Instant::now();
-            self.doc.preview.texture = Some(anim.textures[idx].clone());
-        }
-
-        // Sync original animation if in comparison mode
-        if let Some(anim) = &mut self.doc.preview.original_animation {
-            let idx = frame_index.min(anim.frames.len().saturating_sub(1));
-            anim.current_frame = idx;
-            anim.last_frame_time = Instant::now();
-            self.doc.preview.original_texture = Some(anim.textures[idx].clone());
-        }
-    }
-
-    /// Toggle play/pause for animation
-    pub fn toggle_animation_playback(&mut self) {
-        if let Some(anim) = &mut self.doc.preview.animation {
-            anim.playing = !anim.playing;
-            if anim.playing {
-                anim.last_frame_time = Instant::now();
-            }
-        }
-        if let Some(anim) = &mut self.doc.preview.original_animation {
-            anim.playing = !anim.playing;
-            if anim.playing {
-                anim.last_frame_time = Instant::now();
-            }
-        }
-    }
-
-    /// Pause animation (used when stepping frame-by-frame)
-    pub fn pause_animation(&mut self) {
-        if let Some(anim) = &mut self.doc.preview.animation {
-            anim.playing = false;
-        }
-        if let Some(anim) = &mut self.doc.preview.original_animation {
-            anim.playing = false;
-        }
     }
 }
 
