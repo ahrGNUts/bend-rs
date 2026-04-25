@@ -166,14 +166,16 @@ fn render_hex_byte(
 }
 
 /// Render the entire ASCII row as a single label with painter-based highlighting.
-/// Returns (response, clicked_byte_offset, context_menu_byte_offset).
+/// Returns the interaction response — click/drag/right-click detection is owned
+/// by the caller (`render_row`) so there's a single source of truth and no
+/// duplicated `interact_pointer_pos()` reads on the same response.
 fn render_ascii_row(
     ui: &mut egui::Ui,
     row_bytes: &[u8],
     row_offset: usize,
     state: &HexDisplayState,
     colors: &AppColors,
-) -> (egui::Response, Option<usize>, Option<usize>) {
+) -> egui::Response {
     // Build the full 16-char string: real chars + NBSP padding
     let mut text = String::with_capacity(BYTES_PER_ROW);
     for byte in row_bytes {
@@ -253,26 +255,7 @@ fn render_ascii_row(
         }
     }
 
-    // Detect click positions
-    let mut clicked_offset = None;
-    let mut context_offset = None;
-
-    if response.clicked() || response.secondary_clicked() {
-        if let Some(pos) = response.interact_pointer_pos() {
-            let char_idx = ((pos.x - rect.min.x) / char_width).floor() as usize;
-            if char_idx < row_bytes.len() {
-                let byte_offset = row_offset + char_idx;
-                if response.clicked() {
-                    clicked_offset = Some(byte_offset);
-                }
-                if response.secondary_clicked() {
-                    context_offset = Some(byte_offset);
-                }
-            }
-        }
-    }
-
-    (response, clicked_offset, context_offset)
+    response
 }
 
 /// Navigation keys that follow the move-by-delta pattern: (key, cursor delta).
@@ -618,41 +601,65 @@ fn render_row(
         // ASCII column — bracketed by non-selectable "|" pipes (commit 6b4fdaf).
         ui.spacing_mut().item_spacing.x = 0.0;
         ui.add(egui::Label::new(RichText::new("|").monospace()).selectable(false));
-        let (ascii_resp, _ascii_click, ascii_ctx) =
-            render_ascii_row(ui, &row_bytes, offset, state, colors);
-        if let Some(off) = ascii_ctx {
-            result.context_menu_offset = Some(off);
-        }
+        let ascii_resp = render_ascii_row(ui, &row_bytes, offset, state, colors);
         // ASCII click/drag: map pointer x to a char index within the row.
-        let ascii_byte_at_pointer = |pos: egui::Pos2| -> Option<usize> {
-            if !ascii_resp.rect.contains(pos) {
+        // `ascii_byte_at_x` skips the rect.contains() check — use it for
+        // click/drag-started handlers where egui's widget association already
+        // confirms the event belongs to this row, so a small y-drift between
+        // press and release shouldn't drop the click.
+        let ascii_byte_at_x = |x: f32| -> Option<usize> {
+            let char_width = ascii_resp.rect.width() / BYTES_PER_ROW as f32;
+            let dx = x - ascii_resp.rect.min.x;
+            if dx < 0.0 {
                 return None;
             }
-            let char_width = ascii_resp.rect.width() / BYTES_PER_ROW as f32;
-            let char_idx = ((pos.x - ascii_resp.rect.min.x) / char_width).floor() as usize;
+            let char_idx = (dx / char_width).floor() as usize;
             if char_idx < row_bytes.len() {
                 Some(offset + char_idx)
             } else {
                 None
             }
         };
+        // `ascii_byte_at_pointer` gates by rect.contains() — use it for
+        // drag-extension where the pointer can be over any row in the editor.
+        let ascii_byte_at_pointer = |pos: egui::Pos2| -> Option<usize> {
+            if !ascii_resp.rect.contains(pos) {
+                return None;
+            }
+            ascii_byte_at_x(pos.x)
+        };
+        // Click handler: clicked() fires on release, by which time egui has
+        // cleared press_origin, so use interact_pointer_pos (valid for the
+        // release frame) and project only the x onto char positions. The rect
+        // y-bounds check is intentionally skipped — clicked() firing on this
+        // widget already confirms the click belongs to this row, even if the
+        // release drifted a few px outside the row's rect.
         if ascii_resp.clicked() {
-            if let Some(pos) = ascii_resp.interact_pointer_pos() {
-                if let Some(byte_offset) = ascii_byte_at_pointer(pos) {
-                    result.cursor_move = Some((byte_offset, EditMode::Ascii));
-                }
+            if let Some(byte_offset) = ascii_resp
+                .interact_pointer_pos()
+                .and_then(|p| ascii_byte_at_x(p.x))
+            {
+                result.cursor_move = Some((byte_offset, EditMode::Ascii));
             }
         }
-        // Drag started — use press_origin rather than the current pointer
-        // position: on the frame drag_started fires, the pointer may already
-        // have moved to a different row, which would fall outside this row's
-        // rect and the drag would silently never start.
+        if ascii_resp.secondary_clicked() {
+            if let Some(byte_offset) = ascii_resp
+                .interact_pointer_pos()
+                .and_then(|p| ascii_byte_at_x(p.x))
+            {
+                result.context_menu_offset = Some(byte_offset);
+            }
+        }
+        // Drag started — press_origin is still valid mid-press, so we use it
+        // here. interact_pointer_pos can land on a different row by the time
+        // egui's drag threshold is exceeded; press_origin stays anchored.
         if ascii_resp.drag_started_by(egui::PointerButton::Primary) {
-            if let Some(press_pos) = ui.input(|i| i.pointer.press_origin()) {
-                if let Some(byte_offset) = ascii_byte_at_pointer(press_pos) {
-                    result.cursor_move = Some((byte_offset, EditMode::Ascii));
-                    result.start_drag = true;
-                }
+            if let Some(byte_offset) = ui
+                .input(|i| i.pointer.press_origin())
+                .and_then(|p| ascii_byte_at_x(p.x))
+            {
+                result.cursor_move = Some((byte_offset, EditMode::Ascii));
+                result.start_drag = true;
             }
         }
         if pointer.primary_down && pointer.drag_active {
