@@ -748,7 +748,16 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
         }
     });
 
-    handle_row_interactions(ui, app, result, shift_held, drag_id, pointer.primary_down);
+    handle_row_interactions(
+        ui,
+        app,
+        result,
+        &RowInteractionContext {
+            shift_held,
+            primary_down: pointer.primary_down,
+            drag_id,
+        },
+    );
 
     let keyboard_result = handle_keyboard_input(ui, app, state.cursor_pos, state.cursor_protected);
     if let Some((edit_type, offset, risk_level)) = keyboard_result.pending_high_risk_edit {
@@ -762,6 +771,20 @@ pub fn show(ui: &mut egui::Ui, app: &mut BendApp) {
     show_context_menu(ui, app);
 }
 
+/// Per-frame inputs needed to apply a `RowResult` to editor + UI state.
+/// Symmetric with `RowRenderContext` — bundle the snapshot once at the call
+/// site so the function signature stays narrow.
+struct RowInteractionContext {
+    /// Whether shift was held this frame (extends selection on click).
+    shift_held: bool,
+    /// Whether the primary mouse button was down this frame (used to decide
+    /// whether to clear the in-egui-data drag flag).
+    primary_down: bool,
+    /// Stable egui `Id` used to read/write the active-drag flag in egui's
+    /// per-frame data store.
+    drag_id: egui::Id,
+}
+
 /// Apply a `RowResult` (click, drag start/extend, secondary click, context
 /// menu target) to editor + UI state. Runs after the scroll area has painted,
 /// so mutating the editor here doesn't invalidate any per-frame read state.
@@ -769,26 +792,24 @@ fn handle_row_interactions(
     ui: &mut egui::Ui,
     app: &mut BendApp,
     result: RowResult,
-    shift_held: bool,
-    drag_id: egui::Id,
-    primary_down: bool,
+    ctx: &RowInteractionContext,
 ) {
     if let Some((off, mode)) = result.cursor_move {
         if let Some(editor) = &mut app.doc.editor {
             editor.set_edit_mode(mode);
-            editor.set_cursor_with_selection(off, shift_held);
+            editor.set_cursor_with_selection(off, ctx.shift_held);
         }
     }
     if result.start_drag {
-        ui.data_mut(|d| d.insert_temp(drag_id, true));
+        ui.data_mut(|d| d.insert_temp(ctx.drag_id, true));
     }
     if let Some(off) = result.drag_current_offset {
         if let Some(editor) = &mut app.doc.editor {
             editor.extend_selection_to(off);
         }
     }
-    if !primary_down {
-        ui.data_mut(|d| d.insert_temp::<bool>(drag_id, false));
+    if !ctx.primary_down {
+        ui.data_mut(|d| d.insert_temp::<bool>(ctx.drag_id, false));
     }
     if let Some(offset) = result.context_menu_offset {
         app.ui.context_menu_state.target_offset = Some(offset);
@@ -1119,4 +1140,78 @@ fn parse_hex_input(input: &str) -> Option<Vec<u8>> {
         .collect();
 
     bytes
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `RowResult::merge` is last-value-wins: a non-`None` field on the
+    /// incoming row overwrites the accumulator, but a `None`/`false` does
+    /// not clear an earlier value. This matches the original loop's plain
+    /// `cursor_move = Some(...)` assignment semantics across rows — the
+    /// last row to detect an event "wins" the frame.
+    #[test]
+    fn row_result_merge_is_last_value_wins() {
+        let mut acc = RowResult {
+            cursor_move: Some((10, EditMode::Hex)),
+            start_drag: false,
+            drag_current_offset: Some(7),
+            context_menu_offset: Some(5),
+        };
+        let later = RowResult {
+            cursor_move: Some((20, EditMode::Ascii)),
+            start_drag: true,
+            drag_current_offset: Some(15),
+            // Intentionally None — must not clear acc's existing value.
+            context_menu_offset: None,
+        };
+
+        acc.merge(later);
+
+        // Non-None fields on `later` overwrite acc.
+        assert_eq!(acc.cursor_move, Some((20, EditMode::Ascii)));
+        assert_eq!(acc.drag_current_offset, Some(15));
+        // start_drag is monotonic-true: once set, stays set.
+        assert!(acc.start_drag);
+        // context_menu_offset on later was None; acc's earlier Some is kept.
+        assert_eq!(acc.context_menu_offset, Some(5));
+    }
+
+    /// Default + a populated row → that row's values are taken verbatim.
+    #[test]
+    fn row_result_merge_into_default_takes_other() {
+        let mut acc = RowResult::default();
+        let row = RowResult {
+            cursor_move: Some((42, EditMode::Hex)),
+            start_drag: true,
+            drag_current_offset: Some(42),
+            context_menu_offset: Some(99),
+        };
+
+        acc.merge(row);
+
+        assert_eq!(acc.cursor_move, Some((42, EditMode::Hex)));
+        assert!(acc.start_drag);
+        assert_eq!(acc.drag_current_offset, Some(42));
+        assert_eq!(acc.context_menu_offset, Some(99));
+    }
+
+    /// Empty row merged into populated accumulator → accumulator unchanged.
+    #[test]
+    fn row_result_merge_empty_preserves_acc() {
+        let mut acc = RowResult {
+            cursor_move: Some((1, EditMode::Hex)),
+            start_drag: true,
+            drag_current_offset: Some(2),
+            context_menu_offset: Some(3),
+        };
+
+        acc.merge(RowResult::default());
+
+        assert_eq!(acc.cursor_move, Some((1, EditMode::Hex)));
+        assert!(acc.start_drag);
+        assert_eq!(acc.drag_current_offset, Some(2));
+        assert_eq!(acc.context_menu_offset, Some(3));
+    }
 }

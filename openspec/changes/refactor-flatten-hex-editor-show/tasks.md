@@ -1,19 +1,19 @@
 # Tasks: Flatten hex_editor::show()
 
 ## 1. Extract shared byte-highlight helpers
-Scope note: the real duplication between hex and ASCII rendering is narrower than the original tasks.md claimed. Today the hex column paints cursor/selection/current_match/search_match/bookmark/section_bg/protected; the ASCII column paints only cursor/selection. Full parity (search/risk tints in ASCII too) would be a user-visible behavior change and is intentionally out of scope for this refactor. Instead we extract the genuinely duplicated pieces.
+Scope note: the original proposal called for a single `paint_byte_highlight` painter shared by both renderers. On inspection that abstraction was a poor fit — the hex column paints a split-nibble cursor (left half / right half intensities) while the ASCII column paints a single full-cell cursor; a unified painter would mostly be a switch. The hex column also paints a richer set of non-cursor highlights (selection, current_match, search_match, bookmark, section_bg, protected strikethrough) while ASCII paints only cursor + selection. Full parity in ASCII would be a user-visible behavior change and is out of scope. So the extraction landed as **two narrow helpers** instead of one painter — the proposal and spec delta have been updated to match.
 
 - [x] 1.1 Use the existing `ByteHighlight` struct rather than introducing a parallel `ByteHighlightFlags` (they would be identical).
-- [x] 1.2 Extract `cursor_color_pair(write_mode, colors) -> (bright, dim)` — the insert-vs-overwrite tuple destructuring duplicated in both renderers.
-- [x] 1.3 Extract `byte_background_color(highlight, colors) -> Option<Color32>` for the priority chain (selection > current_match > search_match > bookmark > section). Used in `render_hex_byte`; available for future ASCII use.
+- [x] 1.2 Extract `cursor_color_pair(write_mode, colors) -> (bright, dim)` — the insert-vs-overwrite tuple destructuring duplicated in both renderers. Used by both `render_hex_byte` and `render_ascii_row`.
+- [x] 1.3 Extract `byte_background_color(highlight, colors) -> Option<Color32>` for the priority chain (selection > current_match > search_match > bookmark > section). Used by `render_hex_byte`; available for future ASCII use if column visuals are aligned later.
 - [x] 1.4 Wire both helpers into `render_hex_byte` and `render_ascii_row`.
 - [x] 1.5 Visual parity preserved (same colors, same painting order).
 - [x] 1.6 `cargo build` + `cargo test` (204 tests pass)
 
 ## 2. Introduce RowResult and pure row rendering
-- [x] 2.1 Defined `RowResult { cursor_move, start_drag, drag_current_offset, context_menu_offset }` with `Default` and `merge()` (last-value-wins — matches the original loop's plain-assignment semantics)
-- [x] 2.2 Added `PointerContext { pointer_pos, primary_down, drag_active }` so `render_row` sees a consistent snapshot
-- [x] 2.3 Wrote `render_row(ui, row_idx, state, editor, colors, highlights, pointer, scroll_to_me) -> RowResult` containing the hex-column rendering
+- [x] 2.1 Defined `RowResult { cursor_move, start_drag, drag_current_offset, context_menu_offset }` with `Default` and `merge()` (last-value-wins — matches the original loop's plain-assignment semantics). Module-private; `RowResult` is an internal collector, not a public abstraction.
+- [x] 2.2 Added `PointerContext { pointer_pos, primary_down, drag_active }` so `render_row` sees a consistent snapshot. Module-private.
+- [x] 2.3 Wrote `render_row(ui, row_idx, ctx: &RowRenderContext, scroll_to_me) -> RowResult` containing the hex-column rendering. `RowRenderContext` (also module-private) bundles per-frame read state (`state`, `editor`, `colors`, `highlights`, `pointer`) so the function takes one context arg instead of five borrows.
 - [x] 2.4 Same function renders the ASCII column (pipes, padding for incomplete last rows, pointer-to-byte mapping)
 - [x] 2.5 `render_row` takes `&EditorState` (immutable) — no editor mutations in the render path; events are collected into `RowResult`
 - [x] 2.6 `cargo build` + `cargo test` pass
@@ -37,7 +37,7 @@ Scope note: the real duplication between hex and ASCII rendering is narrower tha
 - [x] 5.2 `cargo build --release` — succeeds
 - [x] 5.3 `cargo test` — 204/204 pass
 - [x] 5.4 `cargo clippy --all-targets` — no new warnings from this refactor. Bundled `render_row`'s args into `RowRenderContext<'a>` to avoid a `too_many_arguments` warning.
-- [ ] 5.5 Manual smoke test (user to perform) — test matrix: scroll a large file, click in both columns, drag-select across rows, shift+click, secondary-click, copy/paste in hex and ASCII modes, overwrite + insert edits, ESC cancel, search highlight, risk tint, incomplete last row. Confirm no user-visible behavior change vs. `main` baseline.
+- [ ] 5.5 Manual smoke test (user to perform) — test matrix: scroll a large file, click in both columns, drag-select across rows, shift+click, secondary-click, copy/paste in hex and ASCII modes, overwrite + insert edits, ESC cancel, incomplete last row. Confirm no user-visible behavior change vs. `main` baseline.
 
 Scope note on matrix items:
-- "Search highlight visible in both columns" and "Risk-level tint visible in both columns" — the pre-refactor code only paints these in the hex column; ASCII parity would be a behavior change and is not part of this refactor (see Task 1 scope note). Expect hex-column-only here.
+- The pre-refactor code paints search match / current match / bookmark / risk-level section tint *only in the hex column*; the ASCII column paints only cursor + selection. Aligning the columns would be a user-visible behavior change and is out of scope (see Task 1 scope note and the spec delta's "Out of scope" line). Expect hex-column-only for those highlights.

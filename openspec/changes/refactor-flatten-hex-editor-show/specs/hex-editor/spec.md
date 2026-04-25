@@ -20,20 +20,22 @@ The hex editor SHALL separate per-row rendering from input handling. Rendering f
 - **THEN** it delegates per-row rendering to the row-rendering function
 - **AND** its body is an orchestrator (scroll-target resolution, viewport loop, interaction dispatch) rather than inline byte painting
 
-### Requirement: Shared Byte Highlight Painter
-The hex editor SHALL paint byte backgrounds (cursor, selection, search highlight, risk-level tint) through a single shared routine used by both the hex and ASCII columns.
+### Requirement: Shared Highlight Helpers
+The hex editor SHALL share the cursor color palette decision and the non-cursor background priority chain between the hex and ASCII column renderers, rather than duplicating those decisions inline in each renderer.
 
-#### Scenario: Selection visual parity across columns
-- **WHEN** a byte is selected and both its hex and ASCII cells are visible
-- **THEN** both cells display the same selection background, painted by the same routine
+Out of scope: full visual parity between columns (e.g. painting search-match and risk-level tints in the ASCII column). The hex column today paints a richer set of highlights than the ASCII column; this refactor preserves that asymmetry. Aligning the column visuals would be a behavior change tracked separately.
 
-#### Scenario: Cursor visual parity across columns
-- **WHEN** the cursor is on a byte and the cursor is visible in both columns
-- **THEN** both cells display the same cursor indicator, painted by the same routine
+#### Scenario: Cursor color palette is shared
+- **WHEN** the hex column or the ASCII column needs the bright/dim cursor color pair for the current write mode
+- **THEN** both renderers obtain it from the same helper rather than duplicating the insert-vs-overwrite branch
 
-#### Scenario: Search highlight and risk tint parity
-- **WHEN** a byte is a search match or sits in a risk-classified file section
-- **THEN** hex and ASCII cells receive the same highlight/tint, painted by the same routine
+#### Scenario: Non-cursor background priority is shared
+- **WHEN** a byte has any non-cursor highlight (selection, current-match, search-match, bookmark, or section tint)
+- **THEN** the priority chain that picks the winning background color is computed by a single helper used by the hex column renderer (and available for any future renderer that needs the same decision)
+
+#### Scenario: Selection and cursor are visually present in both columns
+- **WHEN** a byte is selected or under the cursor
+- **THEN** both its hex cell and its ASCII cell display the corresponding indicator (preserving pre-refactor behavior)
 
 ### Requirement: Named Struct for Edit Input Results
 Functions that collect multiple optional results from hex editor input SHALL return a named struct rather than a tuple of options.
