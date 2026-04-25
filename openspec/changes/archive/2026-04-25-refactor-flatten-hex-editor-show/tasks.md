@@ -37,7 +37,7 @@ Scope note: the original proposal called for a single `paint_byte_highlight` pai
 - [x] 5.2 `cargo build --release` — succeeds
 - [x] 5.3 `cargo test` — 204/204 pass
 - [x] 5.4 `cargo clippy --all-targets` — no new warnings from this refactor. Bundled `render_row`'s args into `RowRenderContext<'a>` to avoid a `too_many_arguments` warning.
-- [ ] 5.5 Manual smoke test (user to perform) — test matrix: scroll a large file, click in both columns, drag-select across rows, shift+click, secondary-click, copy/paste in hex and ASCII modes, overwrite + insert edits, ESC cancel, incomplete last row. Confirm no user-visible behavior change vs. `main` baseline.
+- [x] 5.5 Manual smoke test passed — no user-visible regressions vs. pre-refactor baseline.
 
 Scope note on matrix items:
 - The pre-refactor code paints search match / current match / bookmark / risk-level section tint *only in the hex column*; the ASCII column paints only cursor + selection. Aligning the columns would be a user-visible behavior change and is out of scope (see Task 1 scope note and the spec delta's "Out of scope" line). Expect hex-column-only for those highlights.
