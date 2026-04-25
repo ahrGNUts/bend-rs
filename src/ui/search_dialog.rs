@@ -2,6 +2,7 @@
 
 use crate::app::BendApp;
 use crate::editor::search::{parse_hex_replace, SearchMessage, SearchMode};
+use crate::ui::PointerCursor;
 use eframe::egui;
 
 /// Show the search dialog (modal window)
@@ -26,8 +27,10 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
             // Search mode selection
             ui.horizontal(|ui| {
                 ui.label("Mode:");
-                ui.selectable_value(&mut app.ui.search_state.mode, SearchMode::Hex, "Hex");
-                ui.selectable_value(&mut app.ui.search_state.mode, SearchMode::Ascii, "ASCII");
+                ui.selectable_value(&mut app.ui.search_state.mode, SearchMode::Hex, "Hex")
+                    .pointer_cursor();
+                ui.selectable_value(&mut app.ui.search_state.mode, SearchMode::Ascii, "ASCII")
+                    .pointer_cursor();
             });
 
             ui.add_space(4.0);
@@ -97,10 +100,10 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
 
             // Action buttons
             ui.horizontal(|ui| {
-                if ui.button("Next").clicked() {
+                if ui.button("Next").pointer_cursor().clicked() {
                     do_next = true;
                 }
-                if ui.button("Previous").clicked() {
+                if ui.button("Previous").pointer_cursor().clicked() {
                     do_prev = true;
                 }
             });
@@ -111,12 +114,14 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
 
                 if ui
                     .add_enabled(replace_enabled, egui::Button::new("Replace"))
+                    .pointer_cursor()
                     .clicked()
                 {
                     do_replace_one = true;
                 }
                 if ui
                     .add_enabled(has_matches, egui::Button::new("Replace All"))
+                    .pointer_cursor()
                     .clicked()
                 {
                     do_replace_all = true;
@@ -155,7 +160,7 @@ pub fn show(ctx: &egui::Context, app: &mut BendApp) {
 
             // Close button
             ui.horizontal(|ui| {
-                if ui.button("Close").clicked() {
+                if ui.button("Close").pointer_cursor().clicked() {
                     close_dialog = true;
                 }
             });

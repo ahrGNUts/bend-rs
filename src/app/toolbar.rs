@@ -1,6 +1,7 @@
 use eframe::egui;
 
 use crate::editor::buffer::EditMode;
+use crate::ui::PointerCursor;
 
 use super::BendApp;
 
@@ -31,11 +32,12 @@ impl BendApp {
                 let can_redo = self.doc.editor.as_ref().is_some_and(|e| e.can_redo());
 
                 // File operations
-                if ui.button("Open").clicked() {
+                if ui.button("Open").pointer_cursor().clicked() {
                     self.open_file_dialog(ui.ctx());
                 }
                 if ui
                     .add_enabled(has_file, egui::Button::new("Export"))
+                    .pointer_cursor()
                     .clicked()
                 {
                     self.export_file(ui.ctx());
@@ -46,12 +48,14 @@ impl BendApp {
                 // Undo/Redo
                 if ui
                     .add_enabled(can_undo, egui::Button::new("Undo"))
+                    .pointer_cursor()
                     .clicked()
                 {
                     actions.undo = true;
                 }
                 if ui
                     .add_enabled(can_redo, egui::Button::new("Redo"))
+                    .pointer_cursor()
                     .clicked()
                 {
                     actions.redo = true;
@@ -62,12 +66,14 @@ impl BendApp {
                 // Navigation/Search
                 if ui
                     .add_enabled(has_file, egui::Button::new("Search"))
+                    .pointer_cursor()
                     .clicked()
                 {
                     self.ui.search_state.open_dialog();
                 }
                 if ui
                     .add_enabled(has_file, egui::Button::new("Go to"))
+                    .pointer_cursor()
                     .clicked()
                 {
                     self.ui.go_to_offset_state.open_dialog();
@@ -81,6 +87,7 @@ impl BendApp {
                         has_file,
                         egui::SelectableLabel::new(self.doc.preview.comparison_mode, "Compare"),
                     )
+                    .pointer_cursor()
                     .clicked()
                 {
                     self.doc.preview.comparison_mode = !self.doc.preview.comparison_mode;
@@ -90,6 +97,7 @@ impl BendApp {
                         has_file,
                         egui::SelectableLabel::new(self.doc.header_protection, "Protect"),
                     )
+                    .pointer_cursor()
                     .on_hover_text("Protect header regions from editing")
                     .clicked()
                 {
@@ -110,6 +118,7 @@ impl BendApp {
                         has_file,
                         egui::SelectableLabel::new(current_mode == EditMode::Hex, "HEX"),
                     )
+                    .pointer_cursor()
                     .clicked()
                 {
                     actions.set_edit_mode = Some(EditMode::Hex);
@@ -119,6 +128,7 @@ impl BendApp {
                         has_file,
                         egui::SelectableLabel::new(current_mode == EditMode::Ascii, "ASCII"),
                     )
+                    .pointer_cursor()
                     .clicked()
                 {
                     actions.set_edit_mode = Some(EditMode::Ascii);
@@ -129,6 +139,7 @@ impl BendApp {
                 // Refresh preview
                 if ui
                     .add_enabled(has_file, egui::Button::new("Refresh"))
+                    .pointer_cursor()
                     .on_hover_text("Refresh preview (Ctrl+R / Cmd+R)")
                     .clicked()
                 {

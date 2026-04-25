@@ -1,6 +1,7 @@
 //! Bookmarks list UI component
 
 use crate::app::{DocumentState, UiState};
+use crate::ui::PointerCursor;
 use eframe::egui;
 
 /// State for the bookmarks panel
@@ -36,7 +37,7 @@ pub fn show(
 
     // Add bookmark button
     ui.horizontal(|ui| {
-        if ui.button("+ Add Bookmark").clicked() {
+        if ui.button("+ Add Bookmark").pointer_cursor().clicked() {
             let name = format!("Bookmark at 0x{:08X}", cursor_pos);
             if let Some(editor) = &mut doc.editor {
                 editor.add_bookmark(cursor_pos, name);
@@ -77,13 +78,13 @@ pub fn show(
                         }
                     }
                     ui.horizontal(|ui| {
-                        if ui.button("Rename").clicked() {
+                        if ui.button("Rename").pointer_cursor().clicked() {
                             action = Some(BookmarkAction::FinishRename(
                                 bookmark.id,
                                 std::mem::take(&mut state.rename_text),
                             ));
                         }
-                        if ui.button("Cancel").clicked() {
+                        if ui.button("Cancel").pointer_cursor().clicked() {
                             action = Some(BookmarkAction::CancelRename);
                         }
                     });
@@ -95,7 +96,7 @@ pub fn show(
                         let bg_idx = ui.painter().add(egui::Shape::Noop);
                         let label_text =
                             egui::RichText::new(&bookmark.name).color(colors.hex_byte_text);
-                        let response = ui.selectable_label(false, label_text);
+                        let response = ui.selectable_label(false, label_text).pointer_cursor();
                         let rounding = ui.visuals().widgets.inactive.rounding;
                         ui.painter().set(
                             bg_idx,
@@ -125,13 +126,13 @@ pub fn show(
                         }
                     }
                     ui.horizontal(|ui| {
-                        if ui.button("Save").clicked() {
+                        if ui.button("Save").pointer_cursor().clicked() {
                             action = Some(BookmarkAction::FinishAnnotation(
                                 bookmark.id,
                                 std::mem::take(&mut state.annotation_text),
                             ));
                         }
-                        if ui.button("Cancel").clicked() {
+                        if ui.button("Cancel").pointer_cursor().clicked() {
                             action = Some(BookmarkAction::CancelAnnotation);
                         }
                     });
@@ -142,7 +143,7 @@ pub fn show(
                 // Action buttons
                 ui.horizontal(|ui| {
                     if state.renaming.is_none() && state.editing_annotation.is_none() {
-                        if ui.small_button("Rename").clicked() {
+                        if ui.small_button("Rename").pointer_cursor().clicked() {
                             action = Some(BookmarkAction::StartRename(
                                 bookmark.id,
                                 bookmark.name.clone(),
@@ -153,18 +154,18 @@ pub fn show(
                         } else {
                             "Edit Note"
                         };
-                        if ui.small_button(note_label).clicked() {
+                        if ui.small_button(note_label).pointer_cursor().clicked() {
                             action = Some(BookmarkAction::StartAnnotation(
                                 bookmark.id,
                                 bookmark.annotation.clone(),
                             ));
                         }
                         if !bookmark.annotation.is_empty() {
-                            if ui.small_button("Delete Note").clicked() {
+                            if ui.small_button("Delete Note").pointer_cursor().clicked() {
                                 action = Some(BookmarkAction::DeleteAnnotation(bookmark.id));
                             }
                         }
-                        if ui.small_button("Delete").clicked() {
+                        if ui.small_button("Delete").pointer_cursor().clicked() {
                             action = Some(BookmarkAction::Delete(bookmark.id));
                         }
                     }

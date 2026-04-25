@@ -16,6 +16,7 @@ use crate::editor::buffer::{EditMode, WriteMode};
 use crate::editor::EditorState;
 use crate::formats::parse_file;
 use crate::ui::theme::AppColors;
+use crate::ui::PointerCursor;
 use crate::ui::{
     bookmarks, go_to_offset_dialog, hex_editor, image_preview, savepoints, search_dialog,
     settings_dialog, shortcuts_dialog, structure_tree,
@@ -342,7 +343,9 @@ impl BendApp {
                         .default_open(true)
                         .show(ui, |ui| {
                             structure_tree::show(ui, &mut self.doc, &mut self.ui);
-                        });
+                        })
+                        .header_response
+                        .pointer_cursor();
 
                     ui.add_space(10.0);
 
@@ -353,7 +356,9 @@ impl BendApp {
                             let mut state = std::mem::take(&mut self.ui.savepoints_state);
                             savepoints::show(ui, &mut self.doc, &mut state);
                             self.ui.savepoints_state = state;
-                        });
+                        })
+                        .header_response
+                        .pointer_cursor();
 
                     ui.add_space(10.0);
 
@@ -364,7 +369,9 @@ impl BendApp {
                             let mut state = std::mem::take(&mut self.ui.bookmarks_state);
                             bookmarks::show(ui, &mut self.doc, &mut self.ui, &mut state);
                             self.ui.bookmarks_state = state;
-                        });
+                        })
+                        .header_response
+                        .pointer_cursor();
                 });
             });
     }
@@ -399,7 +406,7 @@ impl BendApp {
                         ui.add_space(10.0);
                         ui.label("Drag and drop a file here, or use File > Open");
                         ui.add_space(20.0);
-                        if ui.button("Open File...").clicked() {
+                        if ui.button("Open File...").pointer_cursor().clicked() {
                             self.open_file_dialog(ui.ctx());
                         }
                     });

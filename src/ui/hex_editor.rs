@@ -5,6 +5,7 @@ use crate::editor::buffer::{EditMode, NibblePosition, WriteMode};
 use crate::editor::{is_printable_ascii, is_printable_ascii_char};
 use crate::formats::RiskLevel;
 use crate::ui::theme::AppColors;
+use crate::ui::PointerCursor;
 use eframe::egui::{self, RichText, TextStyle};
 use std::sync::OnceLock;
 
@@ -959,12 +960,17 @@ fn show_context_menu(ui: &mut egui::Ui, app: &mut BendApp) {
             egui::Frame::popup(ui.style()).show(ui, |ui| {
                 ui.set_min_width(150.0);
 
-                if ui.button(format!("Copy as Hex{}", label_suffix)).clicked() {
+                if ui
+                    .button(format!("Copy as Hex{}", label_suffix))
+                    .pointer_cursor()
+                    .clicked()
+                {
                     action = Some(ContextAction::CopyHex);
                     close_menu = true;
                 }
                 if ui
                     .button(format!("Copy as ASCII{}", label_suffix))
+                    .pointer_cursor()
                     .clicked()
                 {
                     action = Some(ContextAction::CopyAscii);
@@ -973,18 +979,18 @@ fn show_context_menu(ui: &mut egui::Ui, app: &mut BendApp) {
 
                 ui.separator();
 
-                if ui.button("Paste").clicked() {
+                if ui.button("Paste").pointer_cursor().clicked() {
                     action = Some(ContextAction::Paste);
                     close_menu = true;
                 }
 
                 ui.separator();
 
-                if ui.button("Add Bookmark").clicked() {
+                if ui.button("Add Bookmark").pointer_cursor().clicked() {
                     action = Some(ContextAction::AddBookmark);
                     close_menu = true;
                 }
-                if ui.button("Go to Offset...").clicked() {
+                if ui.button("Go to Offset...").pointer_cursor().clicked() {
                     action = Some(ContextAction::GoToOffset);
                     close_menu = true;
                 }

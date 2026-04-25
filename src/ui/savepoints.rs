@@ -1,6 +1,7 @@
 //! Save points UI panel
 
 use crate::app::DocumentState;
+use crate::ui::PointerCursor;
 use eframe::egui::{self, RichText};
 
 /// State for the save points panel
@@ -62,7 +63,7 @@ pub fn show(ui: &mut egui::Ui, doc: &mut DocumentState, state: &mut SavePointsPa
     }
 
     ui.horizontal(|ui| {
-        if ui.button("➕ New").clicked() {
+        if ui.button("➕ New").pointer_cursor().clicked() {
             state.show_create_dialog = true;
             state.new_name_buffer = format!("Save Point {}", save_point_count + 1);
         }
@@ -75,11 +76,11 @@ pub fn show(ui: &mut egui::Ui, doc: &mut DocumentState, state: &mut SavePointsPa
         ui.label("Name:");
         ui.text_edit_singleline(&mut state.new_name_buffer);
         ui.horizontal(|ui| {
-            if ui.button("Create").clicked() {
+            if ui.button("Create").pointer_cursor().clicked() {
                 state.pending_create = true;
                 state.show_create_dialog = false;
             }
-            if ui.button("Cancel").clicked() {
+            if ui.button("Cancel").pointer_cursor().clicked() {
                 state.show_create_dialog = false;
                 state.new_name_buffer.clear();
             }
@@ -118,11 +119,11 @@ pub fn show(ui: &mut egui::Ui, doc: &mut DocumentState, state: &mut SavePointsPa
                     state.editing_id = None;
                 }
                 ui.horizontal(|ui| {
-                    if ui.button("Rename").clicked() {
+                    if ui.button("Rename").pointer_cursor().clicked() {
                         action_finish_rename = Some((*id, state.edit_buffer.clone()));
                         state.editing_id = None;
                     }
-                    if ui.button("Cancel").clicked() {
+                    if ui.button("Cancel").pointer_cursor().clicked() {
                         state.editing_id = None;
                     }
                 });
@@ -134,18 +135,32 @@ pub fn show(ui: &mut egui::Ui, doc: &mut DocumentState, state: &mut SavePointsPa
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         // Delete button (only for leaf)
                         if can_delete.get(idx).copied().unwrap_or(false)
-                            && ui.button("🗑").on_hover_text("Delete").clicked()
+                            && ui
+                                .button("🗑")
+                                .pointer_cursor()
+                                .on_hover_text("Delete")
+                                .clicked()
                         {
                             action_delete = Some(*id);
                         }
 
                         // Rename button
-                        if ui.button("✏").on_hover_text("Rename").clicked() {
+                        if ui
+                            .button("✏")
+                            .pointer_cursor()
+                            .on_hover_text("Rename")
+                            .clicked()
+                        {
                             action_start_rename = Some((*id, name.clone()));
                         }
 
                         // Restore button
-                        if ui.button("↩").on_hover_text("Restore").clicked() {
+                        if ui
+                            .button("↩")
+                            .pointer_cursor()
+                            .on_hover_text("Restore")
+                            .clicked()
+                        {
                             action_restore = Some(*id);
                         }
                     });

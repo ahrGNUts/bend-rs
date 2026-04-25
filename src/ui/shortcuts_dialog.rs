@@ -1,5 +1,6 @@
 //! Keyboard shortcuts help dialog
 
+use crate::ui::PointerCursor;
 use eframe::egui;
 
 /// State for the keyboard shortcuts help dialog
@@ -140,7 +141,7 @@ pub fn show(ctx: &egui::Context, state: &mut ShortcutsDialogState) {
 
             // Close button
             ui.horizontal(|ui| {
-                if ui.button("Close").clicked() {
+                if ui.button("Close").pointer_cursor().clicked() {
                     close_dialog = true;
                 }
             });

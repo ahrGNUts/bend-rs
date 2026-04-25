@@ -2,6 +2,7 @@
 
 use crate::app::PreviewState;
 use crate::ui::theme::AppColors;
+use crate::ui::PointerCursor;
 use eframe::egui;
 
 /// Show the image preview panel with optional comparison mode
@@ -40,13 +41,23 @@ fn show_animation_controls(ui: &mut egui::Ui, preview: &mut PreviewState) {
     ui.add_space(2.0);
     ui.horizontal(|ui| {
         // First frame button
-        if ui.button("|<").on_hover_text("First frame").clicked() {
+        if ui
+            .button("|<")
+            .pointer_cursor()
+            .on_hover_text("First frame")
+            .clicked()
+        {
             preview.pause_animation();
             preview.set_animation_frame(0);
         }
 
         // Previous frame button
-        if ui.button("<").on_hover_text("Previous frame").clicked() {
+        if ui
+            .button("<")
+            .pointer_cursor()
+            .on_hover_text("Previous frame")
+            .clicked()
+        {
             preview.pause_animation();
             let current = preview.animation.as_ref().unwrap().current_frame;
             let prev = if current == 0 {
@@ -60,12 +71,17 @@ fn show_animation_controls(ui: &mut egui::Ui, preview: &mut PreviewState) {
         // Play/Pause toggle — read fresh playing state
         let is_playing = preview.animation.as_ref().unwrap().playing;
         let play_label = if is_playing { "Pause" } else { "Play" };
-        if ui.button(play_label).clicked() {
+        if ui.button(play_label).pointer_cursor().clicked() {
             preview.toggle_animation_playback();
         }
 
         // Next frame button
-        if ui.button(">").on_hover_text("Next frame").clicked() {
+        if ui
+            .button(">")
+            .pointer_cursor()
+            .on_hover_text("Next frame")
+            .clicked()
+        {
             preview.pause_animation();
             let current = preview.animation.as_ref().unwrap().current_frame;
             let next = (current + 1) % frame_count;
@@ -73,7 +89,12 @@ fn show_animation_controls(ui: &mut egui::Ui, preview: &mut PreviewState) {
         }
 
         // Last frame button
-        if ui.button(">|").on_hover_text("Last frame").clicked() {
+        if ui
+            .button(">|")
+            .pointer_cursor()
+            .on_hover_text("Last frame")
+            .clicked()
+        {
             preview.pause_animation();
             preview.set_animation_frame(frame_count - 1);
         }

@@ -2,6 +2,7 @@
 
 use crate::app::{DocumentState, UiState};
 use crate::editor::go_to_offset::parse_offset;
+use crate::ui::PointerCursor;
 use eframe::egui;
 
 /// Attempt to navigate to the offset specified in the dialog input
@@ -87,10 +88,10 @@ pub fn show(ctx: &egui::Context, doc: &mut DocumentState, ui_state: &mut UiState
 
             // Buttons
             ui.horizontal(|ui| {
-                if ui.button("Go").clicked() {
+                if ui.button("Go").pointer_cursor().clicked() {
                     do_navigate = true;
                 }
-                if ui.button("Cancel").clicked() {
+                if ui.button("Cancel").pointer_cursor().clicked() {
                     close_dialog = true;
                 }
             });

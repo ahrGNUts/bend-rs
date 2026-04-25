@@ -3,6 +3,7 @@
 use crate::app::{DocumentState, UiState};
 use crate::formats::{FileSection, RiskLevel};
 use crate::ui::theme::AppColors;
+use crate::ui::PointerCursor;
 use eframe::egui::{self, RichText};
 
 /// Show a single section in the tree
@@ -28,7 +29,7 @@ fn show_section(
         // Leaf node - just show as clickable label
         ui.horizontal(|ui| {
             let bg_idx = ui.painter().add(egui::Shape::Noop);
-            let response = ui.selectable_label(false, name);
+            let response = ui.selectable_label(false, name).pointer_cursor();
             let rounding = ui.visuals().widgets.inactive.rounding;
             ui.painter().set(
                 bg_idx,
@@ -85,7 +86,7 @@ fn show_section(
                         ))
                         .small(),
                     );
-                    if ui.small_button("Go").clicked() {
+                    if ui.small_button("Go").pointer_cursor().clicked() {
                         *clicked_offset = Some(section.start);
                     }
                 });
@@ -109,7 +110,7 @@ fn show_section(
         );
 
         // Make header clickable too
-        if header.header_response.clicked() {
+        if header.header_response.pointer_cursor().clicked() {
             *clicked_offset = Some(section.start);
         }
     }

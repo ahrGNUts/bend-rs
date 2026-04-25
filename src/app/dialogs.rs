@@ -1,4 +1,5 @@
 use crate::formats::RiskLevel;
+use crate::ui::PointerCursor;
 use eframe::egui;
 
 use super::BendApp;
@@ -94,10 +95,10 @@ impl BendApp {
 
                     // Buttons
                     ui.horizontal(|ui| {
-                        if ui.button("Proceed").clicked() {
+                        if ui.button("Proceed").pointer_cursor().clicked() {
                             should_proceed = true;
                         }
-                        if ui.button("Cancel").clicked() {
+                        if ui.button("Cancel").pointer_cursor().clicked() {
                             should_cancel = true;
                         }
                     });
@@ -150,15 +151,15 @@ impl BendApp {
                 ui.label("You have unsaved changes. Are you sure you want to exit?");
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {
-                    if ui.button("Export First").clicked() {
+                    if ui.button("Export First").pointer_cursor().clicked() {
                         self.export_file(ui.ctx());
                         self.ui.dialogs.show_close = false;
                     }
-                    if ui.button("Discard & Exit").clicked() {
+                    if ui.button("Discard & Exit").pointer_cursor().clicked() {
                         self.ui.dialogs.pending_close = true;
                         self.ui.dialogs.show_close = false;
                     }
-                    if ui.button("Cancel").clicked() {
+                    if ui.button("Cancel").pointer_cursor().clicked() {
                         self.ui.dialogs.show_close = false;
                     }
                 });

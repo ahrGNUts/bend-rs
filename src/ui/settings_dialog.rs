@@ -1,6 +1,7 @@
 //! Settings/Preferences dialog UI component
 
 use crate::settings::{AppSettings, ThemePreference};
+use crate::ui::PointerCursor;
 use eframe::egui;
 
 /// State for the settings dialog
@@ -58,9 +59,12 @@ pub fn show(
             ui.horizontal(|ui| {
                 ui.label("Theme:");
                 let prev = settings.theme;
-                ui.selectable_value(&mut settings.theme, ThemePreference::Light, "Light");
-                ui.selectable_value(&mut settings.theme, ThemePreference::Dark, "Dark");
-                ui.selectable_value(&mut settings.theme, ThemePreference::System, "System");
+                ui.selectable_value(&mut settings.theme, ThemePreference::Light, "Light")
+                    .pointer_cursor();
+                ui.selectable_value(&mut settings.theme, ThemePreference::Dark, "Dark")
+                    .pointer_cursor();
+                ui.selectable_value(&mut settings.theme, ThemePreference::System, "System")
+                    .pointer_cursor();
                 // Live preview: apply immediately on change
                 if settings.theme != prev {
                     settings.theme.apply(ctx);
@@ -102,6 +106,7 @@ pub fn show(
                 ui.label(format!("{} recent file(s) stored", recent_count));
                 if ui
                     .add_enabled(recent_count > 0, egui::Button::new("Clear"))
+                    .pointer_cursor()
                     .clicked()
                 {
                     actions.push(SettingsAction::ClearRecent);
@@ -128,7 +133,7 @@ pub fn show(
 
             // Close button
             ui.horizontal(|ui| {
-                if ui.button("Close").clicked() {
+                if ui.button("Close").pointer_cursor().clicked() {
                     actions.push(SettingsAction::Close);
                 }
             });
