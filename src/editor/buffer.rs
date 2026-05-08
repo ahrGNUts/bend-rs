@@ -904,6 +904,33 @@ mod tests {
     }
 
     #[test]
+    fn test_restore_no_op_does_not_clobber_redo_stack() {
+        // Pin the contract that a restore whose snapshot already matches the
+        // current working buffer pushes NO history entry. If it did, the
+        // History::push call would truncate the redo stack and silently
+        // destroy redo state — observably visible to the user.
+        let data = vec![0x00, 0x01, 0x02, 0x03];
+        let mut editor = EditorState::new(data);
+
+        let id = editor.create_save_point("SP1".to_string());
+
+        // Make an edit, then undo so working matches the snapshot again
+        // and there's a redo entry to clobber.
+        editor.edit_byte(0, 0xFF);
+        assert!(editor.undo());
+        assert_eq!(editor.working(), &[0x00, 0x01, 0x02, 0x03]);
+        assert!(editor.can_redo());
+
+        // No-op restore: must preserve the redo stack.
+        assert!(editor.restore_save_point(id));
+        assert!(
+            editor.can_redo(),
+            "no-op restore must not push a Replace and clobber redo"
+        );
+        assert_eq!(editor.working(), &[0x00, 0x01, 0x02, 0x03]);
+    }
+
+    #[test]
     fn test_edit_ascii_printable() {
         let data = vec![0x00, 0x01, 0x02, 0x03];
         let mut editor = EditorState::new(data);
