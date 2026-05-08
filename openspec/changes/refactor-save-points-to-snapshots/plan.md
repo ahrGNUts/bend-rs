@@ -498,7 +498,9 @@ Note that `test_compute_diff` is gone (function removed) and `test_delete_leaf_s
 cargo test 2>&1 | tail -3
 ```
 
-Expected: still all green. The existing `test_insert_clears_save_points` in `buffer.rs::tests` will still pass at this point because the `clear_all` call in `on_length_changed` is unchanged — Task 3 inverts that behavior. The save-point integration tests in `buffer.rs` (`test_save_point_create_and_restore`, `test_save_point_rename`, `test_save_point_delete`) should also still pass because the rewrite preserves the external contract.
+Expected: still all green. The existing `test_insert_clears_save_points` in `buffer.rs::tests` will still pass at this point because the `clear_all` call in `on_length_changed` is unchanged — Task 3 inverts that behavior. The save-point integration tests `test_save_point_create_and_restore` and `test_save_point_rename` in `buffer.rs` should also still pass because the rewrite preserves the external contract.
+
+> **Errata** (added after Task 2 implementation): `test_save_point_delete` in `buffer.rs::tests` was originally listed here as "should still pass," but it actually fails under the new semantics — its assertion `!editor.can_delete_save_point(sp1)` (leaf-only) is invalidated by `SavePointManager::can_delete` becoming an exists-check. The pre-commit hook would block on it. The test is scheduled for deletion in Task 3 anyway (Step 3.1, "delete it"), so it must be deleted here in Task 2 to keep the tree green at the commit boundary. Add `src/editor/buffer.rs` to the Step 2.5 `git add` and remove the `fn test_save_point_delete` block when applying this task.
 
 - [ ] **Step 2.4: cargo fmt + clippy**
 
