@@ -1,6 +1,6 @@
 # Hex Editor Capability — Save Points Delta
 
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Save Points
 The application SHALL allow users to create explicit save points (snapshots) that can be restored. Save points SHALL be self-contained snapshots of the working buffer at the moment of creation, stored independently of one another. Save points SHALL persist across all subsequent edits to the working buffer, including length-changing operations (insert and delete) and undo/redo of those operations. Any save point MAY be deleted at any time, regardless of its position in the list.

@@ -69,19 +69,6 @@ The application SHALL maintain a linear edit history allowing users to undo and 
 - **WHEN** edit history exceeds a configured maximum
 - **THEN** the oldest entries are discarded to maintain memory bounds
 
-### Requirement: Save Points
-The application SHALL allow users to create explicit save points (snapshots) that can be restored.
-
-#### Scenario: Create save point
-- **WHEN** user triggers "Create Save Point"
-- **THEN** the current buffer state is stored as a named checkpoint
-- **AND** the save point appears in a list of available restore points
-
-#### Scenario: Restore save point
-- **WHEN** user selects a save point to restore
-- **THEN** the buffer is reset to that saved state
-- **AND** a new history entry is created (restore is itself undoable)
-
 ### Requirement: Non-Destructive Workflow
 The application SHALL preserve the original file and require explicit export to save changes.
 
