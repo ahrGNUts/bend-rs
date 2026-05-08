@@ -1,4 +1,4 @@
-# Tasks: Save points as compressed self-contained snapshots
+# Tasks: Save points as self-contained uncompressed snapshots
 
 ## 1. Add `EditOperation::Replace` variant
 
@@ -11,25 +11,24 @@
   - `test_replace_round_trips_for_shrink` (new shorter than old)
 - [ ] 1.5 `cargo build` clean.
 
-## 2. Rewrite `SavePoint` and `SavePointManager` to compressed snapshots
+## 2. Rewrite `SavePoint` and `SavePointManager` to uncompressed snapshots
 
-- [ ] 2.1 In `src/editor/savepoints.rs`, change `SavePoint` to `{ id, name, compressed: Vec<u8>, uncompressed_len: usize }`. Remove `diff` field.
+- [ ] 2.1 In `src/editor/savepoints.rs`, change `SavePoint` to `{ id, name, bytes: Vec<u8> }`. Remove `diff` field.
 - [ ] 2.2 Remove `ByteChange` struct, `compute_diff` fn, `last_save_point_state` field, and the diff-chain doc-comment block at the top of the file.
 - [ ] 2.3 `SavePointManager::new()` takes no args.
-- [ ] 2.4 `create(name, current_state)` compresses `current_state` via `flate2::write::ZlibEncoder` at `flate2::Compression::default()`, stores `compressed` and `uncompressed_len = current_state.len()`. No diff computation.
-- [ ] 2.5 `restore(&self, id) -> Option<Vec<u8>>` decompresses via `flate2::read::ZlibDecoder` into a `Vec::with_capacity(uncompressed_len)`. Drop the `original` parameter.
+- [ ] 2.4 `create(name, current_state)` clones `current_state` into the new save point's `bytes` field. No diff computation.
+- [ ] 2.5 `restore(&self, id) -> Option<Vec<u8>>` returns `save_point.bytes.clone()`. Drop the `original` parameter.
 - [ ] 2.6 `delete(id) -> bool` works for any id, not just leaf. Removes from `save_points` (e.g. `swap_remove` or `remove`) AND rebuilds `id_to_index` to reflect the new positions. Returns whether the id existed.
 - [ ] 2.7 Remove `can_delete` method (deletion is always allowed if the save point exists).
 - [ ] 2.8 `clear_all()` takes no args (no base state to track). Used only on file load.
 - [ ] 2.9 Update existing tests:
-  - `test_create_save_point` — assertion becomes "compressed length > 0 and uncompressed_len matches input".
+  - `test_create_save_point` — assertion becomes "snapshot bytes match input".
   - `test_restore_save_point` — drop the `original` argument from the call.
   - `test_delete_leaf_save_point` — rename to `test_delete_any_save_point`; cover middle deletion.
   - Drop `test_compute_diff` (function gone).
 - [ ] 2.10 New tests in `src/editor/savepoints.rs`:
-  - `test_compress_decompress_round_trip` (random-ish bytes, including all-zero and all-one regions)
   - `test_delete_middle_save_point_re_indexes` (delete index 1 of 3, verify ids 0 and 2 still resolve and restore correctly)
-  - `test_restore_after_buffer_state_changed` (snapshot is independent of working state)
+  - `test_save_point_independent_of_subsequent_edits` (snapshot is unaffected by edits made after creation)
 - [ ] 2.11 `cargo build` clean.
 
 ## 3. Buffer integration

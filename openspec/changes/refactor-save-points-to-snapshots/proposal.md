@@ -1,4 +1,4 @@
-# Change: Save points survive length changes (compressed snapshot model)
+# Change: Save points survive length changes (uncompressed snapshot model)
 
 ## Why
 
@@ -12,8 +12,8 @@ Both limitations have the same root, and a single change resolves both.
 
 ## What Changes
 
-- Replace the diff-chain model with **per-save-point compressed snapshots**. Each `SavePoint` becomes self-contained: `compressed: Vec<u8>`, `uncompressed_len: usize`. No chain, no shared base state, no cross-save-point dependencies.
-- Use `flate2` (already a project dependency for PNG IDAT handling) at default compression level. Image-shaped data typically compresses 5–10×; for the few-MB buffers this app handles, snapshot creation is in the tens of milliseconds and restore is in the low tens.
+- Replace the diff-chain model with **per-save-point uncompressed snapshots**. Each `SavePoint` becomes self-contained: `bytes: Vec<u8>` holds a full copy of the working buffer at creation time. No chain, no shared base state, no cross-save-point dependencies.
+- Compression was investigated and ruled out (see `design.md`): on this app's supported formats (BMP, JPEG, GIF), the only format that compresses meaningfully is BMP (~1.21–1.29×). JPEG and GIF gain effectively nothing because their bulk is already compressed by their own encodings. The complexity, the new dependency, and the per-save-point CPU cost did not earn their keep on representative workloads.
 - Add a new `EditOperation::Replace { offset, old_values, new_values }` variant to `src/editor/history.rs`. Unlike `EditOperation::Range`, the two value vectors may differ in length. `restore_save_point` always emits `Replace { offset: 0, .. }` so that restoring to a snapshot of a different length is correctly recorded as a single undoable history entry. `Range` stays for fixed-length in-place edits.
 - Drop `self.save_points.clear_all(...)` calls from `on_length_changed`, `apply_insert`, `apply_delete`. `clear_all` itself remains as the file-load reset path but takes no `base_state` argument anymore.
 - Drop the leaf-only restriction. `SavePointManager::delete(id)` removes any save point and re-indexes the `HashMap`. `can_delete` becomes "does it exist?" — likely deleted entirely so the UI always shows the trash button.
@@ -33,8 +33,8 @@ Both limitations have the same root, and a single change resolves both.
   - `src/editor/history.rs` — add `EditOperation::Replace` variant; update apply-undo / apply-redo dispatch.
   - `src/ui/savepoints.rs` — drop `can_delete` collection; trash button always shown.
   - Existing tests update: `test_insert_clears_save_points` in `buffer.rs` becomes `test_insert_preserves_save_points`. New tests for length-change persistence, non-leaf delete, length-change restore round-trip, `Replace` op round-trip.
-- **No on-disk format change.** Save points are in-memory only; no migration.
-- **Memory cost:** ~1× compressed buffer per save point. For a 5 MB image and 10 save points, raw cost is ~50 MB; with typical 5–10× compression on image data, real cost is 5–10 MB. Bounded by user behavior (number of save points × file size).
-- **CPU cost:** Compression on save-point creation (~30–50 ms for 5 MB), decompression on restore (~10 ms). Both are user-triggered and rare; no impact on the per-frame render path.
+- **No new dependencies.** No on-disk format change. Save points are in-memory only; no migration.
+- **Memory cost:** ~1× buffer per save point. Bounded and predictable. Worked examples for a 50 MB file: 5 save points = 250 MB; 10 save points = 500 MB; 20 save points = 1 GB. The dual-buffer architecture (immutable `original` + editable `working`) already accounts for 2× the file size before any save points exist, so save points are an additive cost on top of that baseline. For typical workloads (single-digit MB files, ~5–15 save points per session), additional cost is in the low tens of MB. Users routinely working with files in the 50+ MB range and many save points will want to keep save-point counts modest. On-disk save-point persistence is a possible future change if that workload turns out to be common — out of scope here.
+- **CPU cost:** Save-point creation = a single `Vec<u8>::clone()`. Restore = another clone. Both are memory-bandwidth-bound and effectively free at the file sizes this app handles.
 - **Risk:** The new `Replace` variant must round-trip correctly through undo/redo, including for length-change cases. Mitigated by direct round-trip tests on `Replace` and on the full restore-undo-redo cycle.
 - **No ripple into** effects, format parsers, image rendering, settings, or persistence.

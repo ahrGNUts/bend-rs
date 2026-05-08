@@ -1,4 +1,4 @@
-# Design: Save points as compressed self-contained snapshots
+# Design: Save points as self-contained uncompressed snapshots
 
 ## Decision context
 
@@ -12,24 +12,41 @@ The clearing is *intentional* under the current data model: each `SavePoint` sto
 
 Three approaches were considered for making save points robust to length changes.
 
-### Option A — Full uncompressed snapshots
+### Option A — Full uncompressed snapshots (chosen)
 
-Each `SavePoint` stores a full `Vec<u8>` of the buffer at creation time. Restore = swap working buffer for the snapshot. No chain, no diff math, delete-any-save-point trivially supported. Memory: ~1× buffer per save point. For typical glitch-art workloads (image files in the 1–50 MB range, ~5–15 save points per session), this is in the low tens of MB — well within budget.
+Each `SavePoint` stores a full `Vec<u8>` of the buffer at creation time. Restore = swap working buffer for the snapshot. No chain, no diff math, delete-any-save-point trivially supported. Memory: ~1× buffer per save point.
 
 ### Option B — Length-aware edit-script diffs
 
 Keep the chain, but make each diff a sequence of `Replace` / `Insert` / `Delete` operations rather than fixed-offset byte substitutions. Computing a diff between two byte buffers of different lengths requires a real diff algorithm (Myers or similar). Deleting a non-leaf save point requires *rebasing* the next save point's diff onto the new predecessor. Lower memory than A for small edits; comparable for large edits. Substantial implementation surface (diff algorithm + rebase logic + edge cases).
 
-### Option C — Compressed full snapshots (chosen)
+### Option C — Compressed full snapshots
 
-Same data model as A, but each snapshot is zlib-compressed via `flate2` (already a project dependency for PNG IDAT handling). Adds a compress/decompress step on save-point create/restore. Compression CPU cost is small (tens of ms for a few MB) and only paid on user-triggered events; neither is on the render path. For image-shaped data, compression typically reduces memory 5–10×.
+Same data model as A, but each snapshot is zlib-compressed via `flate2`. Adds a compress/decompress step on save-point create/restore. Considered but ruled out after empirical measurement (see "Empirical evidence" below).
 
-### Why C
+### Empirical evidence: why A and not C
 
-- Strict superset of A's data model. The data structure is "a snapshot, but compressed." If memory ever becomes a real concern we can bump the compression level; if compression ever becomes too slow we can drop to A by inlining the bytes. Either move is a local code change with no API surface impact.
-- Removes a category of code rather than replacing it with new complexity: `compute_diff`, `last_save_point_state`, the chain doc-block, the leaf-only `can_delete` check, and three `clear_all` call sites all go away.
-- B's memory advantage is conditional on small edits clustered in one region. Glitch-art workflows (effects applied to whole IDAT regions, header tweaks across multi-byte fields) frequently violate that assumption, eroding B's advantage while keeping its complexity.
-- `flate2` is already linked into the binary; no new dependency, no cargo audit churn.
+Compression was initially recommended on the assumption of 5–10× ratio for "image-shaped data" and ~30–50 ms compression on a 5 MB buffer. A one-off benchmark (committed as `examples/bench_compression.rs`, then removed once it had served its purpose) measured those numbers on this machine for the formats this app actually edits — BMP, JPEG, GIF (PNG is read-only and was excluded from the test set):
+
+| Format / size | level 1 ratio · compress time | level 6 ratio · compress time |
+|---|---|---|
+| BMP, 0.75 MB (glitched) | 1.21× · 5 ms | 1.29× · 17 ms |
+| JPEG, 3.0 MB | 1.00× · 12 ms | 1.00× · 63 ms |
+| JPEG, 4.7 MB | 1.02× · 20 ms | 1.02× · 107 ms |
+| GIF, 0.81 MB | 1.00× · 3 ms | 1.00× · 16 ms |
+
+JPEG and GIF compress to essentially 1.00× because their bulk is already compressed by their own encodings (DCT, LZW). Only BMP shows a real win, and only in the 20–30% range. Level 6 (default) costs roughly 5× the CPU of level 1 for a small additional ratio gain, and at 5 MB the per-save-point hitch (107 ms) is approaching perceptible.
+
+At the 50 MB scale that motivated keeping the design simple, level-6 compression would cost ~1 second per save-point creation — a clear UI hitch — for a memory saving that's 0–30% depending on format. Level 1 is faster (~250 ms at 50 MB) but still gains nothing measurable on JPEG/GIF.
+
+Conclusion: compression doesn't earn its keep on the actual supported formats. **Option A (uncompressed snapshots)** wins on:
+
+- Predictable, format-independent memory cost (`N × buffer_size`).
+- Zero per-save-point CPU hitch — creation and restore are bandwidth-bound clones.
+- No new dependency. (`flate2` is not currently a direct dependency.)
+- Simplest possible implementation: a save point is "a labeled `Vec<u8>`."
+
+Option B's complexity (diff algorithm + rebase logic) was never justified once the simpler options were on the table.
 
 ## Data model
 
@@ -37,12 +54,8 @@ Same data model as A, but each snapshot is zlib-compressed via `flate2` (already
 pub struct SavePoint {
     pub id: u64,
     pub name: String,
-    /// zlib-compressed snapshot of the working buffer at creation time.
-    /// Compressed via flate2::ZlibEncoder at default compression level.
-    compressed: Vec<u8>,
-    /// Uncompressed length. Avoids decompressing just to display "size" in UI
-    /// or to pre-allocate the destination buffer on restore.
-    uncompressed_len: usize,
+    /// Snapshot of the working buffer at creation time. Owned, uncompressed.
+    bytes: Vec<u8>,
 }
 
 pub struct SavePointManager {
@@ -62,8 +75,8 @@ Removed types: `ByteChange`, `compute_diff`, `last_save_point_state`.
 | Method | Old | New |
 |---|---|---|
 | `new` | `new(original_bytes: &[u8])` | `new()` — no chain base needed |
-| `create` | `(name, current_state) -> id` (unchanged signature; computes diff internally) | `(name, current_state) -> id` — compresses `current_state` |
-| `restore` | `(&self, id, original) -> Option<Vec<u8>>` — replays diffs from original | `(&self, id) -> Option<Vec<u8>>` — decompresses snapshot |
+| `create` | `(name, current_state) -> id` (computes diff internally) | `(name, current_state) -> id` — clones `current_state` into `bytes` |
+| `restore` | `(&self, id, original) -> Option<Vec<u8>>` — replays diffs from original | `(&self, id) -> Option<Vec<u8>>` — clones the snapshot's `bytes` |
 | `delete` | `(id) -> bool` — leaf only | `(id) -> bool` — any save point; re-indexes `id_to_index` |
 | `can_delete` | `(id) -> bool` — leaf only | **removed** (UI always shows trash button) |
 | `clear_all` | `(base_state: &[u8])` — for length changes; resets chain base | `clear_all()` — only used on file load; no base to track |
@@ -106,7 +119,7 @@ When `old_values.len() == new_values.len()`, `Replace` and `Range` are equivalen
 
 When `restore_save_point(id)` is invoked:
 
-1. Decompress the target snapshot into a `Vec<u8>` (`new_values`).
+1. Get a fresh `Vec<u8>` from the target snapshot (`new_values = save_point.bytes.clone()`).
 2. Capture `length_will_change = new_values.len() != self.working.len()` before moving the vector.
 3. `let old_values = std::mem::replace(&mut self.working, new_values)`.
 4. If `old_values != self.working`, push `EditOperation::Replace { offset: 0, old_values, new_values: self.working.clone() }` to `self.history` (matching the existing direct-push pattern in `restore_save_point` rather than going through `record_operation`, to preserve current restore semantics around `edit_generation`).
@@ -130,13 +143,18 @@ Bookmarks store offsets. After restoring to a save point with a different length
 
 Out of scope for this change. If user feedback later asks for it, a follow-up change can add explicit "clamp bookmarks on restore" or "drop out-of-range bookmarks on restore" semantics.
 
-## Compression specifics
+## Memory cost at scale
 
-- Library: `flate2` (already a dependency).
-- Encoder: `ZlibEncoder` at `Compression::default()` (level 6). Save-point creation is rare and user-triggered; the default level is a good speed/ratio balance.
-- Decoder: `ZlibDecoder`. Pre-allocate destination with `Vec::with_capacity(uncompressed_len)`.
-- No streaming needed; buffers are bounded (file size of the loaded image).
-- Errors: compression on a `Vec<u8>` is infallible in practice. Decompression failure would indicate corruption of in-memory state — treat as an internal invariant violation. Use `expect(...)` with a clear message; never silently swallow.
+Memory is `N × buffer_size` for N save points. Working examples:
+
+- 1 MB file, 10 save points → 10 MB of save-point memory.
+- 5 MB file, 10 save points → 50 MB.
+- 50 MB file, 10 save points → 500 MB.
+- 50 MB file, 20 save points → 1 GB.
+
+The editor's dual-buffer architecture (`original` + `working`) already costs 2× the file size before any save points exist, so save-point cost is additive on top of that baseline. For typical workloads (single-digit MB files, modest save-point counts), additional cost is in the low tens of MB. Users routinely working with 50+ MB files and many save points will want to keep counts modest.
+
+If the 50+ MB workload turns out to be common in practice, the next step would be **on-disk save-point persistence** — write each snapshot to a temp file, hold a path + checksum in memory, decompress/load on restore. That's a significant change (file lifecycle, error handling for I/O failures, cleanup on app exit) and is explicitly out of scope here.
 
 ## Migration
 
@@ -147,12 +165,12 @@ None. Save points have always been in-memory only; no on-disk format. Existing f
 - `src/editor/buffer.rs::tests::test_insert_clears_save_points` — rename to `test_insert_preserves_save_points`, invert assertion.
 - New: `test_save_point_survives_byte_edit`, `test_save_point_survives_insert`, `test_save_point_survives_delete`, `test_save_point_survives_undo_redo_of_length_change`, `test_delete_non_leaf_save_point`, `test_restore_with_shorter_snapshot`, `test_restore_with_longer_snapshot`, `test_restore_clamps_cursor`.
 - New in `src/editor/history.rs` (or wherever EditOperation tests live): `test_replace_round_trips_for_equal_length`, `test_replace_round_trips_for_grow`, `test_replace_round_trips_for_shrink`.
-- New in `src/editor/savepoints.rs`: `test_compress_decompress_round_trip`, `test_delete_middle_save_point_re_indexes`.
+- New in `src/editor/savepoints.rs`: `test_delete_middle_save_point_re_indexes`, `test_save_point_independent_of_subsequent_edits`.
 
 ## Out of scope
 
 - Persisting save points across application restarts (no on-disk format).
-- Compression-level tuning UI / settings.
+- On-disk save-point storage to handle very large files (see "Memory cost at scale").
+- Compression of snapshots (investigated, ruled out — see "Empirical evidence").
 - Bookmark adjustment on restore (see "Bookmarks and restore" above).
 - Restoring as a *forking* history operation (today, restore is recorded linearly into history as a `Replace`; this preserves the existing model).
-- Async/background compression. At the file sizes this app targets, synchronous compression is fast enough; adding a worker thread for save-point creation is not justified.
