@@ -30,6 +30,15 @@ pub enum EditOperation {
     DeleteBytes { offset: usize, values: Vec<u8> },
     /// A group of operations treated as a single atomic undo/redo unit
     Group(Vec<EditOperation>),
+    /// Replace a contiguous range of bytes; old and new ranges may have different lengths.
+    /// Used by save-point restoration where the buffer length may differ between the
+    /// snapshot and the current working buffer. For equal-length in-place edits, prefer
+    /// `Range`, which carries the equal-length invariant in the type.
+    Replace {
+        offset: usize,
+        old_values: Vec<u8>,
+        new_values: Vec<u8>,
+    },
 }
 
 /// Try to coalesce a new operation with an existing one
@@ -83,10 +92,11 @@ fn try_coalesce(existing: &mut EditOperation, new: &EditOperation) -> bool {
             false
         }
 
-        // InsertBytes, DeleteBytes, and Group never coalesce
+        // InsertBytes, DeleteBytes, Group, and Replace never coalesce
         EditOperation::InsertBytes { .. }
         | EditOperation::DeleteBytes { .. }
-        | EditOperation::Group(_) => false,
+        | EditOperation::Group(_)
+        | EditOperation::Replace { .. } => false,
 
         // Extend a range with an adjacent single-byte edit
         EditOperation::Range {

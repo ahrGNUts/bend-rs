@@ -374,6 +374,20 @@ impl EditorState {
                     self.apply_undo_op(sub_op);
                 }
             }
+            EditOperation::Replace {
+                offset,
+                old_values,
+                new_values,
+            } => {
+                let len_before = self.working.len();
+                self.working.splice(
+                    *offset..*offset + new_values.len(),
+                    old_values.iter().copied(),
+                );
+                if self.working.len() != len_before {
+                    self.length_changed = true;
+                }
+            }
         }
     }
 
@@ -399,6 +413,20 @@ impl EditorState {
             EditOperation::Group(ops) => {
                 for sub_op in ops {
                     self.apply_redo_op(sub_op);
+                }
+            }
+            EditOperation::Replace {
+                offset,
+                old_values,
+                new_values,
+            } => {
+                let len_before = self.working.len();
+                self.working.splice(
+                    *offset..*offset + old_values.len(),
+                    new_values.iter().copied(),
+                );
+                if self.working.len() != len_before {
+                    self.length_changed = true;
                 }
             }
         }
@@ -584,6 +612,60 @@ mod tests {
         assert!(editor.redo());
         assert_eq!(editor.working()[1], 0xFF);
         assert!(editor.is_modified());
+    }
+
+    #[test]
+    fn test_replace_op_round_trips_for_equal_length() {
+        let data = vec![0x00, 0x01, 0x02, 0x03];
+        let mut editor = EditorState::new(data.clone());
+
+        let op = EditOperation::Replace {
+            offset: 0,
+            old_values: vec![0x00, 0x01, 0x02, 0x03],
+            new_values: vec![0xAA, 0xBB, 0xCC, 0xDD],
+        };
+
+        editor.apply_redo_op(&op);
+        assert_eq!(editor.working(), &[0xAA, 0xBB, 0xCC, 0xDD]);
+
+        editor.apply_undo_op(&op);
+        assert_eq!(editor.working(), &[0x00, 0x01, 0x02, 0x03]);
+    }
+
+    #[test]
+    fn test_replace_op_round_trips_for_grow() {
+        let data = vec![0x00, 0x01, 0x02];
+        let mut editor = EditorState::new(data);
+
+        let op = EditOperation::Replace {
+            offset: 0,
+            old_values: vec![0x00, 0x01, 0x02],
+            new_values: vec![0xAA, 0xBB, 0xCC, 0xDD, 0xEE],
+        };
+
+        editor.apply_redo_op(&op);
+        assert_eq!(editor.working(), &[0xAA, 0xBB, 0xCC, 0xDD, 0xEE]);
+
+        editor.apply_undo_op(&op);
+        assert_eq!(editor.working(), &[0x00, 0x01, 0x02]);
+    }
+
+    #[test]
+    fn test_replace_op_round_trips_for_shrink() {
+        let data = vec![0xAA, 0xBB, 0xCC, 0xDD, 0xEE];
+        let mut editor = EditorState::new(data);
+
+        let op = EditOperation::Replace {
+            offset: 0,
+            old_values: vec![0xAA, 0xBB, 0xCC, 0xDD, 0xEE],
+            new_values: vec![0x00, 0x01],
+        };
+
+        editor.apply_redo_op(&op);
+        assert_eq!(editor.working(), &[0x00, 0x01]);
+
+        editor.apply_undo_op(&op);
+        assert_eq!(editor.working(), &[0xAA, 0xBB, 0xCC, 0xDD, 0xEE]);
     }
 
     #[test]
