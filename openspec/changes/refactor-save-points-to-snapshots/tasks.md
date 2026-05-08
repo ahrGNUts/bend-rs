@@ -33,11 +33,11 @@
 
 ## 3. Buffer integration
 
-- [ ] 3.1 In `src/editor/buffer.rs`, update `EditorState::new` to call `SavePointManager::new()` (no args).
-- [ ] 3.2 In `on_length_changed` (line 276), drop `self.save_points.clear_all(&self.original)`. Keep bookmark adjustment and `length_changed = true`.
-- [ ] 3.3 In `apply_insert` (line 338), drop `self.save_points.clear_all(&self.original)`.
-- [ ] 3.4 In `apply_delete` (line 346), drop `self.save_points.clear_all(&self.original)`.
-- [ ] 3.5 In `restore_save_point` (line 474):
+- [x] 3.1 In `src/editor/buffer.rs`, update `EditorState::new` to call `SavePointManager::new()` (no args).
+- [x] 3.2 In `on_length_changed` (line 276), drop `self.save_points.clear_all(&self.original)`. Keep bookmark adjustment and `length_changed = true`.
+- [x] 3.3 In `apply_insert` (line 338), drop `self.save_points.clear_all(&self.original)`.
+- [x] 3.4 In `apply_delete` (line 346), drop `self.save_points.clear_all(&self.original)`.
+- [x] 3.5 In `restore_save_point` (line 474):
   - Drop `&self.original` arg from `save_points.restore(id)` (now `save_points.restore(id)`).
   - Capture `length_will_change = restored.len() != self.working.len()` BEFORE moving the vector.
   - `let old_values = std::mem::replace(&mut self.working, restored)`.
@@ -45,21 +45,21 @@
   - If `length_will_change`, set `self.length_changed = true`.
   - Clamp cursor: `self.cursor = self.cursor.min(self.working.len().saturating_sub(1))`.
   - Update `self.modified = self.working != self.original`.
-- [ ] 3.6 Remove `EditorState::can_delete_save_point` and the corresponding wiring; or have it forward to a manager method that returns "exists".
-- [ ] 3.7 Tests:
+- [x] 3.6 Remove `EditorState::can_delete_save_point` and the corresponding wiring; or have it forward to a manager method that returns "exists".
+- [x] 3.7 Tests:
   - `test_insert_clears_save_points` → rename to `test_insert_preserves_save_points`; invert assertion.
   - New: `test_save_point_survives_byte_edit`, `test_save_point_survives_insert`, `test_save_point_survives_delete`, `test_save_point_survives_undo_redo_of_length_change`.
   - New: `test_restore_with_shorter_snapshot` — buffer grows to N+10, restore to length-N save point, verify length and contents.
   - New: `test_restore_with_longer_snapshot` — buffer shrinks to N-5, restore to length-N save point, verify length and contents.
   - New: `test_restore_clamps_cursor` — cursor at offset 100, restore to a 50-byte snapshot, cursor lands at 49.
   - New: `test_restore_undo_round_trips_through_length_change` — restore (length changes), undo (back to original length and contents), redo (length changes again).
-- [ ] 3.8 `cargo build` clean.
+- [x] 3.8 `cargo build` clean.
 
 ## 4. UI cleanup
 
-- [ ] 4.1 In `src/ui/savepoints.rs`, remove the `can_delete: Vec<bool>` collection (lines 47–56).
-- [ ] 4.2 Remove the `can_delete.get(idx).copied().unwrap_or(false) &&` gate around the trash button (line 137). Trash button is always shown for every save point.
-- [ ] 4.3 If `EditorState::can_delete_save_point` was kept as an "exists?" wrapper, remove this UI's call to it; otherwise update the call site to drop the now-removed method.
+- [x] 4.1 In `src/ui/savepoints.rs`, remove the `can_delete: Vec<bool>` collection (lines 47–56).
+- [x] 4.2 Remove the `can_delete.get(idx).copied().unwrap_or(false) &&` gate around the trash button (line 137). Trash button is always shown for every save point.
+- [x] 4.3 If `EditorState::can_delete_save_point` was kept as an "exists?" wrapper, remove this UI's call to it; otherwise update the call site to drop the now-removed method.
 - [ ] 4.4 Visual smoke test: open file, create 3 save points, click trash on the middle one — it disappears, others remain.
 
 ## 5. Verification
