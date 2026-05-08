@@ -114,16 +114,6 @@ impl SavePointManager {
     pub fn len(&self) -> usize {
         self.save_points.len()
     }
-
-    /// Clear all save points.
-    ///
-    /// Used on file load: a new file's working buffer has nothing to do with
-    /// the previous file's save points.
-    #[allow(dead_code)] // Retained as the file-load reset path; not yet wired up.
-    pub fn clear_all(&mut self) {
-        self.save_points.clear();
-        self.id_to_index.clear();
-    }
 }
 
 #[cfg(test)]

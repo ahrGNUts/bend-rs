@@ -170,7 +170,7 @@ pub fn show(ui: &mut egui::Ui, doc: &mut DocumentState, state: &mut SavePointsPa
 
     if let Some(id) = action_delete {
         if let Some(editor) = &mut doc.editor {
-            let _ = editor.delete_save_point(id); // #[must_use] result intentionally ignored — save point existence already verified by UI
+            let _ = editor.delete_save_point(id); // #[must_use] result intentionally ignored — id came from save_points() iteration; delete is idempotent on missing ids
         }
     }
 
@@ -181,7 +181,7 @@ pub fn show(ui: &mut egui::Ui, doc: &mut DocumentState, state: &mut SavePointsPa
 
     if let Some((id, new_name)) = action_finish_rename {
         if let Some(editor) = &mut doc.editor {
-            let _ = editor.rename_save_point(id, new_name); // #[must_use] result intentionally ignored — save point existence already verified by UI
+            let _ = editor.rename_save_point(id, new_name); // #[must_use] result intentionally ignored — id came from save_points() iteration; rename is idempotent on missing ids
         }
     }
 }
