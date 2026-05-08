@@ -35,18 +35,20 @@ pub struct SavePointManager {
     next_id: u64,
 }
 
-impl SavePointManager {
-    /// Create a new save point manager.
-    ///
-    /// The `_original_bytes` argument is unused and retained only for source
-    /// compatibility while `EditorState` is still calling the old signature.
-    /// Task 3 of the refactor drops this argument.
-    pub fn new(_original_bytes: &[u8]) -> Self {
+impl Default for SavePointManager {
+    fn default() -> Self {
         Self {
             save_points: Vec::new(),
             id_to_index: HashMap::new(),
             next_id: 1,
         }
+    }
+}
+
+impl SavePointManager {
+    /// Create a new, empty save point manager.
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// All save points, in creation order.
@@ -76,11 +78,7 @@ impl SavePointManager {
     }
 
     /// Restore by returning a fresh copy of the snapshot's bytes.
-    ///
-    /// The `_original` argument is unused and retained only for source
-    /// compatibility while `EditorState` is still calling the old signature.
-    /// Task 3 of the refactor drops this argument.
-    pub fn restore(&self, id: u64, _original: &[u8]) -> Option<Vec<u8>> {
+    pub fn restore(&self, id: u64) -> Option<Vec<u8>> {
         let index = *self.id_to_index.get(&id)?;
         Some(self.save_points[index].bytes.clone())
     }
@@ -94,15 +92,6 @@ impl SavePointManager {
         } else {
             false
         }
-    }
-
-    /// Returns whether a save point with the given id currently exists.
-    ///
-    /// Retained for caller compatibility; deletion is now permitted for any
-    /// existing save point. Task 3 of the refactor removes this method and
-    /// updates the UI to always show the trash button.
-    pub fn can_delete(&self, id: u64) -> bool {
-        self.id_to_index.contains_key(&id)
     }
 
     /// Delete a save point. Works for any save point, regardless of its
@@ -128,11 +117,10 @@ impl SavePointManager {
 
     /// Clear all save points.
     ///
-    /// Used on file load (a new file's working buffer has nothing to do with
-    /// the previous file's save points). The `_base_state` argument is unused
-    /// and retained only for source compatibility while `EditorState` is
-    /// still calling the old signature. Task 3 drops this argument.
-    pub fn clear_all(&mut self, _base_state: &[u8]) {
+    /// Used on file load: a new file's working buffer has nothing to do with
+    /// the previous file's save points.
+    #[allow(dead_code)] // Retained as the file-load reset path; not yet wired up.
+    pub fn clear_all(&mut self) {
         self.save_points.clear();
         self.id_to_index.clear();
     }
@@ -144,21 +132,19 @@ mod tests {
 
     #[test]
     fn test_create_save_point() {
-        let original = vec![0x00, 0x01, 0x02, 0x03];
-        let mut manager = SavePointManager::new(&original);
+        let mut manager = SavePointManager::new();
 
         let modified = vec![0xAA, 0x01, 0xBB, 0x03];
         let id = manager.create("First save".to_string(), &modified);
 
         assert_eq!(manager.len(), 1);
-        let restored = manager.restore(id, &original).unwrap();
+        let restored = manager.restore(id).unwrap();
         assert_eq!(restored, modified);
     }
 
     #[test]
     fn test_restore_save_point() {
-        let original = vec![0x00, 0x01, 0x02, 0x03];
-        let mut manager = SavePointManager::new(&original);
+        let mut manager = SavePointManager::new();
 
         let modified1 = vec![0xAA, 0x01, 0x02, 0x03];
         let id1 = manager.create("SP1".to_string(), &modified1);
@@ -166,17 +152,17 @@ mod tests {
         let modified2 = vec![0xAA, 0xBB, 0x02, 0x03];
         let id2 = manager.create("SP2".to_string(), &modified2);
 
-        let restored1 = manager.restore(id1, &original).unwrap();
+        let restored1 = manager.restore(id1).unwrap();
         assert_eq!(restored1, modified1);
 
-        let restored2 = manager.restore(id2, &original).unwrap();
+        let restored2 = manager.restore(id2).unwrap();
         assert_eq!(restored2, modified2);
     }
 
     #[test]
     fn test_rename_save_point() {
         let original = vec![0x00, 0x01, 0x02, 0x03];
-        let mut manager = SavePointManager::new(&original);
+        let mut manager = SavePointManager::new();
 
         let id = manager.create("Original name".to_string(), &original);
         assert!(manager.rename(id, "New name".to_string()));
@@ -187,8 +173,7 @@ mod tests {
 
     #[test]
     fn test_delete_any_save_point() {
-        let original = vec![0x00, 0x01, 0x02, 0x03];
-        let mut manager = SavePointManager::new(&original);
+        let mut manager = SavePointManager::new();
 
         let modified1 = vec![0xAA, 0x01, 0x02, 0x03];
         let id1 = manager.create("SP1".to_string(), &modified1);
@@ -204,36 +189,33 @@ mod tests {
         assert_eq!(manager.len(), 2);
 
         // Both remaining save points still resolve to their captured states.
-        let restored1 = manager.restore(id1, &original).unwrap();
+        let restored1 = manager.restore(id1).unwrap();
         assert_eq!(restored1, modified1);
-        let restored3 = manager.restore(id3, &original).unwrap();
+        let restored3 = manager.restore(id3).unwrap();
         assert_eq!(restored3, modified3);
 
         // Now delete what's currently the first of two (also a non-leaf in the original list).
         assert!(manager.delete(id1));
         assert_eq!(manager.len(), 1);
-        let restored3 = manager.restore(id3, &original).unwrap();
+        let restored3 = manager.restore(id3).unwrap();
         assert_eq!(restored3, modified3);
     }
 
     #[test]
     fn test_save_point_independent_of_subsequent_edits() {
-        let original = vec![0x00, 0x01, 0x02, 0x03];
-        let mut manager = SavePointManager::new(&original);
+        let mut manager = SavePointManager::new();
 
         let snapshot_state = vec![0xAA, 0x01, 0x02, 0x03];
         let id = manager.create("SP1".to_string(), &snapshot_state);
 
-        // Even if subsequent calls pass arbitrary `original` arguments, the
-        // snapshot is self-contained and restore returns its captured bytes.
-        let restored = manager.restore(id, &[0xFF, 0xEE, 0xDD]).unwrap();
+        // The snapshot is self-contained and restore returns its captured bytes.
+        let restored = manager.restore(id).unwrap();
         assert_eq!(restored, snapshot_state);
     }
 
     #[test]
     fn test_delete_re_indexes_after_middle_removal() {
-        let original = vec![0x00];
-        let mut manager = SavePointManager::new(&original);
+        let mut manager = SavePointManager::new();
 
         let id1 = manager.create("a".to_string(), &[0x01]);
         let id2 = manager.create("b".to_string(), &[0x02]);
@@ -244,9 +226,9 @@ mod tests {
         // After re-indexing, id3 must still resolve correctly. If `delete`
         // failed to rebuild `id_to_index`, id3 would point at a stale index
         // and `restore` would return `None` or wrong bytes.
-        let restored3 = manager.restore(id3, &original).unwrap();
+        let restored3 = manager.restore(id3).unwrap();
         assert_eq!(restored3, vec![0x03]);
-        let restored1 = manager.restore(id1, &original).unwrap();
+        let restored1 = manager.restore(id1).unwrap();
         assert_eq!(restored1, vec![0x01]);
     }
 }

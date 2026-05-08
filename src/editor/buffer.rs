@@ -5,8 +5,8 @@
 //! The editor maintains two separate byte vectors:
 //!
 //! - `original`: Loaded once when a file is opened, never modified afterward.
-//!   This serves as the reference point for comparison views and as the base
-//!   state for save point restoration.
+//!   This serves as the reference point for comparison views and the
+//!   "is the buffer modified?" check.
 //!
 //! - `working`: All user edits apply to this buffer. Undo/redo operations
 //!   manipulate this buffer. The image preview renders from this buffer.
@@ -14,8 +14,7 @@
 //! This separation ensures:
 //! 1. The original file is never accidentally modified
 //! 2. Comparison view always shows the true original
-//! 3. Save points can efficiently diff against a known base
-//! 4. Export writes working buffer to a new location
+//! 3. Export writes working buffer to a new location
 
 use super::bookmarks::BookmarkManager;
 use super::history::{EditOperation, History};
@@ -73,7 +72,7 @@ pub struct EditorState {
 impl EditorState {
     /// Create a new editor state from file bytes
     pub fn new(bytes: Vec<u8>) -> Self {
-        let save_points = SavePointManager::new(&bytes);
+        let save_points = SavePointManager::new();
         Self {
             working: bytes.clone(),
             original: bytes,
@@ -272,11 +271,8 @@ impl EditorState {
     // ========== Insert/Delete Operations ==========
 
     /// Called after any operation that changes buffer length.
-    /// Clears save points, adjusts bookmarks, and sets the length_changed flag.
+    /// Adjusts bookmarks and sets the length_changed flag.
     fn on_length_changed(&mut self, offset: usize, count: usize, is_insert: bool) {
-        // Save points use absolute offsets — invalidate them all
-        self.save_points.clear_all(&self.original);
-        // Adjust bookmark offsets
         if is_insert {
             self.bookmarks.adjust_offsets_after_insert(offset, count);
         } else {
@@ -330,20 +326,18 @@ impl EditorState {
 
     // ========== Undo/Redo Shared Helpers ==========
 
-    /// Splice bytes into the working buffer and adjust bookmarks/save points
+    /// Splice bytes into the working buffer and adjust bookmarks
     fn apply_insert(&mut self, offset: usize, values: &[u8]) {
         let count = values.len();
         self.working.splice(offset..offset, values.iter().copied());
         self.bookmarks.adjust_offsets_after_insert(offset, count);
-        self.save_points.clear_all(&self.original);
         self.length_changed = true;
     }
 
-    /// Drain bytes from the working buffer and adjust bookmarks/save points/cursor
+    /// Drain bytes from the working buffer and adjust bookmarks/cursor
     fn apply_delete(&mut self, offset: usize, count: usize) {
         self.working.drain(offset..offset + count);
         self.bookmarks.adjust_offsets_after_delete(offset, count);
-        self.save_points.clear_all(&self.original);
         self.length_changed = true;
         if !self.working.is_empty() {
             self.cursor = self.cursor.min(self.working.len() - 1);
@@ -492,30 +486,35 @@ impl EditorState {
         self.save_points.save_points()
     }
 
-    /// Restore the buffer to a specific save point
+    /// Restore the buffer to a specific save point.
     ///
-    /// This operation is undoable - the entire restoration is recorded as a
-    /// single edit operation.
+    /// This operation is undoable — the entire restoration (including any
+    /// buffer-length change) is recorded as a single `EditOperation::Replace`
+    /// history entry.
     ///
-    /// Returns true if restoration was successful
+    /// Returns true if restoration was successful.
     #[must_use = "returns whether the restore was successful"]
     pub fn restore_save_point(&mut self, id: u64) -> bool {
-        let Some(restored) = self.save_points.restore(id, &self.original) else {
+        let Some(restored) = self.save_points.restore(id) else {
             return false;
         };
 
-        // Swap working with restored, getting old values without cloning
+        let length_will_change = restored.len() != self.working.len();
         let old_values = std::mem::replace(&mut self.working, restored);
 
-        // Only record if there's actually a change
         if old_values != self.working {
-            self.history.push(super::history::EditOperation::Range {
+            self.history.push(EditOperation::Replace {
                 offset: 0,
                 old_values,
                 new_values: self.working.clone(),
             });
         }
 
+        if length_will_change {
+            self.length_changed = true;
+        }
+
+        self.cursor = self.cursor.min(self.working.len().saturating_sub(1));
         self.modified = self.working != self.original;
         true
     }
@@ -526,12 +525,7 @@ impl EditorState {
         self.save_points.rename(id, new_name)
     }
 
-    /// Check if a save point can be deleted
-    pub fn can_delete_save_point(&self, id: u64) -> bool {
-        self.save_points.can_delete(id)
-    }
-
-    /// Delete a save point (only leaf save points can be deleted)
+    /// Delete a save point. Any save point can be deleted.
     #[must_use = "returns whether the save point was deleted"]
     pub fn delete_save_point(&mut self, id: u64) -> bool {
         self.save_points.delete(id)
@@ -753,6 +747,160 @@ mod tests {
 
         let sps = editor.save_points();
         assert_eq!(sps[0].name, "New name");
+    }
+
+    #[test]
+    fn test_insert_preserves_save_points() {
+        let data = vec![0x00, 0x01, 0x02, 0x03];
+        let mut editor = EditorState::new(data);
+
+        editor.edit_byte(0, 0xFF);
+        let id = editor.create_save_point("SP1".to_string());
+        assert_eq!(editor.save_point_count(), 1);
+
+        editor.insert_byte(0, 0xAA);
+        assert_eq!(
+            editor.save_point_count(),
+            1,
+            "save point must persist across insert"
+        );
+
+        // The save point still restores to its captured state.
+        assert!(editor.restore_save_point(id));
+        assert_eq!(editor.working(), &[0xFF, 0x01, 0x02, 0x03]);
+    }
+
+    #[test]
+    fn test_save_point_survives_byte_edit() {
+        let data = vec![0x00, 0x01, 0x02];
+        let mut editor = EditorState::new(data);
+
+        let id = editor.create_save_point("SP1".to_string());
+        editor.edit_byte(0, 0xAA);
+        editor.edit_byte(1, 0xBB);
+
+        assert_eq!(editor.save_point_count(), 1);
+        assert!(editor.restore_save_point(id));
+        assert_eq!(editor.working(), &[0x00, 0x01, 0x02]);
+    }
+
+    #[test]
+    fn test_save_point_survives_delete() {
+        let data = vec![0x00, 0x01, 0x02, 0x03];
+        let mut editor = EditorState::new(data);
+
+        let id = editor.create_save_point("SP1".to_string());
+        let _ = editor.delete_byte(1);
+        assert_eq!(editor.working(), &[0x00, 0x02, 0x03]);
+
+        assert_eq!(editor.save_point_count(), 1);
+        assert!(editor.restore_save_point(id));
+        assert_eq!(editor.working(), &[0x00, 0x01, 0x02, 0x03]);
+    }
+
+    #[test]
+    fn test_save_point_survives_undo_redo_of_length_change() {
+        let data = vec![0x00, 0x01, 0x02, 0x03];
+        let mut editor = EditorState::new(data);
+
+        let id = editor.create_save_point("SP1".to_string());
+
+        editor.insert_byte(0, 0xFF);
+        assert_eq!(editor.save_point_count(), 1);
+
+        let _ = editor.undo();
+        assert_eq!(editor.save_point_count(), 1);
+
+        let _ = editor.redo();
+        assert_eq!(editor.save_point_count(), 1);
+
+        // Undo back to the snapshot's length and verify the save point still restores.
+        let _ = editor.undo();
+        assert!(editor.restore_save_point(id));
+        assert_eq!(editor.working(), &[0x00, 0x01, 0x02, 0x03]);
+    }
+
+    #[test]
+    fn test_restore_with_shorter_snapshot() {
+        let data = vec![0x00, 0x01, 0x02, 0x03];
+        let mut editor = EditorState::new(data);
+
+        let id = editor.create_save_point("SP_short".to_string());
+
+        editor.insert_bytes(2, &[0xAA, 0xBB, 0xCC]);
+        assert_eq!(editor.len(), 7);
+
+        assert!(editor.restore_save_point(id));
+        assert_eq!(editor.working(), &[0x00, 0x01, 0x02, 0x03]);
+        assert_eq!(editor.len(), 4);
+    }
+
+    #[test]
+    fn test_restore_with_longer_snapshot() {
+        let data = vec![0x00, 0x01, 0x02];
+        let mut editor = EditorState::new(data);
+
+        editor.insert_bytes(0, &[0xAA, 0xBB, 0xCC]);
+        let id = editor.create_save_point("SP_long".to_string());
+        assert_eq!(editor.len(), 6);
+
+        let _ = editor.delete_byte(0);
+        let _ = editor.delete_byte(0);
+        assert_eq!(editor.len(), 4);
+
+        assert!(editor.restore_save_point(id));
+        assert_eq!(editor.len(), 6);
+        assert_eq!(editor.working(), &[0xAA, 0xBB, 0xCC, 0x00, 0x01, 0x02]);
+    }
+
+    #[test]
+    fn test_restore_clamps_cursor_into_shorter_buffer() {
+        let data = vec![0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09];
+        let mut editor = EditorState::new(data);
+
+        // Snapshot at length 10.
+        let id = editor.create_save_point("SP10".to_string());
+
+        // Grow the buffer and move the cursor beyond the snapshot's length.
+        editor.insert_bytes(10, &[0xFF; 10]);
+        editor.set_cursor(15);
+        assert_eq!(editor.cursor(), 15);
+
+        // Restore to the 10-byte snapshot.
+        assert!(editor.restore_save_point(id));
+        assert!(
+            editor.cursor() < editor.len(),
+            "cursor must be clamped into the new (shorter) buffer"
+        );
+    }
+
+    #[test]
+    fn test_restore_undo_round_trips_through_length_change() {
+        let data = vec![0x00, 0x01, 0x02, 0x03];
+        let mut editor = EditorState::new(data);
+
+        // Snapshot at length 4.
+        let id = editor.create_save_point("SP4".to_string());
+
+        // Grow to length 7.
+        editor.insert_bytes(2, &[0xAA, 0xBB, 0xCC]);
+        assert_eq!(editor.len(), 7);
+
+        // Restore to length 4 — emits a Replace history op.
+        assert!(editor.restore_save_point(id));
+        assert_eq!(editor.working(), &[0x00, 0x01, 0x02, 0x03]);
+
+        // Undo: should regrow back to length 7 with the inserted bytes intact.
+        assert!(editor.undo());
+        assert_eq!(editor.len(), 7);
+        assert_eq!(
+            editor.working(),
+            &[0x00, 0x01, 0xAA, 0xBB, 0xCC, 0x02, 0x03]
+        );
+
+        // Redo: back to the snapshot state at length 4.
+        assert!(editor.redo());
+        assert_eq!(editor.working(), &[0x00, 0x01, 0x02, 0x03]);
     }
 
     #[test]
@@ -1055,21 +1203,6 @@ mod tests {
         // Replace that would extend past buffer should be clamped
         editor.replace_bytes(2, &[0xAA, 0xBB, 0xCC]);
         assert_eq!(editor.working(), &[0x00, 0x01, 0xAA]);
-    }
-
-    #[test]
-    fn test_insert_clears_save_points() {
-        let data = vec![0x00, 0x01, 0x02, 0x03];
-        let mut editor = EditorState::new(data);
-
-        // Create a save point
-        editor.edit_byte(0, 0xFF);
-        editor.create_save_point("SP1".to_string());
-        assert_eq!(editor.save_point_count(), 1);
-
-        // Insert should clear save points
-        editor.insert_byte(0, 0xAA);
-        assert_eq!(editor.save_point_count(), 0);
     }
 
     // ========== Replace All Bytes (Atomic) Tests ==========

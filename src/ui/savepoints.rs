@@ -44,17 +44,6 @@ pub fn show(ui: &mut egui::Ui, doc: &mut DocumentState, state: &mut SavePointsPa
         })
         .unwrap_or_default();
 
-    // Get which save points can be deleted
-    let can_delete: Vec<_> = save_points
-        .iter()
-        .map(|(id, _)| {
-            doc.editor
-                .as_ref()
-                .map(|e| e.can_delete_save_point(*id))
-                .unwrap_or(false)
-        })
-        .collect();
-
     let has_editor = doc.editor.is_some();
 
     if !has_editor {
@@ -107,7 +96,7 @@ pub fn show(ui: &mut egui::Ui, doc: &mut DocumentState, state: &mut SavePointsPa
         ui.label(RichText::new("No save points yet").italics());
         ui.label("Create a save point to capture the current state.");
     } else {
-        for (idx, (id, name)) in save_points.iter().enumerate() {
+        for (id, name) in save_points.iter() {
             if state.editing_id == Some(*id) {
                 // Editing mode: text box + save/discard buttons below
                 ui.text_edit_singleline(&mut state.edit_buffer);
@@ -133,13 +122,12 @@ pub fn show(ui: &mut egui::Ui, doc: &mut DocumentState, state: &mut SavePointsPa
                     ui.label(name);
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        // Delete button (only for leaf)
-                        if can_delete.get(idx).copied().unwrap_or(false)
-                            && ui
-                                .button("🗑")
-                                .pointer_cursor()
-                                .on_hover_text("Delete")
-                                .clicked()
+                        // Delete button (any save point can be deleted)
+                        if ui
+                            .button("🗑")
+                            .pointer_cursor()
+                            .on_hover_text("Delete")
+                            .clicked()
                         {
                             action_delete = Some(*id);
                         }
@@ -182,7 +170,7 @@ pub fn show(ui: &mut egui::Ui, doc: &mut DocumentState, state: &mut SavePointsPa
 
     if let Some(id) = action_delete {
         if let Some(editor) = &mut doc.editor {
-            let _ = editor.delete_save_point(id); // #[must_use] result intentionally ignored — deletability already checked by UI
+            let _ = editor.delete_save_point(id); // #[must_use] result intentionally ignored — save point existence already verified by UI
         }
     }
 
