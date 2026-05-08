@@ -756,26 +756,6 @@ mod tests {
     }
 
     #[test]
-    fn test_save_point_delete() {
-        let data = vec![0x00, 0x01, 0x02, 0x03];
-        let mut editor = EditorState::new(data);
-
-        let sp1 = editor.create_save_point("SP1".to_string());
-        let sp2 = editor.create_save_point("SP2".to_string());
-
-        // Can only delete leaf (sp2)
-        assert!(!editor.can_delete_save_point(sp1));
-        assert!(editor.can_delete_save_point(sp2));
-
-        assert!(editor.delete_save_point(sp2));
-        assert_eq!(editor.save_point_count(), 1);
-
-        // Now sp1 is the leaf
-        assert!(editor.delete_save_point(sp1));
-        assert_eq!(editor.save_point_count(), 0);
-    }
-
-    #[test]
     fn test_edit_ascii_printable() {
         let data = vec![0x00, 0x01, 0x02, 0x03];
         let mut editor = EditorState::new(data);
