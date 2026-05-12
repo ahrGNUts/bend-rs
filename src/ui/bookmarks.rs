@@ -1,6 +1,6 @@
 //! Bookmarks list UI component
 
-use crate::app::{DocumentState, UiState};
+use crate::app::{ConfirmAction, DocumentState, UiState};
 use crate::ui::PointerCursor;
 use eframe::egui;
 
@@ -217,14 +217,14 @@ pub fn show(
                 state.annotation_text.clear();
             }
             BookmarkAction::DeleteAnnotation(id) => {
-                if let Some(editor) = &mut doc.editor {
-                    let _ = editor.bookmarks_mut().set_annotation(id, String::new());
-                }
+                ui_state
+                    .dialogs
+                    .open_confirm(ConfirmAction::DeleteBookmarkAnnotation(id));
             }
             BookmarkAction::Delete(id) => {
-                if let Some(editor) = &mut doc.editor {
-                    let _ = editor.remove_bookmark(id); // #[must_use] result intentionally ignored — bookmark existence already verified by UI
-                }
+                ui_state
+                    .dialogs
+                    .open_confirm(ConfirmAction::DeleteBookmark(id));
             }
         }
     }

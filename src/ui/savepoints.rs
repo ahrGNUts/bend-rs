@@ -1,6 +1,6 @@
 //! Save points UI panel
 
-use crate::app::DocumentState;
+use crate::app::{ConfirmAction, DocumentState, UiState};
 use crate::ui::PointerCursor;
 use eframe::egui::{self, RichText};
 
@@ -24,7 +24,12 @@ pub struct SavePointsPanelState {
 }
 
 /// Show the save points panel
-pub fn show(ui: &mut egui::Ui, doc: &mut DocumentState, state: &mut SavePointsPanelState) {
+pub fn show(
+    ui: &mut egui::Ui,
+    doc: &mut DocumentState,
+    ui_state: &mut UiState,
+    state: &mut SavePointsPanelState,
+) {
     // Get save point count for UI (need to read before mutable access)
     let save_point_count = doc
         .editor
@@ -87,8 +92,6 @@ pub fn show(ui: &mut egui::Ui, doc: &mut DocumentState, state: &mut SavePointsPa
     }
 
     // Track actions to perform after the loop
-    let mut action_restore: Option<u64> = None;
-    let mut action_delete: Option<u64> = None;
     let mut action_start_rename: Option<(u64, String)> = None;
     let mut action_finish_rename: Option<(u64, String)> = None;
 
@@ -129,7 +132,9 @@ pub fn show(ui: &mut egui::Ui, doc: &mut DocumentState, state: &mut SavePointsPa
                             .on_hover_text("Delete")
                             .clicked()
                         {
-                            action_delete = Some(*id);
+                            ui_state
+                                .dialogs
+                                .open_confirm(ConfirmAction::DeleteSavePoint(*id));
                         }
 
                         // Rename button
@@ -149,7 +154,9 @@ pub fn show(ui: &mut egui::Ui, doc: &mut DocumentState, state: &mut SavePointsPa
                             .on_hover_text("Restore")
                             .clicked()
                         {
-                            action_restore = Some(*id);
+                            ui_state
+                                .dialogs
+                                .open_confirm(ConfirmAction::RestoreSavePoint(*id));
                         }
                     });
                 });
@@ -160,20 +167,6 @@ pub fn show(ui: &mut egui::Ui, doc: &mut DocumentState, state: &mut SavePointsPa
     }
 
     // Perform deferred actions
-    if let Some(id) = action_restore {
-        if let Some(editor) = &mut doc.editor {
-            if editor.restore_save_point(id) {
-                doc.preview.mark_dirty();
-            }
-        }
-    }
-
-    if let Some(id) = action_delete {
-        if let Some(editor) = &mut doc.editor {
-            let _ = editor.delete_save_point(id); // #[must_use] result intentionally ignored — id came from save_points() iteration; delete is idempotent on missing ids
-        }
-    }
-
     if let Some((id, name)) = action_start_rename {
         state.editing_id = Some(id);
         state.edit_buffer = name;

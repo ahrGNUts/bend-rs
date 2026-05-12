@@ -8,7 +8,7 @@ mod sections;
 mod state;
 mod toolbar;
 
-pub use dialogs::{DialogState, PendingEdit, PendingEditType};
+pub use dialogs::{ConfirmAction, DialogState, PendingEdit, PendingEditType};
 pub use preview::PreviewState;
 pub use state::{AppConfig, DocumentState, IoState, UiState};
 
@@ -283,6 +283,7 @@ impl BendApp {
                 !self.config.settings.show_high_risk_warnings;
         }
         self.show_high_risk_warning_dialog(ctx);
+        self.show_confirmation_dialog(ctx);
     }
 
     /// Render the status bar
@@ -354,7 +355,7 @@ impl BendApp {
                         .default_open(true)
                         .show(ui, |ui| {
                             let mut state = std::mem::take(&mut self.ui.savepoints_state);
-                            savepoints::show(ui, &mut self.doc, &mut state);
+                            savepoints::show(ui, &mut self.doc, &mut self.ui, &mut state);
                             self.ui.savepoints_state = state;
                         })
                         .header_response
