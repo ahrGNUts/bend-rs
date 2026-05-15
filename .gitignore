@@ -26,3 +26,6 @@ target
 # Added by cargo
 
 /target
+
+# docker file
+docker-compose.yml
