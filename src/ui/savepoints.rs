@@ -23,6 +23,15 @@ pub struct SavePointsPanelState {
     pending_create: bool,
 }
 
+impl SavePointsPanelState {
+    /// Whether this panel is in a text-entry state that should take
+    /// keyboard priority (an in-progress rename or the create dialog) —
+    /// e.g. the search dialog defers its Esc handling while this is true.
+    pub fn wants_keyboard_priority(&self) -> bool {
+        self.editing_id.is_some() || self.show_create_dialog
+    }
+}
+
 /// Show the save points panel
 pub fn show(
     ui: &mut egui::Ui,

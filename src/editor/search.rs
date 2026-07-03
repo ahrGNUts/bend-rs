@@ -106,9 +106,12 @@ impl SearchState {
             || self.case_sensitive != self.last_searched_case_sensitive
     }
 
-    /// Check if match results may be stale due to buffer edits since the search
+    /// Check if search results may be stale due to buffer edits since the
+    /// search. Applies even when the search found zero matches — an edit can
+    /// create bytes the query would now hit, so a zero-hit result set goes
+    /// stale exactly like a populated one.
     pub fn matches_may_be_stale(&self, current_generation: u64) -> bool {
-        !self.matches.is_empty() && self.searched_at_generation != current_generation
+        self.searched_at_generation != current_generation
     }
 
     /// Record the editor generation at search time
@@ -116,39 +119,168 @@ impl SearchState {
         self.searched_at_generation = generation;
     }
 
-    /// Move to the next match
-    pub fn next_match(&mut self) {
-        if self.matches.is_empty() {
-            self.current_match = None;
-            return;
-        }
-
-        match self.current_match {
-            None => self.current_match = Some(0),
-            Some(i) => {
-                self.current_match = Some((i + 1) % self.matches.len());
-            }
-        }
-    }
-
-    /// Move to the previous match
-    pub fn prev_match(&mut self) {
-        if self.matches.is_empty() {
-            self.current_match = None;
-            return;
-        }
-
-        match self.current_match {
-            None => self.current_match = Some(self.matches.len() - 1),
-            Some(0) => self.current_match = Some(self.matches.len() - 1),
-            Some(i) => self.current_match = Some(i - 1),
-        }
-    }
-
     /// Get the offset of the current match
     pub fn current_match_offset(&self) -> Option<usize> {
         self.current_match
             .and_then(|i| self.matches.get(i).copied())
+    }
+
+    /// Wrap-around forward scan: first match index at or after `start`
+    /// (modulo the match count) whose offset is visible. `None` when there
+    /// are no matches or every match is protected.
+    fn scan_forward<F>(&self, start: usize, is_protected: F) -> Option<usize>
+    where
+        F: Fn(usize) -> bool,
+    {
+        let n = self.matches.len();
+        if n == 0 {
+            return None;
+        }
+        (0..n)
+            .map(|step| (start + step) % n)
+            .find(|&idx| !is_protected(self.matches[idx]))
+    }
+
+    /// Wrap-around backward scan: first match index at or before `start`
+    /// (modulo the match count, walking down) whose offset is visible.
+    fn scan_backward<F>(&self, start: usize, is_protected: F) -> Option<usize>
+    where
+        F: Fn(usize) -> bool,
+    {
+        let n = self.matches.len();
+        if n == 0 {
+            return None;
+        }
+        (0..n)
+            .map(|step| (start + n - step) % n)
+            .find(|&idx| !is_protected(self.matches[idx]))
+    }
+
+    /// Whether at least one match is visible (unprotected).
+    pub fn any_visible_match<F>(&self, is_protected: F) -> bool
+    where
+        F: Fn(usize) -> bool,
+    {
+        self.matches.iter().any(|&off| !is_protected(off))
+    }
+
+    /// Find the next match index whose offset is NOT protected, starting the
+    /// wrap-around scan immediately after `current_match`. Returns `None`
+    /// when every match is protected or there are no matches.
+    pub fn find_next_unprotected_match<F>(&self, is_protected: F) -> Option<usize>
+    where
+        F: Fn(usize) -> bool,
+    {
+        let n = self.matches.len();
+        if n == 0 {
+            return None;
+        }
+        let start = self.current_match.map(|i| (i + 1) % n).unwrap_or(0);
+        self.scan_forward(start, is_protected)
+    }
+
+    /// Step `current_match` forward to the next visible match (wrapping).
+    /// When `is_protected` returns false for every offset (e.g. header
+    /// protection disabled), this collapses to a plain wrap-around step.
+    /// Returns `false` when there are no matches or every match is protected
+    /// — `current_match` is left unchanged in the all-protected case so the
+    /// caller can surface it to the user.
+    #[must_use]
+    pub fn step_to_next_visible<F>(&mut self, is_protected: F) -> bool
+    where
+        F: Fn(usize) -> bool,
+    {
+        if self.matches.is_empty() {
+            self.current_match = None;
+            return false;
+        }
+        let n = self.matches.len();
+        let start = self.current_match.map(|i| (i + 1) % n).unwrap_or(0);
+        match self.scan_forward(start, is_protected) {
+            Some(idx) => {
+                self.current_match = Some(idx);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Step `current_match` backward to the previous visible match (wrapping).
+    /// Returns `false` when there are no matches or every match is protected.
+    #[must_use]
+    pub fn step_to_prev_visible<F>(&mut self, is_protected: F) -> bool
+    where
+        F: Fn(usize) -> bool,
+    {
+        if self.matches.is_empty() {
+            self.current_match = None;
+            return false;
+        }
+        let n = self.matches.len();
+        let start = match self.current_match {
+            Some(0) | None => n - 1,
+            Some(i) => i - 1,
+        };
+        match self.scan_backward(start, is_protected) {
+            Some(idx) => {
+                self.current_match = Some(idx);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Set `current_match` to the first visible match whose offset is strictly
+    /// greater than `after_offset` (wrapping). Used after a Replace so the
+    /// user advances past the just-replaced byte instead of snapping back to
+    /// match 0. Returns `false` when there are no matches or every match is
+    /// protected.
+    #[must_use]
+    pub fn select_visible_after_offset<F>(&mut self, after_offset: usize, is_protected: F) -> bool
+    where
+        F: Fn(usize) -> bool,
+    {
+        if self.matches.is_empty() {
+            self.current_match = None;
+            return false;
+        }
+        let start = self
+            .matches
+            .iter()
+            .position(|&m| m > after_offset)
+            .unwrap_or(0);
+        match self.scan_forward(start, is_protected) {
+            Some(idx) => {
+                self.current_match = Some(idx);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// If `current_match` points at a protected offset, advance it forward
+    /// (wrapping) to the first unprotected match. No-op when the current
+    /// match is already visible or when every match is protected.
+    pub fn ensure_current_visible<F>(&mut self, is_protected: F)
+    where
+        F: Fn(usize) -> bool,
+    {
+        let Some(cur) = self.current_match else {
+            return;
+        };
+        let n = self.matches.len();
+        if n == 0 || cur >= n {
+            return;
+        }
+        if !is_protected(self.matches[cur]) {
+            return;
+        }
+        // Scan forward starting just past the (protected) current match;
+        // scan_forward wraps but would also re-test `cur`, which we know is
+        // protected, so wrapping back to it harmlessly finds nothing.
+        if let Some(idx) = self.scan_forward((cur + 1) % n, is_protected) {
+            self.current_match = Some(idx);
+        }
     }
 
     /// Clear search results
@@ -425,28 +557,111 @@ mod tests {
     }
 
     #[test]
-    fn test_search_state_navigation() {
+    fn test_search_state_navigation_unfiltered() {
+        // Nothing protected → step_to_*_visible degenerates to plain
+        // wrap-around stepping over every match.
         let mut state = SearchState::default();
         state.matches = vec![10, 20, 30];
 
         assert_eq!(state.current_match, None);
 
-        state.next_match();
+        let _ = state.step_to_next_visible(|_| false);
         assert_eq!(state.current_match, Some(0));
         assert_eq!(state.current_match_offset(), Some(10));
 
-        state.next_match();
+        let _ = state.step_to_next_visible(|_| false);
         assert_eq!(state.current_match, Some(1));
         assert_eq!(state.current_match_offset(), Some(20));
 
-        state.next_match();
+        let _ = state.step_to_next_visible(|_| false);
         assert_eq!(state.current_match, Some(2));
 
-        state.next_match();
+        let _ = state.step_to_next_visible(|_| false);
         assert_eq!(state.current_match, Some(0)); // Wrap around
 
-        state.prev_match();
+        let _ = state.step_to_prev_visible(|_| false);
         assert_eq!(state.current_match, Some(2)); // Wrap to end
+    }
+
+    #[test]
+    fn test_step_to_next_visible_skips_protected() {
+        let mut state = SearchState::default();
+        state.matches = vec![5, 15, 25, 35, 45];
+        // Protect offsets 5 and 25.
+        let is_protected = |off: usize| off == 5 || off == 25;
+
+        // No current → start at index 0; 5 is protected, skip to 1 (offset 15).
+        let _ = state.step_to_next_visible(is_protected);
+        assert_eq!(state.current_match, Some(1));
+
+        // From 1 → step to 2; 25 protected; skip to 3 (offset 35).
+        let _ = state.step_to_next_visible(is_protected);
+        assert_eq!(state.current_match, Some(3));
+
+        // From 3 → step to 4 (offset 45), unprotected.
+        let _ = state.step_to_next_visible(is_protected);
+        assert_eq!(state.current_match, Some(4));
+
+        // From 4 → wrap to 0 (protected) → skip to 1 (offset 15).
+        let _ = state.step_to_next_visible(is_protected);
+        assert_eq!(state.current_match, Some(1));
+    }
+
+    #[test]
+    fn test_step_to_prev_visible_skips_protected() {
+        let mut state = SearchState::default();
+        state.matches = vec![5, 15, 25, 35, 45];
+        let is_protected = |off: usize| off == 5 || off == 25;
+
+        // No current → start at last index (4); 45 unprotected.
+        let _ = state.step_to_prev_visible(is_protected);
+        assert_eq!(state.current_match, Some(4));
+
+        // From 4 → step backward to 3 (offset 35), unprotected.
+        let _ = state.step_to_prev_visible(is_protected);
+        assert_eq!(state.current_match, Some(3));
+
+        // From 3 → step back to 2 (offset 25, protected) → skip to 1 (offset 15).
+        let _ = state.step_to_prev_visible(is_protected);
+        assert_eq!(state.current_match, Some(1));
+
+        // From 1 → step back to 0 (offset 5, protected) → wrap to 4 (offset 45).
+        let _ = state.step_to_prev_visible(is_protected);
+        assert_eq!(state.current_match, Some(4));
+    }
+
+    #[test]
+    fn test_select_visible_after_offset_advances_past_replace() {
+        let mut state = SearchState::default();
+        state.matches = vec![5, 15, 25, 35, 45];
+        // Suppose offset 5 is protected (header) and we just replaced 25.
+        let is_protected = |off: usize| off == 5;
+
+        let _ = state.select_visible_after_offset(25, is_protected);
+        // Should land on the next match strictly > 25 → offset 35 (idx 3).
+        assert_eq!(state.current_match, Some(3));
+
+        // Replace at 45 (last match) → wraps to first visible match (idx 1,
+        // since idx 0 is protected).
+        let _ = state.select_visible_after_offset(45, is_protected);
+        assert_eq!(state.current_match, Some(1));
+    }
+
+    #[test]
+    fn test_ensure_current_visible_advances_off_protected() {
+        let mut state = SearchState::default();
+        state.matches = vec![5, 15, 25];
+        let is_protected = |off: usize| off == 5;
+
+        state.current_match = Some(0);
+        state.ensure_current_visible(is_protected);
+        // Was protected → advanced to idx 1 (offset 15).
+        assert_eq!(state.current_match, Some(1));
+
+        state.current_match = Some(1);
+        state.ensure_current_visible(is_protected);
+        // Was already visible → unchanged.
+        assert_eq!(state.current_match, Some(1));
     }
 
     #[test]
@@ -507,6 +722,37 @@ mod tests {
             }
             other => panic!("Expected SearchMessage::Error, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_find_next_unprotected_match_wraps_and_returns_none_when_all_protected() {
+        let mut state = SearchState::default();
+        state.matches = vec![10, 20, 30, 40];
+
+        // No current match → start at 0.
+        // Mark offsets 10 and 20 protected → next safe is index 2 (offset 30).
+        let idx = state.find_next_unprotected_match(|off| off < 30);
+        assert_eq!(idx, Some(2));
+
+        // Current is index 2 → start scanning at 3, which is 40 (safe).
+        state.current_match = Some(2);
+        let idx = state.find_next_unprotected_match(|off| off < 30);
+        assert_eq!(idx, Some(3));
+
+        // Current is index 3 → wrap to 0 (10) → protected, 1 (20) → protected,
+        // 2 (30) → safe.
+        state.current_match = Some(3);
+        let idx = state.find_next_unprotected_match(|off| off < 30);
+        assert_eq!(idx, Some(2));
+
+        // Every match protected → None.
+        let idx = state.find_next_unprotected_match(|_| true);
+        assert_eq!(idx, None);
+
+        // No matches → None.
+        state.matches.clear();
+        let idx = state.find_next_unprotected_match(|_| false);
+        assert_eq!(idx, None);
     }
 
     #[test]

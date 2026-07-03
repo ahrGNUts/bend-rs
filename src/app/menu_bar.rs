@@ -67,13 +67,31 @@ fn menu_item_with_shortcut(
 impl BendApp {
     /// Render the top menu bar
     pub(super) fn render_menu_bar(&mut self, ctx: &egui::Context) {
+        let mut any_menu_open = false;
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
-                ui.menu_button("File", |ui| self.render_file_menu(ui, ctx));
-                ui.menu_button("Edit", |ui| self.render_edit_menu(ui));
-                ui.menu_button("Help", |ui| self.render_help_menu(ui));
+                // menu_button's inner is Some only while the dropdown is
+                // open — used by the search dialog's Esc deferral so one
+                // Esc press dismisses the menu without also closing search.
+                any_menu_open |= ui
+                    .menu_button("File", |ui| self.render_file_menu(ui, ctx))
+                    .inner
+                    .is_some();
+                any_menu_open |= ui
+                    .menu_button("Edit", |ui| self.render_edit_menu(ui))
+                    .inner
+                    .is_some();
+                any_menu_open |= ui
+                    .menu_button("Help", |ui| self.render_help_menu(ui))
+                    .inner
+                    .is_some();
             });
         });
+        // Two-frame window: egui closes the dropdown during the Esc frame
+        // itself (inner reads None that frame), so the deferral must also
+        // consider the previous frame's state.
+        self.ui.menu_open_prev_frame = self.ui.menu_open_this_frame;
+        self.ui.menu_open_this_frame = any_menu_open;
     }
 
     /// Render the File menu contents
@@ -161,7 +179,7 @@ impl BendApp {
         ui.separator();
 
         if menu_item_with_shortcut(ui, "Find & Replace...", &find_shortcut, has_file, colors) {
-            self.ui.search_state.open_dialog();
+            self.open_search_dialog();
             ui.close_menu();
         }
         if menu_item_with_shortcut(ui, "Go to Offset...", &goto_shortcut, has_file, colors) {

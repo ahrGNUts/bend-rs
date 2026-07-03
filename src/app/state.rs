@@ -103,6 +103,14 @@ pub struct UiState {
 
     /// Pending scroll offset for hex editor (Some(offset) = scroll to this byte offset)
     pub pending_hex_scroll: Option<usize>,
+
+    /// Whether a menu-bar dropdown is open this frame (set by render_menu_bar,
+    /// which runs before the dialogs each frame)
+    pub menu_open_this_frame: bool,
+
+    /// Previous frame's `menu_open_this_frame`. egui closes a dropdown during
+    /// the Esc frame itself, so Esc-deferral checks need both frames.
+    pub menu_open_prev_frame: bool,
 }
 
 /// Document state: the loaded buffer/editor, its preview, parsed structure,

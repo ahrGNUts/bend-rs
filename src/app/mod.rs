@@ -132,12 +132,271 @@ impl BendApp {
         }
     }
 
-    /// Re-execute the current search against the working buffer and record the generation
+    /// Open the Search & Replace dialog. If a query persists from a prior
+    /// session, re-run the search immediately so the dialog shows real
+    /// state (match count, current position) instead of the stale "No
+    /// matches found" that would otherwise appear because `clear_results`
+    /// only cleared `matches` — the `last_searched_*` fields persist, so
+    /// `query_changed_since_search()` returns false and the status line
+    /// can't distinguish "search produced zero hits" from "search hasn't
+    /// run yet against this query".
+    pub fn open_search_dialog(&mut self) {
+        self.ui.search_state.open_dialog();
+        if !self.ui.search_state.query.is_empty() && self.ui.search_state.matches.is_empty() {
+            self.refresh_search();
+        }
+    }
+
+    /// Re-execute the current search against the working buffer and record
+    /// the generation. After the search runs, advances `current_match` past
+    /// any leading protected matches so the user lands on the first
+    /// replaceable hit (matters when Protect Headers is on and the very
+    /// first matches sit inside the header).
     pub fn refresh_search(&mut self) {
         if let Some(editor) = &self.doc.editor {
             let gen = editor.edit_generation();
             crate::editor::search::execute_search(&mut self.ui.search_state, editor.working());
             self.ui.search_state.set_searched_generation(gen);
+        }
+        let pattern_len = self.ui.search_state.pattern_length();
+        self.ui
+            .search_state
+            .ensure_current_visible(|off| self.doc.is_range_protected(off, pattern_len));
+    }
+
+    /// Re-run the search only when the cached matches are stale relative to
+    /// the editor's current generation. Returns `true` if a refresh happened.
+    pub fn refresh_search_if_stale(&mut self) -> bool {
+        let stale = self
+            .doc
+            .editor
+            .as_ref()
+            .map(|e| {
+                self.ui
+                    .search_state
+                    .matches_may_be_stale(e.edit_generation())
+            })
+            .unwrap_or(false);
+        if stale {
+            self.refresh_search();
+        }
+        stale
+    }
+
+    /// Whether the current query needs an initial search before navigation —
+    /// the query/mode/case has drifted since the last executed search.
+    /// Deliberately NOT keyed on `matches.is_empty()`: a query that
+    /// legitimately found zero hits has already been searched, and re-running
+    /// the full-buffer scan on every keypress would be wasted work (buffer
+    /// edits that could create new hits are covered by the generation-based
+    /// staleness check instead).
+    pub(crate) fn search_needs_initial_run(&self) -> bool {
+        let s = &self.ui.search_state;
+        !s.query.is_empty() && s.query_changed_since_search()
+    }
+
+    /// Set the "all matches protected" info message.
+    fn set_all_protected_message(&mut self) {
+        let n = self.ui.search_state.matches.len();
+        self.ui.search_state.message = Some(crate::editor::search::SearchMessage::Info(format!(
+            "All {} match{} in protected regions — turn off Protect to visit them",
+            n,
+            if n == 1 { " is" } else { "es are" }
+        )));
+    }
+
+    /// Advance to the next search match (running an initial search if the
+    /// query hasn't been executed yet, or refreshing if buffer edits have
+    /// invalidated cached matches) and scroll the hex view to follow it.
+    /// Protected matches are skipped when header protection is on (when off,
+    /// `is_range_protected` returns false for everything so this degrades to
+    /// a plain wrap-around step); when EVERY match is protected an info
+    /// message says so instead of navigation silently doing nothing.
+    pub fn do_search_next(&mut self) {
+        // Transient replace/skip banners yield to live navigation state.
+        self.ui.search_state.message = None;
+
+        // A cleared Find field means "no search": drop the previous query's
+        // cached results instead of stepping through them.
+        if self.ui.search_state.query.is_empty() {
+            self.ui.search_state.clear_results();
+            return;
+        }
+
+        if self.search_needs_initial_run() {
+            self.refresh_search();
+            if !self.ui.search_state.matches.is_empty() {
+                let pattern_len = self.ui.search_state.pattern_length();
+                if self
+                    .ui
+                    .search_state
+                    .any_visible_match(|off| self.doc.is_range_protected(off, pattern_len))
+                {
+                    // refresh_search already advanced current_match past any
+                    // leading protected matches; land there without stepping.
+                    self.navigate_to_search_match();
+                } else {
+                    // Don't move the cursor into a match the message says
+                    // can't be visited (mirrors do_search_prev).
+                    self.set_all_protected_message();
+                }
+            }
+            return;
+        }
+
+        // Buffer edits since the last search invalidate the cached offsets.
+        // Preserve the user's position across the refresh: "next" after a
+        // refresh means "first visible match after where I was", not "second
+        // match from the top" (execute_search resets current_match to 0).
+        let prev_offset = self.ui.search_state.current_match_offset();
+        if self.refresh_search_if_stale() {
+            if self.ui.search_state.matches.is_empty() {
+                return;
+            }
+            let pattern_len = self.ui.search_state.pattern_length();
+            let moved = match prev_offset {
+                Some(off) => self.ui.search_state.select_visible_after_offset(off, |o| {
+                    self.doc.is_range_protected(o, pattern_len)
+                }),
+                // No prior position: keep the refresh landing if visible.
+                None => self
+                    .ui
+                    .search_state
+                    .any_visible_match(|o| self.doc.is_range_protected(o, pattern_len)),
+            };
+            if moved {
+                self.navigate_to_search_match();
+            } else {
+                self.set_all_protected_message();
+            }
+            return;
+        }
+
+        if self.ui.search_state.matches.is_empty() {
+            return;
+        }
+        let pattern_len = self.ui.search_state.pattern_length();
+        if self
+            .ui
+            .search_state
+            .step_to_next_visible(|off| self.doc.is_range_protected(off, pattern_len))
+        {
+            self.navigate_to_search_match();
+        } else if !self.ui.search_state.matches.is_empty() {
+            self.set_all_protected_message();
+        }
+    }
+
+    /// Advance to the previous search match. On an initial run, jumps to the
+    /// last visible match (mirroring Shift+Enter behavior).
+    pub fn do_search_prev(&mut self) {
+        self.ui.search_state.message = None;
+
+        if self.ui.search_state.query.is_empty() {
+            self.ui.search_state.clear_results();
+            return;
+        }
+
+        if self.search_needs_initial_run() {
+            self.refresh_search();
+            if !self.ui.search_state.matches.is_empty() {
+                let pattern_len = self.ui.search_state.pattern_length();
+                // Clear current_match so step_to_prev_visible starts its
+                // backward scan from the end and lands on the last visible
+                // match (skipping protected matches at the tail).
+                self.ui.search_state.current_match = None;
+                if self
+                    .ui
+                    .search_state
+                    .step_to_prev_visible(|off| self.doc.is_range_protected(off, pattern_len))
+                {
+                    self.navigate_to_search_match();
+                } else {
+                    self.set_all_protected_message();
+                }
+            }
+            return;
+        }
+
+        let prev_offset = self.ui.search_state.current_match_offset();
+        if self.refresh_search_if_stale() {
+            if self.ui.search_state.matches.is_empty() {
+                return;
+            }
+            let pattern_len = self.ui.search_state.pattern_length();
+            // "Previous" after a refresh = last visible match strictly before
+            // where the user was. partition_point gives the first index with
+            // offset >= prev_offset; scanning backward from just before it
+            // lands there (mapping == len to None so step_to_prev_visible
+            // starts from the end — correct wrap for "before everything" and
+            // "after everything" alike).
+            if let Some(off) = prev_offset {
+                let pos = self.ui.search_state.matches.partition_point(|&m| m < off);
+                self.ui.search_state.current_match =
+                    (pos < self.ui.search_state.matches.len()).then_some(pos);
+            }
+            if self
+                .ui
+                .search_state
+                .step_to_prev_visible(|o| self.doc.is_range_protected(o, pattern_len))
+            {
+                self.navigate_to_search_match();
+            } else {
+                self.set_all_protected_message();
+            }
+            return;
+        }
+
+        if self.ui.search_state.matches.is_empty() {
+            return;
+        }
+        let pattern_len = self.ui.search_state.pattern_length();
+        if self
+            .ui
+            .search_state
+            .step_to_prev_visible(|off| self.doc.is_range_protected(off, pattern_len))
+        {
+            self.navigate_to_search_match();
+        } else if !self.ui.search_state.matches.is_empty() {
+            self.set_all_protected_message();
+        }
+    }
+
+    /// Whether another dialog/menu/text-entry surface is stacked above the
+    /// search dialog this frame. The search dialog renders FIRST in
+    /// `show_dialogs`, so these flags still hold their values from when the
+    /// stacked UI was opened — search defers its keyboard shortcuts (Esc,
+    /// Alt+R/A, Ctrl+Enter) to whatever is on top instead of stealing the
+    /// press. Sidebar rename/annotation editors are included because they
+    /// render AFTER the dialogs: if search consumed Esc first, their cancel
+    /// handlers would never see the event and the rename would stay stuck
+    /// in edit mode.
+    pub(crate) fn modal_above_search_open(&self) -> bool {
+        self.ui.go_to_offset_state.dialog_open
+            || self.ui.shortcuts_dialog_state.dialog_open
+            || self.ui.settings_dialog_state.dialog_open
+            || self.ui.dialogs.show_close
+            || self.ui.dialogs.pending_confirm.is_some()
+            || self.ui.dialogs.pending_high_risk_edit.is_some()
+            || self.ui.context_menu_state.target_offset.is_some()
+            || self.ui.menu_open_this_frame
+            || self.ui.menu_open_prev_frame
+            || self.ui.bookmarks_state.renaming.is_some()
+            || self.ui.bookmarks_state.editing_annotation.is_some()
+            || self.ui.savepoints_state.wants_keyboard_priority()
+    }
+
+    /// Called after a new file replaces the editor buffer. Search offsets
+    /// from the previous file are meaningless against the new buffer (and
+    /// the fresh editor's generation restarts at 0, which can collide with
+    /// `searched_at_generation` and defeat stale detection), so drop them —
+    /// and re-anchor immediately when the dialog is open with a live query.
+    /// Keep this egui-free: `open_file` runs inside `ctx.input()` for
+    /// dropped files.
+    pub(crate) fn on_file_loaded(&mut self) {
+        self.ui.search_state.clear_results();
+        if self.ui.search_state.dialog_open && !self.ui.search_state.query.is_empty() {
+            self.refresh_search();
         }
     }
 
@@ -230,6 +489,9 @@ impl BendApp {
                 self.doc.preview.decode_error = None;
                 // Clear existing textures and animation state
                 self.doc.preview.reset_for_new_file();
+                // Invalidate (and possibly re-anchor) search state — offsets
+                // from the previous file don't transfer
+                self.on_file_loaded();
                 // Add to recent files and save settings
                 self.config.settings.add_recent_file(path);
                 self.config.settings.save();
@@ -556,6 +818,415 @@ mod tests {
         // Should NOT load a file
         assert!(app.doc.editor.is_none());
         assert!(app.doc.current_file.is_none());
+    }
+
+    #[test]
+    fn test_do_search_next_runs_initial_search_when_matches_empty() {
+        // Reproducer for the bug where Next/Previous (and F3) were no-ops on
+        // a never-searched query because they only stepped a cached match
+        // list — typing "FF" then pressing F3 did nothing until Enter was
+        // pressed first.
+        let mut data = vec![0u8; 20];
+        data[3] = 0xFF;
+        data[10] = 0xFF;
+        data[17] = 0xFF;
+        let mut app = BendApp::default();
+        app.doc.editor = Some(EditorState::new(data));
+        app.ui.search_state.mode = crate::editor::search::SearchMode::Hex;
+        app.ui.search_state.query = "FF".to_string();
+        assert!(app.ui.search_state.matches.is_empty());
+
+        app.do_search_next();
+
+        assert_eq!(app.ui.search_state.matches, vec![3, 10, 17]);
+        // Initial search lands on the first match — Next does not advance
+        // past it on the same press that triggered the search.
+        assert_eq!(app.ui.search_state.current_match, Some(0));
+
+        // Subsequent presses step forward as usual.
+        app.do_search_next();
+        assert_eq!(app.ui.search_state.current_match, Some(1));
+    }
+
+    #[test]
+    fn test_reopen_search_dialog_reruns_search_for_persisted_query() {
+        // Reproducer for the "stale No matches found on reopen" bug. After
+        // close + reopen, the dialog showed "No matches found" because
+        // matches were cleared but the last_searched_query persisted, so
+        // query_changed_since_search() returned false. open_search_dialog
+        // now re-runs the search whenever a query persists.
+        let mut data = vec![0u8; 20];
+        data[3] = 0xFF;
+        data[10] = 0xFF;
+        let mut app = BendApp::default();
+        app.doc.editor = Some(EditorState::new(data));
+        app.ui.search_state.mode = crate::editor::search::SearchMode::Hex;
+        app.ui.search_state.query = "FF".to_string();
+
+        // Session 1: search, then close.
+        app.open_search_dialog();
+        assert_eq!(app.ui.search_state.matches, vec![3, 10]);
+        app.ui.search_state.close_dialog();
+        assert!(app.ui.search_state.matches.is_empty());
+        // last_searched_query is intentionally not cleared by close_dialog —
+        // that's what made the original bug invisible to query_changed().
+        assert!(!app.ui.search_state.query_changed_since_search());
+
+        // Session 2: reopen. Without the auto-rerun fix this would leave
+        // matches empty, causing render_status to show "No matches found".
+        app.open_search_dialog();
+        assert_eq!(app.ui.search_state.matches, vec![3, 10]);
+        assert!(app.ui.search_state.current_match.is_some());
+    }
+
+    #[test]
+    fn test_reopen_search_dialog_with_empty_query_does_not_search() {
+        // Sanity check: opening with no persisted query is still a no-op
+        // beyond toggling dialog_open and just_opened.
+        let mut app = BendApp::default();
+        app.doc.editor = Some(EditorState::new(vec![0u8; 20]));
+        assert!(app.ui.search_state.query.is_empty());
+
+        app.open_search_dialog();
+        assert!(app.ui.search_state.dialog_open);
+        assert!(app.ui.search_state.matches.is_empty());
+    }
+
+    #[test]
+    fn test_do_search_prev_initial_search_jumps_to_last_match() {
+        let mut data = vec![0u8; 20];
+        data[3] = 0xFF;
+        data[10] = 0xFF;
+        data[17] = 0xFF;
+        let mut app = BendApp::default();
+        app.doc.editor = Some(EditorState::new(data));
+        app.ui.search_state.mode = crate::editor::search::SearchMode::Hex;
+        app.ui.search_state.query = "FF".to_string();
+
+        app.do_search_prev();
+
+        assert_eq!(app.ui.search_state.matches, vec![3, 10, 17]);
+        // Initial Previous lands on the LAST match (mirrors Shift+Enter).
+        assert_eq!(app.ui.search_state.current_match, Some(2));
+    }
+
+    /// Helper: app with FF at offsets 3, 10, 17; header (High risk) covering
+    /// 0..N so protection tests can choose which matches are protected.
+    fn app_with_protected_header(header_end: usize) -> BendApp {
+        use crate::formats::traits::{FileSection, RiskLevel};
+        let mut data = vec![0u8; 20];
+        data[3] = 0xFF;
+        data[10] = 0xFF;
+        data[17] = 0xFF;
+        let mut app = BendApp::default();
+        app.doc.editor = Some(EditorState::new(data));
+        app.doc.cached_sections = Some(vec![
+            FileSection::new("Header", 0, header_end, RiskLevel::High),
+            FileSection::new("Data", header_end, 20, RiskLevel::Safe),
+        ]);
+        app.doc.header_protection = true;
+        app.ui.search_state.mode = crate::editor::search::SearchMode::Hex;
+        app.ui.search_state.query = "FF".to_string();
+        app
+    }
+
+    #[test]
+    fn test_do_search_next_stale_refresh_preserves_position() {
+        // On match at offset 10 (index 1); an unrelated edit staleness-bumps
+        // the generation. F3 must land on offset 17 — "next after where I
+        // was" — not reset to the top and step to index 1 again.
+        let mut data = vec![0u8; 20];
+        data[3] = 0xFF;
+        data[10] = 0xFF;
+        data[17] = 0xFF;
+        let mut app = BendApp::default();
+        app.doc.editor = Some(EditorState::new(data));
+        app.ui.search_state.mode = crate::editor::search::SearchMode::Hex;
+        app.ui.search_state.query = "FF".to_string();
+        app.refresh_search();
+        app.ui.search_state.current_match = Some(1); // offset 10
+
+        app.doc.editor.as_mut().unwrap().edit_byte(0, 0x01); // unrelated edit
+
+        app.do_search_next();
+        assert_eq!(app.ui.search_state.current_match_offset(), Some(17));
+    }
+
+    #[test]
+    fn test_do_search_prev_stale_refresh_preserves_position() {
+        let mut data = vec![0u8; 20];
+        data[3] = 0xFF;
+        data[10] = 0xFF;
+        data[17] = 0xFF;
+        let mut app = BendApp::default();
+        app.doc.editor = Some(EditorState::new(data));
+        app.ui.search_state.mode = crate::editor::search::SearchMode::Hex;
+        app.ui.search_state.query = "FF".to_string();
+        app.refresh_search();
+        app.ui.search_state.current_match = Some(1); // offset 10
+
+        app.doc.editor.as_mut().unwrap().edit_byte(0, 0x01);
+
+        app.do_search_prev();
+        // Previous-before-offset-10 is offset 3.
+        assert_eq!(app.ui.search_state.current_match_offset(), Some(3));
+    }
+
+    #[test]
+    fn test_do_search_next_all_protected_sets_message_and_stays() {
+        // Header covers the whole file → every match protected. Navigation
+        // must say so instead of silently doing nothing.
+        let mut app = app_with_protected_header(20);
+
+        // Initial run.
+        app.do_search_next();
+        assert_eq!(app.ui.search_state.matches, vec![3, 10, 17]);
+        match app.ui.search_state.message.as_ref() {
+            Some(crate::editor::search::SearchMessage::Info(msg)) => {
+                assert!(msg.contains("protected regions"), "got: {msg}")
+            }
+            other => panic!("expected all-protected Info, got {:?}", other),
+        }
+
+        // Step path: message re-set on every press, position unchanged.
+        let before = app.ui.search_state.current_match;
+        app.do_search_next();
+        assert_eq!(app.ui.search_state.current_match, before);
+        assert!(app.ui.search_state.message.is_some());
+
+        // Prev path too.
+        app.do_search_prev();
+        assert_eq!(app.ui.search_state.current_match, before);
+        assert!(app.ui.search_state.message.is_some());
+    }
+
+    #[test]
+    fn test_do_search_prev_initial_skips_protected_tail() {
+        // Header protects offsets 0..4 only (match at 3); matches at 10 and
+        // 17 are safe. Sanity-check forward too. Then invert: protect the
+        // TAIL via a custom section layout and confirm initial Previous
+        // skips it.
+        use crate::formats::traits::{FileSection, RiskLevel};
+        let mut data = vec![0u8; 20];
+        data[3] = 0xFF;
+        data[10] = 0xFF;
+        data[17] = 0xFF;
+        let mut app = BendApp::default();
+        app.doc.editor = Some(EditorState::new(data));
+        app.doc.cached_sections = Some(vec![
+            FileSection::new("Data", 0, 15, RiskLevel::Safe),
+            FileSection::new("Trailer", 15, 20, RiskLevel::High),
+        ]);
+        app.doc.header_protection = true;
+        app.ui.search_state.mode = crate::editor::search::SearchMode::Hex;
+        app.ui.search_state.query = "FF".to_string();
+
+        app.do_search_prev();
+
+        // Last VISIBLE match is offset 10 (17 is protected by the trailer).
+        assert_eq!(app.ui.search_state.current_match_offset(), Some(10));
+    }
+
+    #[test]
+    fn test_navigation_clears_transient_message() {
+        let mut data = vec![0u8; 20];
+        data[3] = 0xFF;
+        data[10] = 0xFF;
+        let mut app = BendApp::default();
+        app.doc.editor = Some(EditorState::new(data));
+        app.ui.search_state.mode = crate::editor::search::SearchMode::Hex;
+        app.ui.search_state.query = "FF".to_string();
+        app.refresh_search();
+
+        app.ui.search_state.message = Some(crate::editor::search::SearchMessage::Info(
+            "Replaced at 0x00000003".to_string(),
+        ));
+
+        app.do_search_next();
+        // The stale banner yields to the live counter.
+        assert!(app.ui.search_state.message.is_none());
+    }
+
+    #[test]
+    fn test_on_file_loaded_invalidates_stale_search() {
+        // Search ran against a 20-byte file (match at 17, generation 0).
+        // A new 10-byte file replaces the editor; its generation restarts at
+        // 0, defeating generation-based staleness — on_file_loaded must
+        // drop the old offsets explicitly.
+        let mut data = vec![0u8; 20];
+        data[17] = 0xFF;
+        let mut app = BendApp::default();
+        app.doc.editor = Some(EditorState::new(data));
+        app.ui.search_state.mode = crate::editor::search::SearchMode::Hex;
+        app.ui.search_state.query = "FF".to_string();
+        app.refresh_search();
+        assert_eq!(app.ui.search_state.matches, vec![17]);
+
+        // Dialog closed: results dropped, nothing re-anchored.
+        app.doc.editor = Some(EditorState::new(vec![0u8; 10]));
+        app.on_file_loaded();
+        assert!(app.ui.search_state.matches.is_empty());
+        assert!(app.ui.search_state.current_match.is_none());
+
+        // Dialog open with a live query: re-anchored against the NEW buffer.
+        let mut small = vec![0u8; 10];
+        small[4] = 0xFF;
+        app.ui.search_state.dialog_open = true;
+        app.doc.editor = Some(EditorState::new(small));
+        app.on_file_loaded();
+        assert_eq!(app.ui.search_state.matches, vec![4]);
+        assert_eq!(app.ui.search_state.current_match_offset(), Some(4));
+    }
+
+    #[test]
+    fn test_modal_above_search_open_flag_matrix() {
+        let mut app = BendApp::default();
+        assert!(!app.modal_above_search_open());
+
+        app.ui.go_to_offset_state.dialog_open = true;
+        assert!(app.modal_above_search_open());
+        app.ui.go_to_offset_state.dialog_open = false;
+
+        app.ui.shortcuts_dialog_state.dialog_open = true;
+        assert!(app.modal_above_search_open());
+        app.ui.shortcuts_dialog_state.dialog_open = false;
+
+        app.ui.settings_dialog_state.dialog_open = true;
+        assert!(app.modal_above_search_open());
+        app.ui.settings_dialog_state.dialog_open = false;
+
+        app.ui.dialogs.show_close = true;
+        assert!(app.modal_above_search_open());
+        app.ui.dialogs.show_close = false;
+
+        app.ui
+            .dialogs
+            .open_confirm(crate::app::ConfirmAction::DeleteSavePoint(1));
+        assert!(app.modal_above_search_open());
+        app.ui.dialogs.pending_confirm = None;
+
+        app.ui.context_menu_state.target_offset = Some(4);
+        assert!(app.modal_above_search_open());
+        app.ui.context_menu_state.target_offset = None;
+
+        // Menu-bar dropdowns: either frame's flag defers (egui closes the
+        // menu during the Esc frame itself).
+        app.ui.menu_open_this_frame = true;
+        assert!(app.modal_above_search_open());
+        app.ui.menu_open_this_frame = false;
+        app.ui.menu_open_prev_frame = true;
+        assert!(app.modal_above_search_open());
+        app.ui.menu_open_prev_frame = false;
+
+        // Sidebar rename/annotation editors render after the dialogs; Esc
+        // must reach their cancel handlers.
+        app.ui.bookmarks_state.renaming = Some(1);
+        assert!(app.modal_above_search_open());
+        app.ui.bookmarks_state.renaming = None;
+        app.ui.bookmarks_state.editing_annotation = Some(1);
+        assert!(app.modal_above_search_open());
+        app.ui.bookmarks_state.editing_annotation = None;
+
+        assert!(!app.modal_above_search_open());
+    }
+
+    #[test]
+    fn test_navigation_with_empty_query_clears_stale_results() {
+        // Clearing the Find field then pressing Enter/F3 must not step
+        // through the previous query's cached matches.
+        let mut data = vec![0u8; 20];
+        data[3] = 0xFF;
+        data[10] = 0xFF;
+        let mut app = BendApp::default();
+        app.doc.editor = Some(EditorState::new(data));
+        app.ui.search_state.mode = crate::editor::search::SearchMode::Hex;
+        app.ui.search_state.query = "FF".to_string();
+        app.refresh_search();
+        assert_eq!(app.ui.search_state.matches.len(), 2);
+
+        app.ui.search_state.query.clear();
+        app.do_search_next();
+        assert!(app.ui.search_state.matches.is_empty());
+        assert!(app.ui.search_state.current_match.is_none());
+    }
+
+    #[test]
+    fn test_zero_hit_query_does_not_rescan_every_press() {
+        // A query that legitimately found nothing has been searched; F3
+        // must not re-run the full-buffer scan on every press.
+        let mut app = BendApp::default();
+        app.doc.editor = Some(EditorState::new(vec![0u8; 20]));
+        app.ui.search_state.mode = crate::editor::search::SearchMode::Hex;
+        app.ui.search_state.query = "FF".to_string();
+        app.refresh_search();
+        assert!(app.ui.search_state.matches.is_empty());
+        // Searched and settled — no initial run pending.
+        assert!(!app.search_needs_initial_run());
+    }
+
+    #[test]
+    fn test_zero_hit_query_refreshes_after_buffer_edit() {
+        // ...but an edit that CREATES a hit must be picked up on the next
+        // navigation press (generation-based staleness, not query drift).
+        let mut app = BendApp::default();
+        app.doc.editor = Some(EditorState::new(vec![0u8; 20]));
+        app.ui.search_state.mode = crate::editor::search::SearchMode::Hex;
+        app.ui.search_state.query = "FF".to_string();
+        app.refresh_search();
+        assert!(app.ui.search_state.matches.is_empty());
+
+        app.doc.editor.as_mut().unwrap().edit_byte(7, 0xFF);
+        app.do_search_next();
+        assert_eq!(app.ui.search_state.matches, vec![7]);
+        assert_eq!(app.ui.search_state.current_match_offset(), Some(7));
+    }
+
+    #[test]
+    fn test_all_protected_initial_next_does_not_move_cursor() {
+        // The message says the matches can't be visited — the cursor must
+        // not move into one anyway (parity with do_search_prev).
+        let mut app = app_with_protected_header(20);
+        let cursor_before = app.doc.editor.as_ref().unwrap().cursor();
+
+        app.do_search_next();
+
+        assert!(app.ui.search_state.message.is_some());
+        assert_eq!(app.doc.editor.as_ref().unwrap().cursor(), cursor_before);
+    }
+
+    #[test]
+    fn test_replace_after_save_point_restore_is_not_stale_blind() {
+        // Reproduces the validation finding: restore_save_point changes the
+        // buffer; the staleness machinery must notice so Replace doesn't
+        // write at offsets that no longer match.
+        let mut data = vec![0u8; 20];
+        data[5] = 0xFF;
+        let mut app = BendApp::default();
+        app.doc.editor = Some(EditorState::new(data));
+        // Save point captures the state WITH the FF at offset 5.
+        let id = app
+            .doc
+            .editor
+            .as_mut()
+            .unwrap()
+            .create_save_point("sp".into());
+        // Destroy the match, then search (finds nothing at 5... so instead:
+        // search first, then restore to a DIFFERENT buffer state).
+        app.ui.search_state.mode = crate::editor::search::SearchMode::Hex;
+        app.ui.search_state.query = "FF".to_string();
+        app.refresh_search();
+        assert_eq!(app.ui.search_state.matches, vec![5]);
+
+        // Change offset 5, then restore the save point (which puts FF back).
+        // Either way the generation must move so cached offsets re-verify.
+        app.doc.editor.as_mut().unwrap().edit_byte(5, 0x42);
+        assert!(app.doc.editor.as_mut().unwrap().restore_save_point(id));
+
+        let gen = app.doc.editor.as_ref().unwrap().edit_generation();
+        assert!(
+            app.ui.search_state.matches_may_be_stale(gen),
+            "restore must mark cached search results stale"
+        );
     }
 
     #[test]

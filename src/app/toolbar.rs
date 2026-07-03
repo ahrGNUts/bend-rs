@@ -11,6 +11,8 @@ pub(super) struct InputActions {
     pub open: bool,
     pub export: bool,
     pub search: bool,
+    pub search_next: bool,
+    pub search_prev: bool,
     pub go_to: bool,
     pub undo: bool,
     pub redo: bool,
@@ -69,7 +71,7 @@ impl BendApp {
                     .pointer_cursor()
                     .clicked()
                 {
-                    self.ui.search_state.open_dialog();
+                    self.open_search_dialog();
                 }
                 if ui
                     .add_enabled(has_file, egui::Button::new("Go to"))
@@ -160,7 +162,13 @@ impl BendApp {
             self.export_file(ctx);
         }
         if actions.search {
-            self.ui.search_state.open_dialog();
+            self.open_search_dialog();
+        }
+        if actions.search_next {
+            self.do_search_next();
+        }
+        if actions.search_prev {
+            self.do_search_prev();
         }
         if actions.go_to {
             self.ui.go_to_offset_state.open_dialog();

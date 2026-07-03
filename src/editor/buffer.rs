@@ -199,8 +199,14 @@ impl EditorState {
         self.modified
     }
 
-    /// Replace a range of bytes as a single undoable operation
+    /// Replace a range of bytes as a single undoable operation.
+    /// Out-of-range offsets are ignored; in-bounds writes that would extend
+    /// past the end of the buffer are deliberately truncated (callers that
+    /// need exact-length semantics must bounds-check before calling).
     pub fn replace_bytes(&mut self, offset: usize, new_values: &[u8]) {
+        if offset >= self.working.len() {
+            return;
+        }
         let end = (offset + new_values.len()).min(self.working.len());
         let actual_len = end - offset;
         if actual_len == 0 {
@@ -222,10 +228,15 @@ impl EditorState {
         });
     }
 
-    /// Replace bytes at multiple offsets as a single atomic undo/redo operation
+    /// Replace bytes at multiple offsets as a single atomic undo/redo operation.
+    /// Out-of-range offsets are skipped (see `replace_bytes` for truncation
+    /// semantics on in-bounds writes).
     pub fn replace_all_bytes(&mut self, offsets: &[usize], new_values: &[u8]) {
         let mut sub_ops = Vec::new();
         for &offset in offsets {
+            if offset >= self.working.len() {
+                continue;
+            }
             let end = (offset + new_values.len()).min(self.working.len());
             let actual_len = end - offset;
             if actual_len == 0 {
@@ -508,6 +519,11 @@ impl EditorState {
                 old_values,
                 new_values: self.working.clone(),
             });
+            // Search staleness detection keys off edit_generation. A restore
+            // mutates the buffer outside record_operation, so bump it here
+            // too — otherwise cached search offsets are treated as fresh
+            // against the restored bytes and Replace corrupts them.
+            self.edit_generation += 1;
         }
 
         if length_will_change {
@@ -1230,6 +1246,55 @@ mod tests {
         // Replace that would extend past buffer should be clamped
         editor.replace_bytes(2, &[0xAA, 0xBB, 0xCC]);
         assert_eq!(editor.working(), &[0x00, 0x01, 0xAA]);
+    }
+
+    #[test]
+    fn test_restore_save_point_bumps_edit_generation() {
+        // Search staleness detection keys off edit_generation; a restore
+        // that changes the buffer must invalidate cached search offsets.
+        let mut editor = EditorState::new(vec![0x00; 8]);
+        let id = editor.create_save_point("sp".into());
+        editor.edit_byte(3, 0xFF);
+        let gen_before_restore = editor.edit_generation();
+
+        assert!(editor.restore_save_point(id));
+        assert!(
+            editor.edit_generation() > gen_before_restore,
+            "restore changed the buffer but left edit_generation unchanged"
+        );
+
+        // A no-op restore (buffer already identical) must NOT bump.
+        let id2 = editor.create_save_point("same".into());
+        let gen_before_noop = editor.edit_generation();
+        assert!(editor.restore_save_point(id2));
+        assert_eq!(editor.edit_generation(), gen_before_noop);
+    }
+
+    #[test]
+    fn test_replace_bytes_out_of_range_is_noop() {
+        let data = vec![0x00, 0x01, 0x02];
+        let mut editor = EditorState::new(data.clone());
+
+        // offset beyond the buffer must not panic (previously underflowed
+        // `end - offset`) and must not modify anything
+        editor.replace_bytes(17, &[0xAA]);
+        assert_eq!(editor.working(), &data[..]);
+        assert!(!editor.is_modified());
+
+        // offset == len is also a no-op
+        editor.replace_bytes(3, &[0xAA]);
+        assert_eq!(editor.working(), &data[..]);
+        assert!(!editor.is_modified());
+    }
+
+    #[test]
+    fn test_replace_all_bytes_skips_out_of_range_offsets() {
+        let data = vec![0xAA, 0x00, 0xAA];
+        let mut editor = EditorState::new(data);
+
+        // In-range offsets replaced; out-of-range ones skipped without panic
+        editor.replace_all_bytes(&[0, 2, 17], &[0xBB]);
+        assert_eq!(editor.working(), &[0xBB, 0x00, 0xBB]);
     }
 
     // ========== Replace All Bytes (Atomic) Tests ==========

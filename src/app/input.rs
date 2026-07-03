@@ -69,6 +69,23 @@ impl BendApp {
             if i.key_pressed(egui::Key::F1) {
                 self.ui.shortcuts_dialog_state.open();
             }
+            // F3 / Shift+F3: Step search matches when the dialog is open.
+            // Plain-key only — no Ctrl/Cmd/Alt — to avoid window-manager clashes
+            // and to keep the binding decoupled from Find-field focus so the user
+            // can hold F3 to scrub through matches. Defers while another dialog
+            // is stacked above search, like every other search shortcut.
+            if self.ui.search_state.dialog_open
+                && !self.modal_above_search_open()
+                && !ctrl
+                && !i.modifiers.alt
+            {
+                if !shift && i.key_pressed(egui::Key::F3) {
+                    actions.search_next = true;
+                }
+                if shift && i.key_pressed(egui::Key::F3) {
+                    actions.search_prev = true;
+                }
+            }
         });
 
         actions

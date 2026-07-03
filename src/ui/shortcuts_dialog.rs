@@ -64,7 +64,7 @@ pub fn show(ctx: &egui::Context, state: &mut ShortcutsDialogState) {
                             ("Ctrl+Z / Cmd+Z", "Undo"),
                             ("Ctrl+Shift+Z / Cmd+Shift+Z", "Redo"),
                             ("Ctrl+Y / Cmd+Y", "Redo (alternative)"),
-                            ("Ctrl+F / Cmd+F", "Find & Replace"),
+                            ("Ctrl+F / Cmd+F", "Find & Replace (see Search section)"),
                             ("Ctrl+G / Cmd+G", "Go to offset"),
                             ("Ctrl+S / Cmd+S", "Create save point"),
                             ("Ctrl+D / Cmd+D", "Add bookmark at cursor"),
@@ -127,6 +127,29 @@ pub fn show(ctx: &egui::Context, state: &mut ShortcutsDialogState) {
                             ),
                             ("Delete", "Delete byte at cursor (Insert mode)"),
                             ("Right-click", "Context menu (copy, paste, bookmark)"),
+                        ],
+                    );
+
+                    ui.add_space(10.0);
+
+                    // Search & Replace
+                    ui.heading("Search & Replace");
+                    shortcuts_table(
+                        ui,
+                        "search_replace",
+                        &[
+                            ("Ctrl+F / Cmd+F", "Open Find & Replace"),
+                            ("F3", "Next match"),
+                            ("Shift+F3", "Previous match"),
+                            ("Enter", "Next match (in Find field)"),
+                            ("Shift+Enter", "Previous match (in Find field)"),
+                            ("Ctrl+Enter / Cmd+Enter", "Replace current match"),
+                            (
+                                "Alt+R",
+                                "Replace current match (when not typing in a field)",
+                            ),
+                            ("Alt+A", "Replace All (when not typing in a field)"),
+                            ("Esc", "Close Find & Replace"),
                         ],
                     );
 
