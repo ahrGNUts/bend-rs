@@ -30,6 +30,15 @@ impl SavePointsPanelState {
     pub fn wants_keyboard_priority(&self) -> bool {
         self.editing_id.is_some() || self.show_create_dialog
     }
+
+    /// Abandon any in-progress rename or create-dialog state. Called when
+    /// the panel's sidebar section collapses (its own key handlers stop
+    /// running), so `wants_keyboard_priority` can't latch true forever.
+    pub fn cancel_edits(&mut self) {
+        self.editing_id = None;
+        self.show_create_dialog = false;
+        self.new_name_buffer.clear();
+    }
 }
 
 /// Show the save points panel
@@ -78,6 +87,13 @@ pub fn show(
     if state.show_create_dialog {
         ui.label("Name:");
         ui.text_edit_singleline(&mut state.new_name_buffer);
+        // Esc cancels (like the rename editor below) — the search dialog
+        // defers its own Esc handling while this form is open, so the form
+        // must consume the press or Esc would do nothing at all.
+        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            state.show_create_dialog = false;
+            state.new_name_buffer.clear();
+        }
         ui.horizontal(|ui| {
             if ui.button("Create").pointer_cursor().clicked() {
                 state.pending_create = true;
@@ -185,5 +201,29 @@ pub fn show(
         if let Some(editor) = &mut doc.editor {
             let _ = editor.rename_save_point(id, new_name); // #[must_use] result intentionally ignored — id came from save_points() iteration; rename is idempotent on missing ids
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cancel_edits_clears_keyboard_priority() {
+        // A collapsed sidebar section must not leave the panel's edit state
+        // latched — a stuck wants_keyboard_priority() would permanently
+        // defer the search dialog's keyboard shortcuts.
+        let mut state = SavePointsPanelState {
+            editing_id: Some(3),
+            show_create_dialog: true,
+            new_name_buffer: "half-typed".to_string(),
+            ..Default::default()
+        };
+        assert!(state.wants_keyboard_priority());
+
+        state.cancel_edits();
+
+        assert!(!state.wants_keyboard_priority());
+        assert!(state.new_name_buffer.is_empty());
     }
 }

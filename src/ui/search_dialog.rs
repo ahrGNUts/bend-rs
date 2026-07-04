@@ -448,6 +448,15 @@ fn render_status(ui: &mut egui::Ui, app: &BendApp) {
     if app.ui.search_state.query.is_empty() {
         return;
     }
+    // Stale = the query/mode/case drifted since the search, OR the buffer
+    // was edited since (generation mismatch) — both invalidate the results,
+    // including a zero-hit result (an edit can create bytes the query would
+    // now match).
+    let buffer_stale = app.doc.editor.as_ref().is_some_and(|e| {
+        app.ui
+            .search_state
+            .matches_may_be_stale(e.edit_generation())
+    });
     let match_count = app.ui.search_state.matches.len();
     if match_count == 0 {
         // Distinguish "no search has been run for this query yet" from
@@ -457,24 +466,20 @@ fn render_status(ui: &mut egui::Ui, app: &BendApp) {
         if app.ui.search_state.query_changed_since_search() {
             ui.weak("Press Enter, F3, or Next to search");
         } else if app.ui.search_state.message.is_none() {
-            ui.label("No matches found");
+            if buffer_stale {
+                ui.weak("No matches found (stale — press F3)");
+            } else {
+                ui.label("No matches found");
+            }
         }
         return;
     }
-    let current = app
-        .ui
-        .search_state
-        .current_match
-        .map(|i| i + 1)
-        .unwrap_or(0);
-    let base = format!("Match {} of {}", current, match_count);
-    // Stale = the query/mode/case drifted since the search, OR the buffer
-    // was edited since (generation mismatch) — both invalidate the counter.
-    let buffer_stale = app.doc.editor.as_ref().is_some_and(|e| {
-        app.ui
-            .search_state
-            .matches_may_be_stale(e.edit_generation())
-    });
+    // No selected match (e.g. every match protected): show the total
+    // rather than an impossible "Match 0 of N".
+    let base = match app.ui.search_state.current_match {
+        Some(i) => format!("Match {} of {}", i + 1, match_count),
+        None => format!("{} matches", match_count),
+    };
     if app.ui.search_state.query_changed_since_search() || buffer_stale {
         ui.weak(format!("{} (stale — press F3)", base));
     } else {

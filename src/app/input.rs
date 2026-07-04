@@ -74,6 +74,10 @@ impl BendApp {
             // and to keep the binding decoupled from Find-field focus so the user
             // can hold F3 to scrub through matches. Defers while another dialog
             // is stacked above search, like every other search shortcut.
+            // Known cost of the menu-open two-frame window: the first F3 press
+            // right after dismissing a menu with Esc may be deferred once
+            // (handle_input runs before render_menu_bar updates the flags);
+            // the press itself triggers the repaint that clears them.
             if self.ui.search_state.dialog_open
                 && !self.modal_above_search_open()
                 && !ctrl

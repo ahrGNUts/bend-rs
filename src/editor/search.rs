@@ -283,13 +283,22 @@ impl SearchState {
         }
     }
 
-    /// Clear search results
+    /// Clear search results, including the last-searched fingerprint.
+    /// Resetting `last_searched_*` matters: cleared results mean "nothing
+    /// has been searched", so a subsequently (re)typed query — even one
+    /// identical to the previous search — must register as needing an
+    /// initial run. Leaving the fingerprint intact made retyping the same
+    /// query a permanent dead-end (no drift, no generation change, no
+    /// matches to step).
     pub fn clear_results(&mut self) {
         self.matches.clear();
         self.highlighted_offsets.clear();
         self.current_match = None;
         self.message = None;
         self.cached_pattern_len = 0;
+        self.last_searched_query = String::new();
+        self.last_searched_mode = SearchMode::default();
+        self.last_searched_case_sensitive = false;
     }
 }
 

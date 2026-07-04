@@ -195,8 +195,13 @@ impl BendApp {
         !s.query.is_empty() && s.query_changed_since_search()
     }
 
-    /// Set the "all matches protected" info message.
+    /// Set the "all matches protected" info message and deselect the
+    /// current match. Deselecting keeps every trigger consistent (Next and
+    /// Previous previously diverged: Some(0) vs None, which rendered a
+    /// nonsense "Match 0 of N" one way and enabled Replace on a protected
+    /// match the other way).
     fn set_all_protected_message(&mut self) {
+        self.ui.search_state.current_match = None;
         let n = self.ui.search_state.matches.len();
         self.ui.search_state.message = Some(crate::editor::search::SearchMessage::Info(format!(
             "All {} match{} in protected regions — turn off Protect to visit them",
@@ -613,28 +618,38 @@ impl BendApp {
                     ui.add_space(10.0);
 
                     // Save points section
-                    egui::CollapsingHeader::new("Save Points")
+                    let savepoints_resp = egui::CollapsingHeader::new("Save Points")
                         .default_open(true)
                         .show(ui, |ui| {
                             let mut state = std::mem::take(&mut self.ui.savepoints_state);
                             savepoints::show(ui, &mut self.doc, &mut self.ui, &mut state);
                             self.ui.savepoints_state = state;
-                        })
-                        .header_response
-                        .pointer_cursor();
+                        });
+                    savepoints_resp.header_response.pointer_cursor();
+                    // Collapsing the section abandons any in-progress edit.
+                    // The panel's Esc/Enter/Cancel handlers only run while
+                    // its body renders, so a latched edit flag would
+                    // otherwise permanently defer the search dialog's
+                    // keyboard shortcuts (modal_above_search_open).
+                    if savepoints_resp.body_returned.is_none() {
+                        self.ui.savepoints_state.cancel_edits();
+                    }
 
                     ui.add_space(10.0);
 
                     // Bookmarks section
-                    egui::CollapsingHeader::new("Bookmarks")
+                    let bookmarks_resp = egui::CollapsingHeader::new("Bookmarks")
                         .default_open(true)
                         .show(ui, |ui| {
                             let mut state = std::mem::take(&mut self.ui.bookmarks_state);
                             bookmarks::show(ui, &mut self.doc, &mut self.ui, &mut state);
                             self.ui.bookmarks_state = state;
-                        })
-                        .header_response
-                        .pointer_cursor();
+                        });
+                    bookmarks_resp.header_response.pointer_cursor();
+                    if bookmarks_resp.body_returned.is_none() {
+                        self.ui.bookmarks_state.renaming = None;
+                        self.ui.bookmarks_state.editing_annotation = None;
+                    }
                 });
             });
     }
@@ -868,9 +883,10 @@ mod tests {
         assert_eq!(app.ui.search_state.matches, vec![3, 10]);
         app.ui.search_state.close_dialog();
         assert!(app.ui.search_state.matches.is_empty());
-        // last_searched_query is intentionally not cleared by close_dialog —
-        // that's what made the original bug invisible to query_changed().
-        assert!(!app.ui.search_state.query_changed_since_search());
+        // clear_results now also resets the last-searched fingerprint, so
+        // the persisted query registers as needing a fresh search — both
+        // this reopen path and F3-after-clearing rely on that.
+        assert!(app.ui.search_state.query_changed_since_search());
 
         // Session 2: reopen. Without the auto-rerun fix this would leave
         // matches empty, causing render_status to show "No matches found".
@@ -978,9 +994,11 @@ mod tests {
         // must say so instead of silently doing nothing.
         let mut app = app_with_protected_header(20);
 
-        // Initial run.
+        // Initial run: message set, nothing selected (a selection would
+        // render "Match 1 of N" and enable Replace on a protected match).
         app.do_search_next();
         assert_eq!(app.ui.search_state.matches, vec![3, 10, 17]);
+        assert_eq!(app.ui.search_state.current_match, None);
         match app.ui.search_state.message.as_ref() {
             Some(crate::editor::search::SearchMessage::Info(msg)) => {
                 assert!(msg.contains("protected regions"), "got: {msg}")
@@ -988,16 +1006,43 @@ mod tests {
             other => panic!("expected all-protected Info, got {:?}", other),
         }
 
-        // Step path: message re-set on every press, position unchanged.
-        let before = app.ui.search_state.current_match;
+        // Step path: message re-set on every press, still nothing selected.
         app.do_search_next();
-        assert_eq!(app.ui.search_state.current_match, before);
+        assert_eq!(app.ui.search_state.current_match, None);
         assert!(app.ui.search_state.message.is_some());
 
-        // Prev path too.
+        // Prev path too — symmetric with Next (both directions deselect).
         app.do_search_prev();
-        assert_eq!(app.ui.search_state.current_match, before);
+        assert_eq!(app.ui.search_state.current_match, None);
         assert!(app.ui.search_state.message.is_some());
+    }
+
+    #[test]
+    fn test_retyping_identical_query_after_clear_researches() {
+        // Regression: clear_results used to preserve the last-searched
+        // fingerprint, so clearing the Find field (which drops results)
+        // and retyping the SAME query left every navigation press a no-op
+        // with a false "No matches found".
+        let mut data = vec![0u8; 20];
+        data[3] = 0xFF;
+        data[10] = 0xFF;
+        let mut app = BendApp::default();
+        app.doc.editor = Some(EditorState::new(data));
+        app.ui.search_state.mode = crate::editor::search::SearchMode::Hex;
+        app.ui.search_state.query = "FF".to_string();
+        app.do_search_next();
+        assert_eq!(app.ui.search_state.matches, vec![3, 10]);
+
+        // Clear the field, press Enter/F3 (empty-query branch clears).
+        app.ui.search_state.query.clear();
+        app.do_search_next();
+        assert!(app.ui.search_state.matches.is_empty());
+
+        // Retype the identical query — must search again, not dead-end.
+        app.ui.search_state.query = "FF".to_string();
+        app.do_search_next();
+        assert_eq!(app.ui.search_state.matches, vec![3, 10]);
+        assert_eq!(app.ui.search_state.current_match, Some(0));
     }
 
     #[test]
