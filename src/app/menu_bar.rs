@@ -226,7 +226,9 @@ impl BendApp {
             )
             .changed()
         {
-            // Checkbox already updates the value
+            // Newly-protected regions may cover the selected search match —
+            // re-anchor (or deselect) immediately.
+            self.enforce_search_selection_visible();
         }
         ui.separator();
         // Re-enable warnings option (only shown when warnings are suppressed)

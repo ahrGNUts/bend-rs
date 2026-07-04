@@ -104,6 +104,9 @@ impl BendApp {
                     .clicked()
                 {
                     self.doc.header_protection = !self.doc.header_protection;
+                    // Newly-protected regions may cover the selected search
+                    // match — re-anchor (or deselect) immediately.
+                    self.enforce_search_selection_visible();
                 }
 
                 ui.separator();

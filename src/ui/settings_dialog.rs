@@ -139,7 +139,7 @@ pub fn show(
             });
 
             // Handle Escape to close
-            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            if ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
                 actions.push(SettingsAction::Close);
             }
         });

@@ -324,6 +324,11 @@ pub(crate) fn handle_replace_one(app: &mut BendApp) {
         }
         Err(e) => {
             app.ui.search_state.message = Some(SearchMessage::Error(e));
+            // An error can leave a protected match selected (e.g. Protect
+            // was toggled on after the search anchored here and every match
+            // is now protected) — re-assert the visibility invariant so
+            // Replace doesn't stay enabled on it.
+            app.enforce_search_selection_visible();
         }
     }
 }

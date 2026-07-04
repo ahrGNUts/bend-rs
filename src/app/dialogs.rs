@@ -125,6 +125,12 @@ impl BendApp {
                             should_cancel = true;
                         }
                     });
+
+                    // Esc cancels; consumed so later-rendered surfaces don't
+                    // also react to the same press.
+                    if ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+                        should_cancel = true;
+                    }
                 });
             });
 
@@ -251,7 +257,11 @@ impl BendApp {
                         }
                     });
 
-                    if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    // Consume the Esc event: surfaces that render later in
+                    // the frame (sidebar rename editors) read Esc after this
+                    // dialog has already cleared its open-flag, so a
+                    // non-consuming read would let one press cancel both.
+                    if ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
                         should_cancel = true;
                     }
                 });
@@ -340,6 +350,12 @@ impl BendApp {
                         self.ui.dialogs.show_close = false;
                     }
                 });
+
+                // Esc cancels; consumed so later-rendered surfaces don't
+                // also react to the same press.
+                if ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+                    self.ui.dialogs.show_close = false;
+                }
             });
     }
 }

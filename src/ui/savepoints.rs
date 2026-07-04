@@ -136,9 +136,13 @@ pub fn show(
     } else {
         for (id, name) in save_points.iter() {
             if state.editing_id == Some(*id) {
-                // Editing mode: text box + save/discard buttons below
-                ui.text_edit_singleline(&mut state.edit_buffer);
-                if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                // Editing mode: text box + save/discard buttons below.
+                // Enter commits only when THIS field surrendered focus to
+                // it (egui's TextEdit gives up focus on unmodified Enter) —
+                // a raw key read would commit the rename from Enter presses
+                // aimed at any other surface while this edit sits latched.
+                let response = ui.text_edit_singleline(&mut state.edit_buffer);
+                if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     action_finish_rename = Some((*id, state.edit_buffer.clone()));
                     state.editing_id = None;
                 }

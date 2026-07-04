@@ -158,14 +158,20 @@ impl BendApp {
             crate::editor::search::execute_search(&mut self.ui.search_state, editor.working());
             self.ui.search_state.set_searched_generation(gen);
         }
+        self.enforce_search_selection_visible();
+    }
+
+    /// Enforce the "selected match is always visible" invariant against the
+    /// CURRENT protection settings: advance off a protected selection, and
+    /// deselect when every match is protected (ensure_current_visible cannot
+    /// move in that case). Called after every search, and after the Protect
+    /// toggle flips — protection can change without any buffer edit, so no
+    /// generation-based staleness would catch it.
+    pub(crate) fn enforce_search_selection_visible(&mut self) {
         let pattern_len = self.ui.search_state.pattern_length();
         self.ui
             .search_state
             .ensure_current_visible(|off| self.doc.is_range_protected(off, pattern_len));
-        // Invariant: a selected match is always visible. When EVERY match is
-        // protected, ensure_current_visible cannot move — deselect instead,
-        // so no caller (dialog rehydrate, post-replace refresh) can end up
-        // with Replace enabled on a protected match or navigate into one.
         if let Some(off) = self.ui.search_state.current_match_offset() {
             if self.doc.is_range_protected(off, pattern_len) {
                 self.ui.search_state.current_match = None;
