@@ -113,6 +113,25 @@ pub struct UiState {
     pub menu_open_prev_frame: bool,
 }
 
+impl UiState {
+    /// Whether an overlay (dialog or menu) that handles Escape itself is
+    /// open. All Esc handlers in this app read the key non-consumingly, so
+    /// lower-priority surfaces (the search dialog, sidebar text editors)
+    /// must defer while one of these is stacked above them — otherwise a
+    /// single Esc press aimed at the overlay also fires their own cancel.
+    pub fn overlay_wants_escape(&self) -> bool {
+        self.dialogs.show_close
+            || self.dialogs.pending_confirm.is_some()
+            || self.dialogs.pending_high_risk_edit.is_some()
+            || self.shortcuts_dialog_state.dialog_open
+            || self.go_to_offset_state.dialog_open
+            || self.settings_dialog_state.dialog_open
+            || self.menu_open_this_frame
+            || self.menu_open_prev_frame
+            || self.context_menu_state.target_offset.is_some()
+    }
+}
+
 /// Document state: the loaded buffer/editor, its preview, parsed structure,
 /// and the runtime header-protection toggle.
 ///

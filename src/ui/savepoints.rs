@@ -74,10 +74,20 @@ pub fn show(
         return;
     }
 
+    // Sidebar text editors read Esc non-consumingly; while a dialog or
+    // menu that also handles Esc is stacked above, defer so one press
+    // doesn't cancel both surfaces at once.
+    let esc_pressed =
+        !ui_state.overlay_wants_escape() && ui.input(|i| i.key_pressed(egui::Key::Escape));
+
     ui.horizontal(|ui| {
         if ui.button("➕ New").pointer_cursor().clicked() {
             state.show_create_dialog = true;
             state.new_name_buffer = format!("Save Point {}", save_point_count + 1);
+            // Only one text editor at a time: an in-progress rename would
+            // otherwise share raw Enter/Esc key presses with this form
+            // (committing the abandoned rename buffer on Enter).
+            state.editing_id = None;
         }
     });
 
@@ -89,8 +99,8 @@ pub fn show(
         ui.text_edit_singleline(&mut state.new_name_buffer);
         // Esc cancels (like the rename editor below) — the search dialog
         // defers its own Esc handling while this form is open, so the form
-        // must consume the press or Esc would do nothing at all.
-        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        // must handle the press or Esc would do nothing at all.
+        if esc_pressed {
             state.show_create_dialog = false;
             state.new_name_buffer.clear();
         }
@@ -132,7 +142,7 @@ pub fn show(
                     action_finish_rename = Some((*id, state.edit_buffer.clone()));
                     state.editing_id = None;
                 }
-                if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                if esc_pressed {
                     state.editing_id = None;
                 }
                 ui.horizontal(|ui| {
@@ -195,6 +205,8 @@ pub fn show(
     if let Some((id, name)) = action_start_rename {
         state.editing_id = Some(id);
         state.edit_buffer = name;
+        // Mutual exclusion with the create form (see the New button).
+        state.show_create_dialog = false;
     }
 
     if let Some((id, new_name)) = action_finish_rename {

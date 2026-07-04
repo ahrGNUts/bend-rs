@@ -944,6 +944,40 @@ mod tests {
     }
 
     #[test]
+    fn test_replace_last_unprotected_does_not_navigate_into_protected() {
+        // After replacing the only unprotected match, the refreshed list
+        // contains ONLY protected matches. The post-replace advance must
+        // not select or navigate into one (Replace stays disabled; the
+        // cursor stays where the user was).
+        let mut data = vec![0u8; 20];
+        data[3] = 0xFF; // protected (header 0..10)
+        data[15] = 0xFF; // safe
+        let sections = vec![
+            FileSection::new("Header", 0, 10, RiskLevel::High),
+            FileSection::new("Data", 10, 20, RiskLevel::Safe),
+        ];
+        let mut app = setup_app(&data, sections, "FF", "AA");
+        app.doc.header_protection = true;
+        // Re-run through refresh_search so protection filtering applies:
+        // selects the first visible match, offset 15.
+        app.refresh_search();
+        assert_eq!(app.ui.search_state.current_match_offset(), Some(15));
+        let cursor_before = app.doc.editor.as_ref().unwrap().cursor();
+
+        handle_replace_one(&mut app);
+
+        // Replace happened at 15; the only remaining match (3) is protected.
+        assert_eq!(app.doc.editor.as_ref().unwrap().working()[15], 0xAA);
+        assert_eq!(app.ui.search_state.matches, vec![3]);
+        assert_eq!(app.ui.search_state.current_match, None);
+        assert_eq!(app.doc.editor.as_ref().unwrap().cursor(), cursor_before);
+        match app.ui.search_state.message.as_ref().unwrap() {
+            SearchMessage::Info(msg) => assert!(msg.contains("Replaced at"), "got: {msg}"),
+            other => panic!("expected Info, got {:?}", other),
+        }
+    }
+
+    #[test]
     fn test_handle_replace_all_stale_refresh_then_replaces_fresh_list() {
         // Replace All after buffer edits must act on refreshed offsets.
         let mut data = vec![0u8; 20];

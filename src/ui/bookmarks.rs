@@ -73,7 +73,12 @@ pub fn show(
                                 bookmark.id,
                                 std::mem::take(&mut state.rename_text),
                             ));
-                        } else if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                        } else if !ui_state.overlay_wants_escape()
+                            && ui.input(|i| i.key_pressed(egui::Key::Escape))
+                        {
+                            // Esc cancels — unless it was aimed at a dialog
+                            // or menu stacked above (their non-consuming
+                            // handlers see the same press).
                             action = Some(BookmarkAction::CancelRename);
                         }
                     }
@@ -121,7 +126,9 @@ pub fn show(
                                 bookmark.id,
                                 std::mem::take(&mut state.annotation_text),
                             ));
-                        } else if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                        } else if !ui_state.overlay_wants_escape()
+                            && ui.input(|i| i.key_pressed(egui::Key::Escape))
+                        {
                             action = Some(BookmarkAction::CancelAnnotation);
                         }
                     }

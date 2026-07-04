@@ -143,7 +143,7 @@ impl BendApp {
     pub fn open_search_dialog(&mut self) {
         self.ui.search_state.open_dialog();
         if !self.ui.search_state.query.is_empty() && self.ui.search_state.matches.is_empty() {
-            self.refresh_search();
+            self.rehydrate_search();
         }
     }
 
@@ -162,6 +162,27 @@ impl BendApp {
         self.ui
             .search_state
             .ensure_current_visible(|off| self.doc.is_range_protected(off, pattern_len));
+        // Invariant: a selected match is always visible. When EVERY match is
+        // protected, ensure_current_visible cannot move — deselect instead,
+        // so no caller (dialog rehydrate, post-replace refresh) can end up
+        // with Replace enabled on a protected match or navigate into one.
+        if let Some(off) = self.ui.search_state.current_match_offset() {
+            if self.doc.is_range_protected(off, pattern_len) {
+                self.ui.search_state.current_match = None;
+            }
+        }
+    }
+
+    /// Refresh and, when the result is "matches exist but none are
+    /// visitable" (all protected), surface why — used by the rehydrate
+    /// paths (dialog reopen, file switch) that would otherwise show a bare
+    /// deselected counter.
+    fn rehydrate_search(&mut self) {
+        self.refresh_search();
+        if !self.ui.search_state.matches.is_empty() && self.ui.search_state.current_match.is_none()
+        {
+            self.set_all_protected_message();
+        }
     }
 
     /// Re-run the search only when the cached matches are stale relative to
@@ -377,15 +398,7 @@ impl BendApp {
     /// handlers would never see the event and the rename would stay stuck
     /// in edit mode.
     pub(crate) fn modal_above_search_open(&self) -> bool {
-        self.ui.go_to_offset_state.dialog_open
-            || self.ui.shortcuts_dialog_state.dialog_open
-            || self.ui.settings_dialog_state.dialog_open
-            || self.ui.dialogs.show_close
-            || self.ui.dialogs.pending_confirm.is_some()
-            || self.ui.dialogs.pending_high_risk_edit.is_some()
-            || self.ui.context_menu_state.target_offset.is_some()
-            || self.ui.menu_open_this_frame
-            || self.ui.menu_open_prev_frame
+        self.ui.overlay_wants_escape()
             || self.ui.bookmarks_state.renaming.is_some()
             || self.ui.bookmarks_state.editing_annotation.is_some()
             || self.ui.savepoints_state.wants_keyboard_priority()
@@ -401,8 +414,15 @@ impl BendApp {
     pub(crate) fn on_file_loaded(&mut self) {
         self.ui.search_state.clear_results();
         if self.ui.search_state.dialog_open && !self.ui.search_state.query.is_empty() {
-            self.refresh_search();
+            self.rehydrate_search();
         }
+        // Abandon sidebar edit state from the previous file: the new
+        // editor's save points/bookmarks are fresh (and ids restart), so a
+        // latched rename would defer search shortcuts forever — or worse,
+        // reattach to an unrelated item that later receives the same id.
+        self.ui.savepoints_state.cancel_edits();
+        self.ui.bookmarks_state.renaming = None;
+        self.ui.bookmarks_state.editing_annotation = None;
     }
 
     /// Check if there are unsaved changes
@@ -1015,6 +1035,51 @@ mod tests {
         app.do_search_prev();
         assert_eq!(app.ui.search_state.current_match, None);
         assert!(app.ui.search_state.message.is_some());
+    }
+
+    #[test]
+    fn test_reopen_with_all_protected_matches_stays_deselected() {
+        // Regression (validation round 3): the dialog-reopen rehydrate ran
+        // refresh_search, whose execute_search selects match 0; with every
+        // match protected, ensure_current_visible couldn't move — leaving
+        // Replace enabled on a protected match with no explanation. The
+        // refresh invariant now deselects, and rehydrate surfaces the
+        // all-protected message.
+        let mut app = app_with_protected_header(20);
+        app.ui.search_state.dialog_open = true;
+        app.do_search_next();
+        assert_eq!(app.ui.search_state.current_match, None);
+
+        app.ui.search_state.close_dialog();
+        app.open_search_dialog();
+
+        assert_eq!(app.ui.search_state.matches, vec![3, 10, 17]);
+        assert_eq!(app.ui.search_state.current_match, None);
+        match app.ui.search_state.message.as_ref() {
+            Some(crate::editor::search::SearchMessage::Info(msg)) => {
+                assert!(msg.contains("protected regions"), "got: {msg}")
+            }
+            other => panic!("expected all-protected Info, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_on_file_loaded_abandons_sidebar_edit_state() {
+        // A rename latched across a file switch would defer search
+        // shortcuts forever (the new file's panel may never render a row
+        // with the old id) — or reattach to an unrelated item when ids
+        // restart. on_file_loaded must abandon panel edit state.
+        let mut app = BendApp::default();
+        app.doc.editor = Some(EditorState::new(vec![0u8; 8]));
+        app.ui.bookmarks_state.renaming = Some(2);
+        app.ui.bookmarks_state.editing_annotation = Some(3);
+
+        app.on_file_loaded();
+
+        assert!(app.ui.bookmarks_state.renaming.is_none());
+        assert!(app.ui.bookmarks_state.editing_annotation.is_none());
+        assert!(!app.ui.savepoints_state.wants_keyboard_priority());
+        assert!(!app.modal_above_search_open());
     }
 
     #[test]
